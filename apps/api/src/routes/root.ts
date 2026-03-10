@@ -4,18 +4,30 @@ function renderPage(page: string) {
   const currentPage = page || "dashboard";
 
   const titles: Record<string, string> = {
-    dashboard: "Dashboard",
-    claude: "Claude",
-    chatgpt: "ChatGPT",
-    gemini: "Gemini"
-  };
+  dashboard: "Dashboard",
+  claude: "Claude",
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+  avatar: "Avatar",
+  files: "Files",
+  settings: "Settings"
+};
 
   const descriptions: Record<string, string> = {
-    dashboard: "Стартовый каркас интерфейса для будущих модулей системы.",
-    claude: "Независимый чат-модуль Claude с проектами, контекстом, историей и памятью.",
-    chatgpt: "Независимый чат-модуль ChatGPT с собственной рабочей средой.",
-    gemini: "Независимый чат-модуль Gemini с отдельной логикой и настройками."
-  };
+  dashboard: "Стартовый каркас интерфейса для будущих модулей системы.",
+  claude: "Независимый чат-модуль Claude с проектами, контекстом, историей и памятью.",
+  chatgpt: "Независимый чат-модуль ChatGPT с собственной рабочей средой.",
+  gemini: "Независимый чат-модуль Gemini с отдельной логикой и настройками.",
+  image: "Модуль генерации и редактирования изображений через KIE API.",
+  video: "Модуль генерации видео и image-to-video сценариев.",
+  audio: "Модуль музыки, аудио и озвучки.",
+  avatar: "Модуль генерации avatar-видео на основе изображения и аудио.",
+  files: "Общая библиотека файлов и результатов всех модулей.",
+  settings: "Общие настройки системы и будущих интеграций."
+};
 
   const content: Record<string, string> = {
     dashboard: `
@@ -182,6 +194,198 @@ function renderPage(page: string) {
           <div class="footer-note">
             Gemini — отдельная рабочая среда, а не переключатель внутри общего чата.
           </div>
+        </section>
+      </div>
+    `,
+        image: `
+      <div class="grid">
+        <section class="card">
+          <h2>Структура модуля Image</h2>
+          <p>Этот модуль будет отвечать за генерацию и редактирование изображений.</p>
+          <div class="module-list">
+            <div class="module-item">
+              <strong>Text-to-Image</strong>
+              <span>Создание изображений по текстовому описанию.</span>
+            </div>
+            <div class="module-item">
+              <strong>Image Edit</strong>
+              <span>Редактирование уже загруженных изображений.</span>
+            </div>
+            <div class="module-item">
+              <strong>История</strong>
+              <span>Список всех прошлых генераций и правок.</span>
+            </div>
+            <div class="module-item">
+              <strong>Сохранение</strong>
+              <span>Передача результата в Files для дальнейшего использования.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Следующий этап</h2>
+          <p>Сюда позже добавятся форма генерации, загрузка исходников, выбор модели и галерея результатов.</p>
+          <div class="footer-note">Image станет отдельной рабочей зоной для визуального контента.</div>
+        </section>
+      </div>
+    `,
+    video: `
+      <div class="grid">
+        <section class="card">
+          <h2>Структура модуля Video</h2>
+          <p>Этот модуль будет отвечать за video generation и image-to-video задачи.</p>
+          <div class="module-list">
+            <div class="module-item">
+              <strong>Text-to-Video</strong>
+              <span>Генерация видео по текстовому сценарию.</span>
+            </div>
+            <div class="module-item">
+              <strong>Image-to-Video</strong>
+              <span>Создание видео на основе изображения.</span>
+            </div>
+            <div class="module-item">
+              <strong>Статусы задач</strong>
+              <span>Отслеживание выполнения генерации.</span>
+            </div>
+            <div class="module-item">
+              <strong>Результаты</strong>
+              <span>Сохранение финальных роликов в Files.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Следующий этап</h2>
+          <p>Позже здесь появятся форма запуска, выбор source image, параметры видео и просмотр результата.</p>
+          <div class="footer-note">Video будет отдельной рабочей вкладкой для всех видео-сценариев.</div>
+        </section>
+      </div>
+    `,
+    audio: `
+      <div class="grid">
+        <section class="card">
+          <h2>Структура модуля Audio</h2>
+          <p>Этот модуль будет отвечать за музыку, аудио и озвучку.</p>
+          <div class="module-list">
+            <div class="module-item">
+              <strong>Music</strong>
+              <span>Генерация музыкальных треков.</span>
+            </div>
+            <div class="module-item">
+              <strong>Voice / TTS</strong>
+              <span>Озвучка текста и аудио-сценарии.</span>
+            </div>
+            <div class="module-item">
+              <strong>История</strong>
+              <span>Список аудио-результатов по всем запускам.</span>
+            </div>
+            <div class="module-item">
+              <strong>Передача дальше</strong>
+              <span>Использование аудио в Avatar и Files.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Следующий этап</h2>
+          <p>Позже здесь появятся формы для music generation, озвучки и библиотека аудиофайлов.</p>
+          <div class="footer-note">Audio станет отдельным центром работы со звуком.</div>
+        </section>
+      </div>
+    `,
+    avatar: `
+      <div class="grid">
+        <section class="card">
+          <h2>Структура модуля Avatar</h2>
+          <p>Этот модуль будет отвечать за avatar-видео и talking avatar сценарии.</p>
+          <div class="module-list">
+            <div class="module-item">
+              <strong>Source Image</strong>
+              <span>Выбор лица или изображения для аватара.</span>
+            </div>
+            <div class="module-item">
+              <strong>Audio Source</strong>
+              <span>Подключение аудио для lipsync и речи.</span>
+            </div>
+            <div class="module-item">
+              <strong>История</strong>
+              <span>Список созданных avatar-видео.</span>
+            </div>
+            <div class="module-item">
+              <strong>Сохранение</strong>
+              <span>Передача результата в общую файловую библиотеку.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Следующий этап</h2>
+          <p>Позже здесь появятся форма выбора изображения, аудио и настройки генерации аватара.</p>
+          <div class="footer-note">Avatar станет отдельной рабочей средой для персонажей и роликов.</div>
+        </section>
+      </div>
+    `,
+    files: `
+      <div class="grid">
+        <section class="card">
+          <h2>Структура модуля Files</h2>
+          <p>Files будет общей библиотекой файлов и результатов для всех модулей.</p>
+          <div class="module-list">
+            <div class="module-item">
+              <strong>Изображения</strong>
+              <span>Результаты из Image и загруженные исходники.</span>
+            </div>
+            <div class="module-item">
+              <strong>Видео</strong>
+              <span>Ролики из Video и Avatar.</span>
+            </div>
+            <div class="module-item">
+              <strong>Аудио</strong>
+              <span>Треки и озвучка из Audio.</span>
+            </div>
+            <div class="module-item">
+              <strong>Повторное использование</strong>
+              <span>Передача файлов между всеми вкладками.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Назначение</h2>
+          <p>Files станет общей точкой обмена данными между Image, Video, Audio и Avatar.</p>
+          <div class="footer-note">Именно здесь будет находиться единая галерея результатов.</div>
+        </section>
+      </div>
+    `,
+    settings: `
+      <div class="grid">
+        <section class="card">
+          <h2>Структура модуля Settings</h2>
+          <p>Здесь будут находиться общие настройки приложения и интеграций.</p>
+          <div class="module-list">
+            <div class="module-item">
+              <strong>API</strong>
+              <span>Параметры подключения и будущие ключи интеграций.</span>
+            </div>
+            <div class="module-item">
+              <strong>UI</strong>
+              <span>Тема, визуальные настройки и базовые параметры интерфейса.</span>
+            </div>
+            <div class="module-item">
+              <strong>Поведение</strong>
+              <span>Базовые настройки модулей и системы.</span>
+            </div>
+            <div class="module-item">
+              <strong>Служебные параметры</strong>
+              <span>Диагностика и системная конфигурация.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Следующий этап</h2>
+          <p>Позже здесь появятся реальные настройки приложения, интеграций и параметров модулей.</p>
+          <div class="footer-note">Settings будет общим системным разделом проекта.</div>
         </section>
       </div>
     `
@@ -405,21 +609,21 @@ function renderPage(page: string) {
               </nav>
             </div>
 
-            <div class="menu-group">
+                        <div class="menu-group">
               <div class="menu-title">Media</div>
               <nav class="menu">
-                <a href="#">Image</a>
-                <a href="#">Video</a>
-                <a href="#">Audio</a>
-                <a href="#">Avatar</a>
+                <a href="/?page=image" class="${isActive("image")}">Image</a>
+                <a href="/?page=video" class="${isActive("video")}">Video</a>
+                <a href="/?page=audio" class="${isActive("audio")}">Audio</a>
+                <a href="/?page=avatar" class="${isActive("avatar")}">Avatar</a>
               </nav>
             </div>
 
-            <div class="menu-group">
+                        <div class="menu-group">
               <div class="menu-title">Система</div>
               <nav class="menu">
-                <a href="#">Files</a>
-                <a href="#">Settings</a>
+                <a href="/?page=files" class="${isActive("files")}">Files</a>
+                <a href="/?page=settings" class="${isActive("settings")}">Settings</a>
               </nav>
             </div>
           </aside>
