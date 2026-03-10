@@ -243,78 +243,316 @@ function renderPage(page: string) {
         </aside>
       </div>
     `,
-    chatgpt: `
-      <div class="grid">
-        <section class="card">
-          <h2>Структура модуля ChatGPT</h2>
-          <p>Этот блок будет жить отдельно от Claude и Gemini.</p>
-          <div class="module-list">
-            <div class="module-item">
-              <strong>Проекты</strong>
-              <span>Свои проекты и сценарии работы только для ChatGPT.</span>
+       chatgpt: `
+      <div class="workspace">
+        <aside class="panel">
+          <div class="panel-header-row">
+            <h2>Проекты</h2>
+            <button class="mini-btn" type="button">Новый</button>
+          </div>
+          <p class="panel-text">Отдельные проекты ChatGPT с собственной историей и памятью.</p>
+
+          <div class="project-list">
+            <div class="project-item active-project">
+              <strong>Контент-план</strong>
+              <span>Посты, идеи, рубрики, сценарии</span>
             </div>
-            <div class="module-item">
-              <strong>Контекст</strong>
-              <span>Системные инструкции и настройки ответов.</span>
+            <div class="project-item">
+              <strong>Бочкари / сайт</strong>
+              <span>Тексты, описания, новости</span>
             </div>
-            <div class="module-item">
-              <strong>История</strong>
-              <span>Собственная история переписки по проектам.</span>
+            <div class="project-item">
+              <strong>Тестовый проект</strong>
+              <span>Черновая рабочая среда ChatGPT</span>
             </div>
-            <div class="module-item">
-              <strong>Память</strong>
-              <span>Память проекта и закрепленные рабочие правила.</span>
+          </div>
+
+          <div class="subsection">
+            <div class="panel-header-row">
+              <h3>Диалоги</h3>
+              <button class="mini-btn" type="button">Чат</button>
             </div>
+
+            <div class="dialog-list">
+              <div class="dialog-item active-dialog">
+                <strong>Идеи для карусели</strong>
+                <span>Последнее сообщение: 3 минуты назад</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Пост для соцсетей</strong>
+                <span>Последнее сообщение: сегодня</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Описание продукта</strong>
+                <span>Последнее сообщение: вчера</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            Позже здесь появятся поиск, фильтрация и архив диалогов.
+          </div>
+        </aside>
+
+        <section class="panel chat-panel">
+          <div class="project-topbar">
+            <div>
+              <div class="project-top-label">Текущий проект</div>
+              <div class="project-top-title">Контент-план</div>
+            </div>
+            <div class="top-actions">
+              <button class="ghost-btn" type="button">Настройки проекта</button>
+              <button class="ghost-btn" type="button">Сохранить память</button>
+            </div>
+          </div>
+
+          <h2>Чат ChatGPT</h2>
+          <p class="panel-text">Независимая рабочая среда для задач через ChatGPT.</p>
+
+          <div class="chat-box">
+            <div class="message assistant">
+              <div class="message-role">ChatGPT</div>
+              <div class="message-text">
+                Этот модуль предназначен для работы с идеями, текстами, сценариями и проектной перепиской.
+              </div>
+            </div>
+
+            <div class="message user">
+              <div class="message-role">Вы</div>
+              <div class="message-text">
+                Собери структуру рабочего пространства для контент-проекта.
+              </div>
+            </div>
+
+            <div class="message assistant">
+              <div class="message-role">ChatGPT</div>
+              <div class="message-text">
+                Здесь будут отдельные проекты, история чатов, центральная область сообщений,
+                а справа — контекст, память и настройки по проекту.
+              </div>
+            </div>
+
+            <div class="message user">
+              <div class="message-role">Вы</div>
+              <div class="message-text">
+                Важно, чтобы данные ChatGPT не смешивались с Claude и Gemini.
+              </div>
+            </div>
+
+            <div class="message assistant">
+              <div class="message-role">ChatGPT</div>
+              <div class="message-text">
+                Да, этот блок будет полностью независим: свои проекты, своя история,
+                своя память и свои рабочие настройки.
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <input type="text" placeholder="Поле ввода сообщения появится здесь" />
+            <button type="button">Отправить</button>
           </div>
         </section>
 
-        <section class="card">
-          <h2>Назначение</h2>
-          <p>
-            Здесь будет отдельная среда для работы с задачами через ChatGPT:
-            тексты, идеи, системные инструкции, проектная переписка и сохраненная память.
-          </p>
-          <div class="footer-note">
-            В этом модуле данные не должны смешиваться с Claude и Gemini.
+        <aside class="panel">
+          <div class="panel-header-row">
+            <h2>Контекст и память</h2>
+            <button class="mini-btn" type="button">Изменить</button>
           </div>
-        </section>
+          <p class="panel-text">Правая панель с настройками выбранного проекта ChatGPT.</p>
+
+          <div class="right-section">
+            <h3>Контекст проекта</h3>
+            <div class="info-card">
+              <strong>Роль модели</strong>
+              <span>Контент-стратег и редактор.</span>
+            </div>
+            <div class="info-card">
+              <strong>Стиль</strong>
+              <span>Понятный, живой, структурный, без перегруза.</span>
+            </div>
+          </div>
+
+          <div class="right-section">
+            <h3>Память проекта</h3>
+            <div class="info-card">
+              <strong>Закрепленные правила</strong>
+              <span>Не смешивать данные ChatGPT с Claude и Gemini.</span>
+            </div>
+            <div class="info-card">
+              <strong>Факты проекта</strong>
+              <span>Темы, форматы контента, рабочие ограничения и утвержденные формулировки.</span>
+            </div>
+          </div>
+
+          <div class="right-section">
+            <h3>История</h3>
+            <div class="info-card">
+              <strong>Быстрый доступ</strong>
+              <span>Позже сюда можно вынести последние чаты, закрепления и быстрый поиск.</span>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            Это отдельная среда ChatGPT, не связанная с Claude и Gemini.
+          </div>
+        </aside>
       </div>
     `,
-    gemini: `
-      <div class="grid">
-        <section class="card">
-          <h2>Структура модуля Gemini</h2>
-          <p>Gemini будет третьим независимым chat-блоком внутри системы.</p>
-          <div class="module-list">
-            <div class="module-item">
-              <strong>Проекты</strong>
-              <span>Отдельный список проектов для работы через Gemini.</span>
+        gemini: `
+      <div class="workspace">
+        <aside class="panel">
+          <div class="panel-header-row">
+            <h2>Проекты</h2>
+            <button class="mini-btn" type="button">Новый</button>
+          </div>
+          <p class="panel-text">Отдельные проекты Gemini с собственной историей и памятью.</p>
+
+          <div class="project-list">
+            <div class="project-item active-project">
+              <strong>Аналитика</strong>
+              <span>Разборы, структурирование, исследования</span>
             </div>
-            <div class="module-item">
-              <strong>Контекст</strong>
-              <span>Свои инструкции, роль, ограничения и стиль.</span>
+            <div class="project-item">
+              <strong>Эксперименты</strong>
+              <span>Тестовые сценарии работы с Gemini</span>
             </div>
-            <div class="module-item">
-              <strong>История</strong>
-              <span>Отдельные чаты и история сообщений.</span>
+            <div class="project-item">
+              <strong>Черновики</strong>
+              <span>Промежуточная рабочая среда</span>
             </div>
-            <div class="module-item">
-              <strong>Память</strong>
-              <span>Память и правила, привязанные только к Gemini.</span>
+          </div>
+
+          <div class="subsection">
+            <div class="panel-header-row">
+              <h3>Диалоги</h3>
+              <button class="mini-btn" type="button">Чат</button>
             </div>
+
+            <div class="dialog-list">
+              <div class="dialog-item active-dialog">
+                <strong>Разбор структуры</strong>
+                <span>Последнее сообщение: 8 минут назад</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Анализ интерфейса</strong>
+                <span>Последнее сообщение: сегодня</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Тест системных ролей</strong>
+                <span>Последнее сообщение: вчера</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            Позже здесь появятся поиск, фильтрация и архив диалогов.
+          </div>
+        </aside>
+
+        <section class="panel chat-panel">
+          <div class="project-topbar">
+            <div>
+              <div class="project-top-label">Текущий проект</div>
+              <div class="project-top-title">Аналитика</div>
+            </div>
+            <div class="top-actions">
+              <button class="ghost-btn" type="button">Настройки проекта</button>
+              <button class="ghost-btn" type="button">Сохранить память</button>
+            </div>
+          </div>
+
+          <h2>Чат Gemini</h2>
+          <p class="panel-text">Независимая рабочая среда для задач через Gemini.</p>
+
+          <div class="chat-box">
+            <div class="message assistant">
+              <div class="message-role">Gemini</div>
+              <div class="message-text">
+                Этот модуль предназначен для аналитики, структурирования и отдельных сценариев работы через Gemini.
+              </div>
+            </div>
+
+            <div class="message user">
+              <div class="message-role">Вы</div>
+              <div class="message-text">
+                Покажи, как будет устроен независимый модуль Gemini.
+              </div>
+            </div>
+
+            <div class="message assistant">
+              <div class="message-role">Gemini</div>
+              <div class="message-text">
+                Внутри модуля будут отдельные проекты, список диалогов, центральный чат,
+                а справа — контекст проекта, память и служебные настройки.
+              </div>
+            </div>
+
+            <div class="message user">
+              <div class="message-role">Вы</div>
+              <div class="message-text">
+                Нужно, чтобы Gemini не пересекался по данным с Claude и ChatGPT.
+              </div>
+            </div>
+
+            <div class="message assistant">
+              <div class="message-role">Gemini</div>
+              <div class="message-text">
+                Да, это будет полностью изолированная рабочая среда:
+                своя память, своя история, свои проекты и свои настройки.
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <input type="text" placeholder="Поле ввода сообщения появится здесь" />
+            <button type="button">Отправить</button>
           </div>
         </section>
 
-        <section class="card">
-          <h2>Следующий шаг по модулю</h2>
-          <p>
-            После базовой навигации сюда можно будет добавить собственную
-            структуру проекта и экран чата в том же графитовом стиле.
-          </p>
-          <div class="footer-note">
-            Gemini — отдельная рабочая среда, а не переключатель внутри общего чата.
+        <aside class="panel">
+          <div class="panel-header-row">
+            <h2>Контекст и память</h2>
+            <button class="mini-btn" type="button">Изменить</button>
           </div>
-        </section>
+          <p class="panel-text">Правая панель с настройками выбранного проекта Gemini.</p>
+
+          <div class="right-section">
+            <h3>Контекст проекта</h3>
+            <div class="info-card">
+              <strong>Роль модели</strong>
+              <span>Аналитик и структурный помощник.</span>
+            </div>
+            <div class="info-card">
+              <strong>Стиль</strong>
+              <span>Логичный, четкий, с акцентом на разбор и структуру.</span>
+            </div>
+          </div>
+
+          <div class="right-section">
+            <h3>Память проекта</h3>
+            <div class="info-card">
+              <strong>Закрепленные правила</strong>
+              <span>Не смешивать данные Gemini с Claude и ChatGPT.</span>
+            </div>
+            <div class="info-card">
+              <strong>Факты проекта</strong>
+              <span>Выводы, логика структуры, промежуточные решения и рабочие принципы.</span>
+            </div>
+          </div>
+
+          <div class="right-section">
+            <h3>История</h3>
+            <div class="info-card">
+              <strong>Быстрый доступ</strong>
+              <span>Позже сюда можно вынести последние аналитические сессии и быстрый поиск.</span>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            Это отдельная среда Gemini, не связанная с Claude и ChatGPT.
+          </div>
+        </aside>
       </div>
     `,
         image: `
