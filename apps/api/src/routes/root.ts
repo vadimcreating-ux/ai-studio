@@ -555,36 +555,159 @@ function renderPage(page: string) {
         </aside>
       </div>
     `,
-        image: `
-      <div class="grid">
-        <section class="card">
-          <h2>Структура модуля Image</h2>
-          <p>Этот модуль будет отвечать за генерацию и редактирование изображений.</p>
-          <div class="module-list">
-            <div class="module-item">
+            image: `
+      <div class="workspace">
+        <aside class="panel">
+          <div class="panel-header-row">
+            <h2>Шаблоны</h2>
+            <button class="mini-btn" type="button">Новый</button>
+          </div>
+          <p class="panel-text">Быстрые сценарии работы внутри модуля Image.</p>
+
+          <div class="project-list">
+            <div class="project-item active-project">
               <strong>Text-to-Image</strong>
-              <span>Создание изображений по текстовому описанию.</span>
+              <span>Создание изображения по текстовому описанию</span>
             </div>
-            <div class="module-item">
+            <div class="project-item">
               <strong>Image Edit</strong>
-              <span>Редактирование уже загруженных изображений.</span>
+              <span>Редактирование загруженного изображения</span>
             </div>
-            <div class="module-item">
-              <strong>История</strong>
-              <span>Список всех прошлых генераций и правок.</span>
+            <div class="project-item">
+              <strong>Product Visual</strong>
+              <span>Шаблон для рекламных и товарных изображений</span>
             </div>
-            <div class="module-item">
-              <strong>Сохранение</strong>
-              <span>Передача результата в Files для дальнейшего использования.</span>
+          </div>
+
+          <div class="subsection">
+            <div class="panel-header-row">
+              <h3>История запусков</h3>
+              <button class="mini-btn" type="button">Все</button>
             </div>
+
+            <div class="dialog-list">
+              <div class="dialog-item active-dialog">
+                <strong>Генерация постера</strong>
+                <span>Запуск: 12 минут назад</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Правка баннера</strong>
+                <span>Запуск: сегодня</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Обложка для гайда</strong>
+                <span>Запуск: вчера</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            Позже здесь появятся фильтры, поиск и список последних изображений.
+          </div>
+        </aside>
+
+        <section class="panel chat-panel">
+          <div class="project-topbar">
+            <div>
+              <div class="project-top-label">Режим работы</div>
+              <div class="project-top-title">Text-to-Image</div>
+            </div>
+            <div class="top-actions">
+              <button class="ghost-btn" type="button">Сохранить шаблон</button>
+              <button class="ghost-btn" type="button">Настройки модели</button>
+            </div>
+          </div>
+
+          <h2>Генерация изображения</h2>
+          <p class="panel-text">Центральная рабочая зона для запуска генерации через KIE API.</p>
+
+          <div class="form-grid">
+            <div class="form-block full-width">
+              <label>Prompt</label>
+              <textarea placeholder="Опишите, какое изображение нужно создать"></textarea>
+            </div>
+
+            <div class="form-block full-width">
+              <label>Negative Prompt</label>
+              <textarea placeholder="Опишите, чего не должно быть в изображении"></textarea>
+            </div>
+
+            <div class="form-block">
+              <label>Размер</label>
+              <select>
+                <option>1024 × 1024</option>
+                <option>1536 × 1024</option>
+                <option>1024 × 1536</option>
+              </select>
+            </div>
+
+            <div class="form-block">
+              <label>Количество</label>
+              <select>
+                <option>1</option>
+                <option>2</option>
+                <option>4</option>
+              </select>
+            </div>
+
+            <div class="form-block">
+              <label>Стиль</label>
+              <select>
+                <option>Photoreal</option>
+                <option>Editorial</option>
+                <option>Cinematic</option>
+              </select>
+            </div>
+
+            <div class="form-block">
+              <label>Модель</label>
+              <select>
+                <option>KIE Image Model</option>
+                <option>Fast Image</option>
+                <option>Edit Model</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button class="primary-btn" type="button">Сгенерировать</button>
+            <button class="ghost-btn" type="button">Очистить</button>
           </div>
         </section>
 
-        <section class="card">
-          <h2>Следующий этап</h2>
-          <p>Сюда позже добавятся форма генерации, загрузка исходников, выбор модели и галерея результатов.</p>
-          <div class="footer-note">Image станет отдельной рабочей зоной для визуального контента.</div>
-        </section>
+        <aside class="panel">
+          <div class="panel-header-row">
+            <h2>Результат</h2>
+            <button class="mini-btn" type="button">Files</button>
+          </div>
+          <p class="panel-text">Правая зона результата и дальнейших действий.</p>
+
+          <div class="result-preview">
+            <div class="result-placeholder">
+              Preview результата появится здесь
+            </div>
+          </div>
+
+          <div class="right-section">
+            <h3>Действия</h3>
+            <div class="info-card">
+              <strong>Сохранить в Files</strong>
+              <span>Передача результата в общую файловую библиотеку.</span>
+            </div>
+            <div class="info-card">
+              <strong>Отправить в Video</strong>
+              <span>Использовать изображение как основу для video-модуля.</span>
+            </div>
+            <div class="info-card">
+              <strong>Повторить генерацию</strong>
+              <span>Повтор запуска с теми же параметрами и prompt.</span>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            Позже здесь появятся реальные превью, download и действия с готовым файлом.
+          </div>
+        </aside>
       </div>
     `,
     video: `
@@ -1109,6 +1232,77 @@ function renderPage(page: string) {
             font-size: 14px;
             line-height: 1.45;
           }
+                    .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .form-block {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+
+          .form-block label {
+            font-size: 14px;
+            color: #d1d5db;
+          }
+
+          .form-block textarea,
+          .form-block select {
+            width: 100%;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: #20242a;
+            color: #f3f4f6;
+            border-radius: 14px;
+            padding: 14px 16px;
+            outline: none;
+            font: inherit;
+          }
+
+          .form-block textarea {
+            min-height: 110px;
+            resize: vertical;
+          }
+
+          .full-width {
+            grid-column: 1 / -1;
+          }
+
+          .action-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 18px;
+            flex-wrap: wrap;
+          }
+
+          .primary-btn {
+            border: 0;
+            border-radius: 14px;
+            background: #2b57d9;
+            color: white;
+            font-weight: 600;
+            padding: 12px 18px;
+            cursor: pointer;
+          }
+
+          .result-preview {
+            margin-bottom: 18px;
+          }
+
+          .result-placeholder {
+            min-height: 260px;
+            border-radius: 18px;
+            background: #20242a;
+            border: 1px dashed rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af;
+            text-align: center;
+            padding: 20px;
+          }
           .card {
             background: #1a1d21;
             border: 1px solid rgba(255,255,255,0.06);
@@ -1163,7 +1357,9 @@ function renderPage(page: string) {
             .app {
               grid-template-columns: 1fr;
             }
-
+            .form-grid {
+              grid-template-columns: 1fr;
+            }
             .sidebar {
               border-right: 0;
               border-bottom: 1px solid rgba(255,255,255,0.08);
