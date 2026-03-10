@@ -1441,7 +1441,7 @@ function renderPage(page: string) {
             ${pageContent}
           </main>
         </div>
-        <script>
+       <script>
   async function initImagePage() {
     const params = new URLSearchParams(window.location.search);
     const currentPage = params.get("page") || "dashboard";
@@ -1473,7 +1473,7 @@ function renderPage(page: string) {
         return;
       }
 
-      resultBox.innerHTML = "Отправка запроса в backend...";
+      resultBox.innerHTML = "Создание задачи в KIE...";
 
       try {
         const response = await fetch("/api/image/generate", {
@@ -1498,19 +1498,71 @@ function renderPage(page: string) {
           return;
         }
 
-        resultBox.innerHTML = \`
-          <div style="text-align:left; width:100%;">
-            <div style="font-weight:700; margin-bottom:10px;">\${data.result.title}</div>
-            <div style="margin-bottom:8px;"><strong>Task ID:</strong> \${data.taskId}</div>
-            <div style="margin-bottom:8px;"><strong>Prompt:</strong> \${data.result.prompt}</div>
-            <div style="margin-bottom:8px;"><strong>Negative Prompt:</strong> \${data.result.negativePrompt || "—"}</div>
-            <div style="margin-bottom:8px;"><strong>Размер:</strong> \${data.result.size}</div>
-            <div style="margin-bottom:8px;"><strong>Количество:</strong> \${data.result.count}</div>
-            <div style="margin-bottom:8px;"><strong>Стиль:</strong> \${data.result.style}</div>
-            <div style="margin-bottom:8px;"><strong>Модель:</strong> \${data.result.model}</div>
-            <div style="margin-top:14px; color:#9ca3af;">\${data.result.previewText}</div>
-          </div>
-        \`;
+        const taskId = data.taskId;
+        resultBox.innerHTML = "Задача создана. Ожидание результата...";
+
+        let attempts = 0;
+        const maxAttempts = 30;
+
+        const poll = async () => {
+          attempts += 1;
+
+          try {
+            const statusResponse = await fetch(
+              "/api/image/status?taskId=" + encodeURIComponent(taskId)
+            );
+
+            const statusData = await statusResponse.json();
+
+            if (!statusResponse.ok || !statusData.ok) {
+              resultBox.innerHTML = statusData.error || "Ошибка проверки статуса";
+              return;
+            }
+
+            if (statusData.status === "GENERATING") {
+              resultBox.innerHTML = "Генерация в KIE... Попытка " + attempts + " из " + maxAttempts;
+
+              if (attempts < maxAttempts) {
+                setTimeout(poll, 3000);
+              } else {
+                resultBox.innerHTML = "Время ожидания истекло. Попробуйте проверить позже.";
+              }
+              return;
+            }
+
+            if (statusData.status === "SUCCESS" && statusData.imageUrl) {
+              resultBox.innerHTML = `
+                <div style="text-align:left; width:100%;">
+                  <div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>
+                  <div style="margin-bottom:8px;"><strong>Task ID:</strong> ${statusData.taskId}</div>
+                  <div style="margin-bottom:8px;"><strong>Статус:</strong> ${statusData.status}</div>
+                  <div style="margin:14px 0;">
+                    <img
+                      src="${statusData.imageUrl}"
+                      alt="Generated image"
+                      style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);"
+                    />
+                  </div>
+                  <div style="margin-bottom:14px;">
+                    <a href="${statusData.imageUrl}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd;">
+                      Открыть результат в новой вкладке
+                    </a>
+                  </div>
+                  <div style="color:#9ca3af;">Следующим шагом можно сохранить изображение в Files и добавить историю генераций.</div>
+                </div>
+              `;
+              return;
+            }
+
+            resultBox.innerHTML =
+              "Ошибка генерации: " +
+              (statusData.errorMessage || statusData.status || "Неизвестная ошибка");
+          } catch (error) {
+            resultBox.innerHTML = "Не удалось проверить статус задачи.";
+          }
+        };
+
+        setTimeout(poll, 2500);
       } catch (error) {
         resultBox.innerHTML = "Не удалось отправить запрос.";
       }
