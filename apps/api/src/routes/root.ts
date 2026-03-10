@@ -1460,13 +1460,13 @@ function renderPage(page: string) {
 
     if (!generateBtn || !resultBox) return;
 
-    generateBtn.addEventListener("click", async () => {
-      const prompt = promptEl?.value?.trim() || "";
-      const negativePrompt = negativePromptEl?.value?.trim() || "";
-      const size = sizeEl?.value || "";
-      const count = countEl?.value || "";
-      const style = styleEl?.value || "";
-      const model = modelEl?.value || "";
+    generateBtn.addEventListener("click", async function () {
+      const prompt = promptEl && "value" in promptEl ? promptEl.value.trim() : "";
+      const negativePrompt = negativePromptEl && "value" in negativePromptEl ? negativePromptEl.value.trim() : "";
+      const size = sizeEl && "value" in sizeEl ? sizeEl.value : "";
+      const count = countEl && "value" in countEl ? countEl.value : "";
+      const style = styleEl && "value" in styleEl ? styleEl.value : "";
+      const model = modelEl && "value" in modelEl ? modelEl.value : "";
 
       if (!prompt) {
         resultBox.innerHTML = "Введите prompt перед запуском генерации.";
@@ -1482,12 +1482,12 @@ function renderPage(page: string) {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            prompt,
-            negativePrompt,
-            size,
-            count,
-            style,
-            model
+            prompt: prompt,
+            negativePrompt: negativePrompt,
+            size: size,
+            count: count,
+            style: style,
+            model: model
           })
         });
 
@@ -1504,7 +1504,7 @@ function renderPage(page: string) {
         let attempts = 0;
         const maxAttempts = 30;
 
-        const poll = async () => {
+        const poll = async function () {
           attempts += 1;
 
           try {
@@ -1531,26 +1531,19 @@ function renderPage(page: string) {
             }
 
             if (statusData.status === "SUCCESS" && statusData.imageUrl) {
-              resultBox.innerHTML = `
-                <div style="text-align:left; width:100%;">
-                  <div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>
-                  <div style="margin-bottom:8px;"><strong>Task ID:</strong> ${statusData.taskId}</div>
-                  <div style="margin-bottom:8px;"><strong>Статус:</strong> ${statusData.status}</div>
-                  <div style="margin:14px 0;">
-                    <img
-                      src="${statusData.imageUrl}"
-                      alt="Generated image"
-                      style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);"
-                    />
-                  </div>
-                  <div style="margin-bottom:14px;">
-                    <a href="${statusData.imageUrl}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd;">
-                      Открыть результат в новой вкладке
-                    </a>
-                  </div>
-                  <div style="color:#9ca3af;">Следующим шагом можно сохранить изображение в Files и добавить историю генераций.</div>
-                </div>
-              `;
+              resultBox.innerHTML =
+                '<div style="text-align:left; width:100%;">' +
+                  '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
+                  '<div style="margin-bottom:8px;"><strong>Task ID:</strong> ' + statusData.taskId + '</div>' +
+                  '<div style="margin-bottom:8px;"><strong>Статус:</strong> ' + statusData.status + '</div>' +
+                  '<div style="margin:14px 0;">' +
+                    '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+                  '</div>' +
+                  '<div style="margin-bottom:14px;">' +
+                    '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="color:#93c5fd;">Открыть результат в новой вкладке</a>' +
+                  '</div>' +
+                  '<div style="color:#9ca3af;">Следующим шагом можно сохранить изображение в Files и добавить историю генераций.</div>' +
+                '</div>';
               return;
             }
 
@@ -1568,11 +1561,13 @@ function renderPage(page: string) {
       }
     });
 
-    clearBtn?.addEventListener("click", () => {
-      if (promptEl) promptEl.value = "";
-      if (negativePromptEl) negativePromptEl.value = "";
-      if (resultBox) resultBox.innerHTML = "Preview результата появится здесь";
-    });
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        if (promptEl && "value" in promptEl) promptEl.value = "";
+        if (negativePromptEl && "value" in negativePromptEl) negativePromptEl.value = "";
+        resultBox.innerHTML = "Preview результата появится здесь";
+      });
+    }
   }
 
   initImagePage();
