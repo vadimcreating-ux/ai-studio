@@ -622,57 +622,57 @@ function renderPage(page: string) {
           <p class="panel-text">Центральная рабочая зона для запуска генерации через KIE API.</p>
 
           <div class="form-grid">
-            <div class="form-block full-width">
-              <label>Prompt</label>
-              <textarea placeholder="Опишите, какое изображение нужно создать"></textarea>
-            </div>
+  <div class="form-block full-width">
+    <label>Prompt</label>
+    <textarea id="image-prompt" placeholder="Опишите, какое изображение нужно создать"></textarea>
+  </div>
 
-            <div class="form-block full-width">
-              <label>Negative Prompt</label>
-              <textarea placeholder="Опишите, чего не должно быть в изображении"></textarea>
-            </div>
+  <div class="form-block full-width">
+    <label>Negative Prompt</label>
+    <textarea id="image-negative-prompt" placeholder="Опишите, чего не должно быть в изображении"></textarea>
+  </div>
 
-            <div class="form-block">
-              <label>Размер</label>
-              <select>
-                <option>1024 × 1024</option>
-                <option>1536 × 1024</option>
-                <option>1024 × 1536</option>
-              </select>
-            </div>
+  <div class="form-block">
+    <label>Размер</label>
+    <select id="image-size">
+      <option>1024 × 1024</option>
+      <option>1536 × 1024</option>
+      <option>1024 × 1536</option>
+    </select>
+  </div>
 
-            <div class="form-block">
-              <label>Количество</label>
-              <select>
-                <option>1</option>
-                <option>2</option>
-                <option>4</option>
-              </select>
-            </div>
+  <div class="form-block">
+    <label>Количество</label>
+    <select id="image-count">
+      <option>1</option>
+      <option>2</option>
+      <option>4</option>
+    </select>
+  </div>
 
-            <div class="form-block">
-              <label>Стиль</label>
-              <select>
-                <option>Photoreal</option>
-                <option>Editorial</option>
-                <option>Cinematic</option>
-              </select>
-            </div>
+  <div class="form-block">
+    <label>Стиль</label>
+    <select id="image-style">
+      <option>Photoreal</option>
+      <option>Editorial</option>
+      <option>Cinematic</option>
+    </select>
+  </div>
 
-            <div class="form-block">
-              <label>Модель</label>
-              <select>
-                <option>KIE Image Model</option>
-                <option>Fast Image</option>
-                <option>Edit Model</option>
-              </select>
-            </div>
-          </div>
+  <div class="form-block">
+    <label>Модель</label>
+    <select id="image-model">
+      <option>KIE Image Model</option>
+      <option>Fast Image</option>
+      <option>Edit Model</option>
+    </select>
+  </div>
+</div>
 
-          <div class="action-row">
-            <button class="primary-btn" type="button">Сгенерировать</button>
-            <button class="ghost-btn" type="button">Очистить</button>
-          </div>
+<div class="action-row">
+  <button class="primary-btn" type="button" id="image-generate-btn">Сгенерировать</button>
+  <button class="ghost-btn" type="button" id="image-clear-btn">Очистить</button>
+</div>
         </section>
 
         <aside class="panel">
@@ -683,10 +683,10 @@ function renderPage(page: string) {
           <p class="panel-text">Правая зона результата и дальнейших действий.</p>
 
           <div class="result-preview">
-            <div class="result-placeholder">
-              Preview результата появится здесь
-            </div>
-          </div>
+  <div class="result-placeholder" id="image-result-box">
+    Preview результата появится здесь
+  </div>
+</div>
 
           <div class="right-section">
             <h3>Действия</h3>
@@ -1441,6 +1441,90 @@ function renderPage(page: string) {
             ${pageContent}
           </main>
         </div>
+        <script>
+  async function initImagePage() {
+    const params = new URLSearchParams(window.location.search);
+    const currentPage = params.get("page") || "dashboard";
+
+    if (currentPage !== "image") return;
+
+    const promptEl = document.getElementById("image-prompt");
+    const negativePromptEl = document.getElementById("image-negative-prompt");
+    const sizeEl = document.getElementById("image-size");
+    const countEl = document.getElementById("image-count");
+    const styleEl = document.getElementById("image-style");
+    const modelEl = document.getElementById("image-model");
+    const generateBtn = document.getElementById("image-generate-btn");
+    const clearBtn = document.getElementById("image-clear-btn");
+    const resultBox = document.getElementById("image-result-box");
+
+    if (!generateBtn || !resultBox) return;
+
+    generateBtn.addEventListener("click", async () => {
+      const prompt = promptEl?.value?.trim() || "";
+      const negativePrompt = negativePromptEl?.value?.trim() || "";
+      const size = sizeEl?.value || "";
+      const count = countEl?.value || "";
+      const style = styleEl?.value || "";
+      const model = modelEl?.value || "";
+
+      if (!prompt) {
+        resultBox.innerHTML = "Введите prompt перед запуском генерации.";
+        return;
+      }
+
+      resultBox.innerHTML = "Отправка запроса в backend...";
+
+      try {
+        const response = await fetch("/api/image/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            prompt,
+            negativePrompt,
+            size,
+            count,
+            style,
+            model
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          resultBox.innerHTML = data.error || "Ошибка запроса";
+          return;
+        }
+
+        resultBox.innerHTML = \`
+          <div style="text-align:left; width:100%;">
+            <div style="font-weight:700; margin-bottom:10px;">\${data.result.title}</div>
+            <div style="margin-bottom:8px;"><strong>Task ID:</strong> \${data.taskId}</div>
+            <div style="margin-bottom:8px;"><strong>Prompt:</strong> \${data.result.prompt}</div>
+            <div style="margin-bottom:8px;"><strong>Negative Prompt:</strong> \${data.result.negativePrompt || "—"}</div>
+            <div style="margin-bottom:8px;"><strong>Размер:</strong> \${data.result.size}</div>
+            <div style="margin-bottom:8px;"><strong>Количество:</strong> \${data.result.count}</div>
+            <div style="margin-bottom:8px;"><strong>Стиль:</strong> \${data.result.style}</div>
+            <div style="margin-bottom:8px;"><strong>Модель:</strong> \${data.result.model}</div>
+            <div style="margin-top:14px; color:#9ca3af;">\${data.result.previewText}</div>
+          </div>
+        \`;
+      } catch (error) {
+        resultBox.innerHTML = "Не удалось отправить запрос.";
+      }
+    });
+
+    clearBtn?.addEventListener("click", () => {
+      if (promptEl) promptEl.value = "";
+      if (negativePromptEl) negativePromptEl.value = "";
+      if (resultBox) resultBox.innerHTML = "Preview результата появится здесь";
+    });
+  }
+
+  initImagePage();
+</script>
       </body>
     </html>
   `;
