@@ -86,41 +86,90 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-    claude: `
-      <div class="grid">
-        <section class="card">
-          <h2>Структура модуля Claude</h2>
-          <p>Этот модуль будет полностью независим от ChatGPT и Gemini.</p>
-          <div class="module-list">
-            <div class="module-item">
-              <strong>Проекты</strong>
-              <span>Отдельные проекты Claude с собственным контекстом.</span>
+        claude: `
+      <div class="workspace">
+        <aside class="panel">
+          <h2>Проекты</h2>
+          <p class="panel-text">Отдельные проекты Claude с собственной историей и памятью.</p>
+
+          <div class="project-list">
+            <div class="project-item active-project">
+              <strong>Бочкари</strong>
+              <span>PR, бренд, тексты, обновление 2026</span>
             </div>
-            <div class="module-item">
-              <strong>Контекст</strong>
-              <span>Инструкции, роль модели, правила и база проекта.</span>
+            <div class="project-item">
+              <strong>Алтай / Гайды</strong>
+              <span>Маршруты, mini guide, master guide</span>
             </div>
-            <div class="module-item">
-              <strong>История</strong>
-              <span>Список всех чатов Claude внутри выбранного проекта.</span>
+            <div class="project-item">
+              <strong>Личный проект</strong>
+              <span>Тестовая рабочая среда Claude</span>
             </div>
-            <div class="module-item">
-              <strong>Память</strong>
-              <span>Постоянные факты и рабочие договоренности только для Claude.</span>
+          </div>
+
+          <div class="footer-note">
+            Позже здесь появятся создание, поиск и фильтрация проектов.
+          </div>
+        </aside>
+
+        <section class="panel chat-panel">
+          <h2>Чат Claude</h2>
+          <p class="panel-text">Независимая среда общения внутри выбранного проекта.</p>
+
+          <div class="chat-box">
+            <div class="message assistant">
+              <div class="message-role">Claude</div>
+              <div class="message-text">
+                Добро пожаловать в модуль Claude. Здесь будет история диалогов,
+                работа по проектам и отдельная память только для Claude.
+              </div>
             </div>
+
+            <div class="message user">
+              <div class="message-role">Вы</div>
+              <div class="message-text">
+                Покажи мне структуру будущего рабочего модуля.
+              </div>
+            </div>
+
+            <div class="message assistant">
+              <div class="message-role">Claude</div>
+              <div class="message-text">
+                В этом модуле будут проекты, список диалогов, центральное окно чата,
+                а справа — контекст проекта, память и настройки.
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <input type="text" placeholder="Поле ввода сообщения появится здесь" />
+            <button type="button">Отправить</button>
           </div>
         </section>
 
-        <section class="card">
-          <h2>Что будет дальше</h2>
-          <p>Следующим этапом сюда можно добавить:</p>
-          <p>— левую колонку с проектами</p>
-          <p>— центральную область чата</p>
-          <p>— правую панель с контекстом и памятью</p>
-          <div class="footer-note">
-            Это будет отдельная рабочая среда для Claude.
+        <aside class="panel">
+          <h2>Контекст и память</h2>
+          <p class="panel-text">Правая панель с настройками выбранного проекта Claude.</p>
+
+          <div class="info-card">
+            <strong>Контекст проекта</strong>
+            <span>Роль модели, системные инструкции, стиль ответов и ограничения.</span>
           </div>
-        </section>
+
+          <div class="info-card">
+            <strong>Память проекта</strong>
+            <span>Закрепленные правила, важные формулировки, факты и рабочие договоренности.</span>
+          </div>
+
+          <div class="info-card">
+            <strong>История чатов</strong>
+            <span>Позже сюда можно вынести список диалогов по проекту и быстрый поиск.</span>
+          </div>
+
+          <div class="footer-note">
+            Это будет отдельная среда Claude, не связанная с ChatGPT и Gemini.
+          </div>
+        </aside>
       </div>
     `,
     chatgpt: `
@@ -513,7 +562,148 @@ function renderPage(page: string) {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 20px;
           }
+          .workspace {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            gap: 20px;
+          }
 
+          .panel {
+            background: #1a1d21;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px;
+            padding: 22px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+          }
+
+          .panel h2 {
+            margin: 0 0 10px;
+            font-size: 22px;
+          }
+
+          .panel-text {
+            margin: 0 0 16px;
+            color: #9ca3af;
+            line-height: 1.5;
+          }
+
+          .project-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          .project-item {
+            background: #20242a;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px;
+            padding: 14px;
+          }
+
+          .project-item strong {
+            display: block;
+            margin-bottom: 6px;
+          }
+
+          .project-item span {
+            color: #9ca3af;
+            font-size: 14px;
+            line-height: 1.4;
+          }
+
+          .active-project {
+            outline: 2px solid #2b57d9;
+          }
+
+          .chat-panel {
+            display: flex;
+            flex-direction: column;
+          }
+
+          .chat-box {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-height: 420px;
+            background: #15181c;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 16px;
+          }
+
+          .message {
+            max-width: 85%;
+            border-radius: 16px;
+            padding: 14px;
+          }
+
+          .message-role {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+          }
+
+          .message-text {
+            line-height: 1.55;
+            color: #e5e7eb;
+          }
+
+          .message.assistant {
+            background: #20242a;
+            align-self: flex-start;
+          }
+
+          .message.user {
+            background: #1e3a8a;
+            align-self: flex-end;
+          }
+
+          .composer {
+            display: grid;
+            grid-template-columns: 1fr 140px;
+            gap: 12px;
+          }
+
+          .composer input {
+            width: 100%;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: #20242a;
+            color: #f3f4f6;
+            border-radius: 14px;
+            padding: 14px 16px;
+            outline: none;
+          }
+
+          .composer button {
+            border: 0;
+            border-radius: 14px;
+            background: #2b57d9;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+          }
+
+          .info-card {
+            background: #20242a;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
+          }
+
+          .info-card strong {
+            display: block;
+            margin-bottom: 6px;
+          }
+
+          .info-card span {
+            color: #9ca3af;
+            font-size: 14px;
+            line-height: 1.45;
+          }
           .card {
             background: #1a1d21;
             border: 1px solid rgba(255,255,255,0.06);
@@ -578,7 +768,13 @@ function renderPage(page: string) {
             .module-list {
               grid-template-columns: 1fr;
             }
+            .workspace {
+              grid-template-columns: 1fr;
+            }
 
+            .composer {
+              grid-template-columns: 1fr;
+            }
             .topbar {
               flex-direction: column;
               align-items: flex-start;
