@@ -86,10 +86,13 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-        claude: `
+           claude: `
       <div class="workspace">
         <aside class="panel">
-          <h2>Проекты</h2>
+          <div class="panel-header-row">
+            <h2>Проекты</h2>
+            <button class="mini-btn" type="button">Новый</button>
+          </div>
           <p class="panel-text">Отдельные проекты Claude с собственной историей и памятью.</p>
 
           <div class="project-list">
@@ -107,12 +110,45 @@ function renderPage(page: string) {
             </div>
           </div>
 
+          <div class="subsection">
+            <div class="panel-header-row">
+              <h3>Диалоги</h3>
+              <button class="mini-btn" type="button">Чат</button>
+            </div>
+
+            <div class="dialog-list">
+              <div class="dialog-item active-dialog">
+                <strong>Новый бренд-пост</strong>
+                <span>Последнее сообщение: 5 минут назад</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Текст для сайта</strong>
+                <span>Последнее сообщение: вчера</span>
+              </div>
+              <div class="dialog-item">
+                <strong>Описание лимонадов</strong>
+                <span>Последнее сообщение: 2 дня назад</span>
+              </div>
+            </div>
+          </div>
+
           <div class="footer-note">
-            Позже здесь появятся создание, поиск и фильтрация проектов.
+            Позже здесь появятся поиск, фильтрация и архив диалогов.
           </div>
         </aside>
 
         <section class="panel chat-panel">
+          <div class="project-topbar">
+            <div>
+              <div class="project-top-label">Текущий проект</div>
+              <div class="project-top-title">Бочкари</div>
+            </div>
+            <div class="top-actions">
+              <button class="ghost-btn" type="button">Настройки проекта</button>
+              <button class="ghost-btn" type="button">Сохранить память</button>
+            </div>
+          </div>
+
           <h2>Чат Claude</h2>
           <p class="panel-text">Независимая среда общения внутри выбранного проекта.</p>
 
@@ -139,6 +175,21 @@ function renderPage(page: string) {
                 а справа — контекст проекта, память и настройки.
               </div>
             </div>
+
+            <div class="message user">
+              <div class="message-role">Вы</div>
+              <div class="message-text">
+                Добавь акцент на то, что данные Claude не должны смешиваться с ChatGPT и Gemini.
+              </div>
+            </div>
+
+            <div class="message assistant">
+              <div class="message-role">Claude</div>
+              <div class="message-text">
+                Принято. Claude будет работать как отдельная среда: свои проекты,
+                свой контекст, своя история, своя память и собственные настройки.
+              </div>
+            </div>
           </div>
 
           <div class="composer">
@@ -148,26 +199,46 @@ function renderPage(page: string) {
         </section>
 
         <aside class="panel">
-          <h2>Контекст и память</h2>
+          <div class="panel-header-row">
+            <h2>Контекст и память</h2>
+            <button class="mini-btn" type="button">Изменить</button>
+          </div>
           <p class="panel-text">Правая панель с настройками выбранного проекта Claude.</p>
 
-          <div class="info-card">
-            <strong>Контекст проекта</strong>
-            <span>Роль модели, системные инструкции, стиль ответов и ограничения.</span>
+          <div class="right-section">
+            <h3>Контекст проекта</h3>
+            <div class="info-card">
+              <strong>Роль модели</strong>
+              <span>PR-редактор и стратег проекта.</span>
+            </div>
+            <div class="info-card">
+              <strong>Стиль</strong>
+              <span>Живой, уверенный, без лишнего пафоса.</span>
+            </div>
           </div>
 
-          <div class="info-card">
-            <strong>Память проекта</strong>
-            <span>Закрепленные правила, важные формулировки, факты и рабочие договоренности.</span>
+          <div class="right-section">
+            <h3>Память проекта</h3>
+            <div class="info-card">
+              <strong>Закрепленные правила</strong>
+              <span>Не смешивать данные Claude с другими чат-модулями.</span>
+            </div>
+            <div class="info-card">
+              <strong>Важные факты</strong>
+              <span>Ключевые формулировки, бренд-контекст, рабочие договоренности.</span>
+            </div>
           </div>
 
-          <div class="info-card">
-            <strong>История чатов</strong>
-            <span>Позже сюда можно вынести список диалогов по проекту и быстрый поиск.</span>
+          <div class="right-section">
+            <h3>История</h3>
+            <div class="info-card">
+              <strong>Быстрый доступ</strong>
+              <span>Позже сюда можно вынести последние чаты, поиск и закрепленные диалоги.</span>
+            </div>
           </div>
 
           <div class="footer-note">
-            Это будет отдельная среда Claude, не связанная с ChatGPT и Gemini.
+            Это отдельная среда Claude, не связанная с ChatGPT и Gemini.
           </div>
         </aside>
       </div>
@@ -580,7 +651,103 @@ function renderPage(page: string) {
             margin: 0 0 10px;
             font-size: 22px;
           }
+          .panel h3 {
+            margin: 0 0 10px;
+            font-size: 16px;
+            color: #d1d5db;
+          }
 
+          .panel-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+          }
+
+          .subsection {
+            margin-top: 18px;
+          }
+
+          .dialog-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .dialog-item {
+            background: #20242a;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px;
+            padding: 12px;
+          }
+
+          .dialog-item strong {
+            display: block;
+            margin-bottom: 6px;
+          }
+
+          .dialog-item span {
+            color: #9ca3af;
+            font-size: 13px;
+            line-height: 1.4;
+          }
+
+          .active-dialog {
+            outline: 1px solid #2b57d9;
+          }
+
+          .mini-btn {
+            border: 1px solid rgba(255,255,255,0.08);
+            background: #20242a;
+            color: #e5e7eb;
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: pointer;
+          }
+
+          .project-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+          }
+
+          .project-top-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #6b7280;
+            margin-bottom: 6px;
+          }
+
+          .project-top-title {
+            font-size: 24px;
+            font-weight: 700;
+          }
+
+          .top-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+          }
+
+          .ghost-btn {
+            border: 1px solid rgba(255,255,255,0.08);
+            background: transparent;
+            color: #d1d5db;
+            border-radius: 12px;
+            padding: 10px 14px;
+            cursor: pointer;
+          }
+
+          .right-section {
+            margin-bottom: 18px;
+          }
           .panel-text {
             margin: 0 0 16px;
             color: #9ca3af;
@@ -774,6 +941,10 @@ function renderPage(page: string) {
 
             .composer {
               grid-template-columns: 1fr;
+            }
+                        .project-topbar {
+              flex-direction: column;
+              align-items: flex-start;
             }
             .topbar {
               flex-direction: column;
