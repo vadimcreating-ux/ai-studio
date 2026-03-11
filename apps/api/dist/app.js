@@ -19,12 +19,10 @@ export function buildApp() {
         app.register(fastifyStatic, {
             root: webDistPath,
             prefix: "/",
-            // Не перехватываем /api и /health
-            decorateReply: false,
         });
-        // Все остальные маршруты → index.html (для React Router)
+        // Все маршруты которые не нашли файл → отдаём index.html (React Router)
         app.setNotFoundHandler((_req, reply) => {
-            reply.sendFile("index.html", webDistPath);
+            reply.sendFile("index.html");
         });
     }
     else {
