@@ -10,32 +10,30 @@ type Props = {
 export default function ChatMessage({ message, engineLabel }: Props) {
   const isUser = message.role === "user";
 
-  return (
-    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"} mb-4`}>
-      {/* Role label */}
-      <div className={`text-[10px] font-semibold tracking-wider mb-1 ${
-        isUser ? "text-blue-400 pr-1" : "text-muted pl-1"
-      }`}>
-        {isUser ? "ВЫ" : engineLabel.toUpperCase()}
-      </div>
-
-      {/* Bubble */}
-      <div
-        className={`max-w-[85%] rounded-xl px-4 py-3 text-[13px] leading-relaxed ${
-          isUser
-            ? "bg-user-msg text-white rounded-br-sm"
-            : "bg-ai-msg text-[#e6edf3] rounded-bl-sm"
-        }`}
-      >
-        {isUser ? (
+  if (isUser) {
+    return (
+      <div className="flex flex-col items-end mb-5">
+        <span className="text-[10px] font-semibold tracking-widest text-blue-400 mb-1.5 pr-1">
+          ВЫ
+        </span>
+        <div className="max-w-[62%] bg-[#1d4ed8] rounded-2xl rounded-br-sm px-4 py-3 text-[13px] text-white leading-relaxed">
           <span className="whitespace-pre-wrap">{message.content}</span>
-        ) : (
-          <div className="prose-chat">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
-          </div>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-start mb-5">
+      <span className="text-[10px] font-semibold tracking-widest text-muted mb-1.5 pl-1">
+        {engineLabel.toUpperCase()}
+      </span>
+      <div className="w-full bg-[#161b22] border border-[#21262d] rounded-xl px-4 py-3 text-[13px] text-[#c9d1d9] leading-relaxed">
+        <div className="prose-chat">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
+        </div>
       </div>
     </div>
   );

@@ -13,12 +13,7 @@ type Props = {
   defaultModel: string;
 };
 
-export default function ChatModule({
-  engine,
-  engineLabel,
-  engineDescription,
-  defaultModel,
-}: Props) {
+export default function ChatModule({ engine, engineLabel, engineDescription, defaultModel }: Props) {
   const qc = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
@@ -36,48 +31,46 @@ export default function ChatModule({
     setSelectedChat(null);
   }, []);
 
-  const handleSelectChat = useCallback((chat: Chat) => {
-    setSelectedChat(chat);
-  }, []);
-
-  const handleNewChat = useCallback(() => {
-    setSelectedChat(null);
-  }, []);
-
+  const handleSelectChat = useCallback((chat: Chat) => setSelectedChat(chat), []);
+  const handleNewChat = useCallback(() => setSelectedChat(null), []);
   const handleProjectUpdated = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["projects", engine] });
   }, [qc, engine]);
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Column 2: Projects + Dialogs */}
-      <ProjectsPanel
-        engine={engine}
-        engineLabel={engineLabel}
-        engineDescription={engineDescription}
-        selectedProjectId={selectedProjectId}
-        selectedChatId={selectedChat?.id ?? null}
-        onSelectProject={handleSelectProject}
-        onSelectChat={handleSelectChat}
-        onNewChat={handleNewChat}
-        defaultModel={defaultModel}
-      />
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Top header */}
+      <div className="px-6 pt-4 pb-3 border-b border-border shrink-0">
+        <h1 className="text-[22px] font-semibold text-white leading-tight">{engineLabel}</h1>
+        <p className="text-[13px] text-muted mt-0.5">{engineDescription}</p>
+      </div>
 
-      {/* Column 3: Chat area */}
-      <ChatView
-        chat={selectedChat}
-        project={selectedProject}
-        engineLabel={engineLabel}
-        engineDescription={engineDescription}
-        onProjectUpdated={handleProjectUpdated}
-      />
-
-      {/* Column 4: Context & Memory */}
-      <ContextPanel
-        project={selectedProject}
-        engine={engine}
-        engineLabel={engineLabel}
-      />
+      {/* 3 columns */}
+      <div className="flex flex-1 overflow-hidden">
+        <ProjectsPanel
+          engine={engine}
+          engineLabel={engineLabel}
+          engineDescription={engineDescription}
+          selectedProjectId={selectedProjectId}
+          selectedChatId={selectedChat?.id ?? null}
+          onSelectProject={handleSelectProject}
+          onSelectChat={handleSelectChat}
+          onNewChat={handleNewChat}
+          defaultModel={defaultModel}
+        />
+        <ChatView
+          chat={selectedChat}
+          project={selectedProject}
+          engineLabel={engineLabel}
+          engineDescription={engineDescription}
+          onProjectUpdated={handleProjectUpdated}
+        />
+        <ContextPanel
+          project={selectedProject}
+          engine={engine}
+          engineLabel={engineLabel}
+        />
+      </div>
     </div>
   );
 }
