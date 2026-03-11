@@ -9,6 +9,7 @@ export type FileItem = {
   url: string;
   createdAt: string;
   source: "kie";
+  prompt: string | null;
 };
 
 function mapRowToFileItem(row: any): FileItem {
@@ -23,16 +24,18 @@ function mapRowToFileItem(row: any): FileItem {
         ? row.created_at.toISOString()
         : String(row.created_at),
     source: row.source,
+    prompt: row.prompt ?? null,
   };
 }
 
 export async function saveImageToFiles(data: {
   taskId: string;
   url: string;
+  prompt?: string;
 }): Promise<FileItem> {
   const existing = await dbQuery(
     `
-      SELECT id, task_id, type, name, url, created_at, source
+      SELECT id, task_id, type, name, url, created_at, source, prompt
       FROM files
       WHERE task_id = $1
       LIMIT 1
@@ -49,12 +52,12 @@ export async function saveImageToFiles(data: {
 
   const inserted = await dbQuery(
     `
-      INSERT INTO files (id, task_id, type, name, url, created_at, source)
-      VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+      INSERT INTO files (id, task_id, type, name, url, created_at, source, prompt)
+      VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)
       ON CONFLICT (task_id) DO NOTHING
-      RETURNING id, task_id, type, name, url, created_at, source
+      RETURNING id, task_id, type, name, url, created_at, source, prompt
     `,
-    [id, data.taskId, "image", name, data.url, "kie"]
+    [id, data.taskId, "image", name, data.url, "kie", data.prompt || null]
   );
 
   if (inserted.rows[0]) {
@@ -63,7 +66,7 @@ export async function saveImageToFiles(data: {
 
   const fallback = await dbQuery(
     `
-      SELECT id, task_id, type, name, url, created_at, source
+      SELECT id, task_id, type, name, url, created_at, source, prompt
       FROM files
       WHERE task_id = $1
       LIMIT 1
@@ -77,7 +80,7 @@ export async function saveImageToFiles(data: {
 export async function getFiles(): Promise<FileItem[]> {
   const result = await dbQuery(
     `
-      SELECT id, task_id, type, name, url, created_at, source
+      SELECT id, task_id, type, name, url, created_at, source, prompt
       FROM files
       ORDER BY created_at DESC
     `
@@ -85,6 +88,7 @@ export async function getFiles(): Promise<FileItem[]> {
 
   return result.rows.map(mapRowToFileItem);
 }
+
 export async function deleteFileById(id: string): Promise<boolean> {
   const result = await dbQuery(
     `
