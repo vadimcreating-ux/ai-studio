@@ -9,7 +9,8 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "fastify": "^5.0.0"
+    "fastify": "...",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
