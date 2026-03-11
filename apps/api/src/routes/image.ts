@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { saveImageToFiles } from '../lib/files-store'
+import { saveImageToFiles, getFiles } from '../lib/files-store'
 const KIE_BASE_URL = "https://api.kie.ai";
 
 export async function imageRoutes(app: FastifyInstance) {
@@ -130,7 +130,7 @@ if (successFlag === 1 && resultImageUrl) {
     url: resultImageUrl,
   });
 }
-      return {
+            return {
         ok: true,
         taskId: data.taskId,
         successFlag,
@@ -151,5 +151,12 @@ if (successFlag === 1 && resultImageUrl) {
         error: "Не удалось проверить статус в KIE"
       });
     }
+  });
+
+  app.get("/api/files", async () => {
+    return {
+      ok: true,
+      files: getFiles(),
+    };
   });
 }
