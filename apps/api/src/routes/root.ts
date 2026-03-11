@@ -689,20 +689,20 @@ function renderPage(page: string) {
 </div>
 
           <div class="right-section">
-            <h3>Действия</h3>
-            <div class="info-card">
-              <strong>Сохранить в Files</strong>
-              <span>Передача результата в общую файловую библиотеку.</span>
-            </div>
-            <div class="info-card">
-              <strong>Отправить в Video</strong>
-              <span>Использовать изображение как основу для video-модуля.</span>
-            </div>
-            <div class="info-card">
-              <strong>Повторить генерацию</strong>
-              <span>Повтор запуска с теми же параметрами и prompt.</span>
-            </div>
-          </div>
+  <h3>Действия</h3>
+  <a class="info-card info-card-link" href="/?page=files">
+    <strong>Открыть Files</strong>
+    <span>Перейти в общую файловую библиотеку.</span>
+  </a>
+  <div class="info-card">
+    <strong>Отправить в Video</strong>
+    <span>Использовать изображение как основу для video-модуля.</span>
+  </div>
+  <div class="info-card">
+    <strong>Повторить генерацию</strong>
+    <span>Повтор запуска с теми же параметрами и prompt.</span>
+  </div>
+</div>
 
           <div class="footer-note">
             Позже здесь появятся реальные превью, download и действия с готовым файлом.
