@@ -35,4 +35,11 @@ export async function ensureFilesTable() {
   `).catch(() => {
     // ограничение уже существует — это нормально
   });
+
+  await dbQuery(`
+    ALTER TABLE files
+    ADD COLUMN prompt TEXT
+  `).catch(() => {
+    // колонка уже существует — это нормально
+  });
 }
