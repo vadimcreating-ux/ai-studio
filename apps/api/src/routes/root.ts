@@ -1541,18 +1541,18 @@ function renderPage(page: string) {
 
             if (statusData.status === "SUCCESS" && statusData.imageUrl) {
   resultBox.innerHTML =
-    '<div style="text-align:left; width:100%;">' +
-      '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
-      '<div style="margin:14px 0;">' +
-        '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
-      '</div>' +
-      '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">' +
-        '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
-        '<a href="' + statusData.imageUrl + '" download style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
-      '</div>' +
-      '<div style="color:#9ca3af;">Следующим шагом можно сохранить изображение в Files и добавить историю генераций.</div>' +
-    '</div>';
-  return;
+ '<div style="text-align:left; width:100%;">' +
+  '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
+  '<div style="margin:14px 0;">' +
+    '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+  '</div>' +
+  '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">' +
+    '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
+    '<a href="/api/image/download?url=' + encodeURIComponent(statusData.imageUrl) + '&name=' + encodeURIComponent("generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
+  '</div>' +
+  '<div style="color:#9ca3af;">Следующим шагом можно сохранить изображение в Files и добавить историю генераций.</div>' +
+'</div>';
+return;
 }
 
             resultBox.innerHTML =
