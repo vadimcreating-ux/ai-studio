@@ -97,7 +97,7 @@ function renderPage(page: string) {
             <div class="panel-text">Загрузка...</div>
           </div>
           <div class="footer-note">
-            Модель: <span id="claude-model-name">gpt-5-2</span>
+            Модель: <span id="claude-model-name">claude-opus-4-5</span>
           </div>
         </aside>
 
@@ -137,10 +137,12 @@ function renderPage(page: string) {
             <div class="info-card">
               <strong>Текущая модель</strong>
               <select id="claude-model-select" style="width:100%;margin-top:6px;padding:6px;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:6px;" onchange="claudeSetModel(this.value)">
+                <option value="claude-opus-4-5">Claude Opus 4.5</option>
+                <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
                 <option value="gpt-5-2">GPT-5-2</option>
-                <option value="claude-opus-4-6">Claude Opus 4.6</option>
-                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
                 <option value="gemini-2-5-pro">Gemini 2.5 Pro</option>
+                <option value="gemini-2-5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-3-pro">Gemini 3 Pro</option>
               </select>
             </div>
           </div>
@@ -160,7 +162,7 @@ function renderPage(page: string) {
       <script>
       (function() {
         var currentChatId = null;
-        var currentModel = 'gpt-5-2';
+        var currentModel = 'claude-opus-4-5';
 
         window.claudeSetModel = function(model) {
           currentModel = model;
