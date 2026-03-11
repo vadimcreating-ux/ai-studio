@@ -1220,7 +1220,17 @@ function renderPage(page: string) {
             padding: 14px;
             margin-bottom: 12px;
           }
+.info-card-link {
+  display: block;
+  text-decoration: none;
+  color: #e5e7eb;
+  cursor: pointer;
+}
 
+.info-card-link:hover {
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+}
           .info-card strong {
             display: block;
             margin-bottom: 6px;
