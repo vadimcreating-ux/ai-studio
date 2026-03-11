@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { saveImageToFiles, getFiles } from "../lib/files-store.js";
+import {
+  saveImageToFiles,
+  getFiles,
+  deleteFileById,
+} from "../lib/files-store.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
@@ -202,6 +206,38 @@ export async function imageRoutes(app: FastifyInstance) {
     }
   });
 
+    app.delete("/api/files/:id", async (request, reply) => {
+    const params = request.params as { id?: string };
+    const id = params?.id?.trim();
+
+    if (!id) {
+      return reply.status(400).send({
+        ok: false,
+        error: "Не передан id файла",
+      });
+    }
+
+    try {
+      const deleted = await deleteFileById(id);
+
+      if (!deleted) {
+        return reply.status(404).send({
+          ok: false,
+          error: "Файл не найден",
+        });
+      }
+
+      return {
+        ok: true,
+        id,
+      };
+    } catch (error) {
+      return reply.status(500).send({
+        ok: false,
+        error: "Не удалось удалить файл",
+      });
+    }
+  });
   app.get("/api/files", async () => {
     return {
       ok: true,
