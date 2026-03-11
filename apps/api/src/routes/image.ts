@@ -6,7 +6,7 @@ import {
 } from "../lib/files-store.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
-
+const imagePromptStore = new Map<string, string>();
 export async function imageRoutes(app: FastifyInstance) {
   app.post("/api/image/generate", async (request, reply) => {
     const body = request.body as {
@@ -76,7 +76,7 @@ export async function imageRoutes(app: FastifyInstance) {
           error: createData?.msg || "KIE не вернул taskId",
         });
       }
-
+imagePromptStore.set(createData.data.taskId, prompt);
       return {
         ok: true,
         taskId: createData.data.taskId,
