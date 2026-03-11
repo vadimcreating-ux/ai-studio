@@ -806,38 +806,21 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-    files: `
-      <div class="grid">
-        <section class="card">
-          <h2>Структура модуля Files</h2>
-          <p>Files будет общей библиотекой файлов и результатов для всех модулей.</p>
-          <div class="module-list">
-            <div class="module-item">
-              <strong>Изображения</strong>
-              <span>Результаты из Image и загруженные исходники.</span>
-            </div>
-            <div class="module-item">
-              <strong>Видео</strong>
-              <span>Ролики из Video и Avatar.</span>
-            </div>
-            <div class="module-item">
-              <strong>Аудио</strong>
-              <span>Треки и озвучка из Audio.</span>
-            </div>
-            <div class="module-item">
-              <strong>Повторное использование</strong>
-              <span>Передача файлов между всеми вкладками.</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Назначение</h2>
-          <p>Files станет общей точкой обмена данными между Image, Video, Audio и Avatar.</p>
-          <div class="footer-note">Именно здесь будет находиться единая галерея результатов.</div>
-        </section>
+   files: `
+  <div class="grid">
+    <section class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
+        <div>
+          <h2 style="margin:0 0 8px;">Files</h2>
+          <p style="margin:0; color:#9ca3af;">Реальная библиотека результатов из модулей.</p>
+        </div>
+        <button class="primary-btn" type="button" id="files-refresh-btn">Обновить</button>
       </div>
-    `,
+
+      <div id="files-list">Загрузка файлов...</div>
+    </section>
+  </div>
+`,
     settings: `
       <div class="grid">
         <section class="card">
@@ -1569,8 +1552,69 @@ function renderPage(page: string) {
       });
     }
   }
+<script>
+  async function initFilesPage() {
+    const params = new URLSearchParams(window.location.search);
+    const currentPage = params.get("page") || "dashboard";
 
+    if (currentPage !== "files") return;
+
+    const listEl = document.getElementById("files-list");
+    const refreshBtn = document.getElementById("files-refresh-btn");
+
+    if (!listEl) return;
+
+    const loadFiles = async function () {
+      listEl.innerHTML = "Загрузка файлов...";
+
+      try {
+        const response = await fetch("/api/files");
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          listEl.innerHTML = data.error || "Не удалось загрузить файлы.";
+          return;
+        }
+
+        const files = Array.isArray(data.files) ? data.files : [];
+
+        if (!files.length) {
+          listEl.innerHTML = "Пока нет сохранённых файлов.";
+          return;
+        }
+
+        listEl.innerHTML = files.map(function (file) {
+          return (
+            '<div style="background:#20242a; border:1px solid rgba(255,255,255,0.05); border-radius:16px; padding:16px; margin-bottom:14px;">' +
+              '<div style="font-weight:700; margin-bottom:10px;">' + (file.name || "Без имени") + '</div>' +
+              '<div style="color:#9ca3af; font-size:14px; margin-bottom:8px;"><strong>Тип:</strong> ' + (file.type || "-") + '</div>' +
+              '<div style="color:#9ca3af; font-size:14px; margin-bottom:8px;"><strong>Источник:</strong> ' + (file.source || "-") + '</div>' +
+              '<div style="color:#9ca3af; font-size:14px; margin-bottom:14px;"><strong>Создан:</strong> ' + (file.createdAt || "-") + '</div>' +
+              (
+                file.url
+                  ? '<div style="margin-bottom:14px;">' +
+                      '<img src="' + file.url + '" alt="' + (file.name || "file") + '" style="width:100%; max-width:420px; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+                    '</div>' +
+                    '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="color:#93c5fd;">Открыть файл</a>'
+                  : '<div style="color:#9ca3af;">URL файла отсутствует</div>'
+              ) +
+            '</div>'
+          );
+        }).join("");
+      } catch (error) {
+        listEl.innerHTML = "Не удалось загрузить файлы.";
+      }
+    };
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", loadFiles);
+    }
+
+    loadFiles();
+  }
+</script>
   initImagePage();
+initFilesPage();
 </script>
       </body>
     </html>
