@@ -1469,101 +1469,144 @@ function renderPage(page: string) {
 
     if (!generateBtn || !resultBox) return;
 
-    generateBtn.addEventListener("click", async function () {
-      const prompt = promptEl && "value" in promptEl ? promptEl.value.trim() : "";
-      const negativePrompt = negativePromptEl && "value" in negativePromptEl ? negativePromptEl.value.trim() : "";
-      const size = sizeEl && "value" in sizeEl ? sizeEl.value : "";
-      const count = countEl && "value" in countEl ? countEl.value : "";
-      const style = styleEl && "value" in styleEl ? styleEl.value : "";
-      const model = modelEl && "value" in modelEl ? modelEl.value : "";
+   generateBtn.addEventListener("click", async function () {
+  const prompt = promptEl && "value" in promptEl ? promptEl.value.trim() : "";
+  const negativePrompt = negativePromptEl && "value" in negativePromptEl ? negativePromptEl.value.trim() : "";
+  const size = sizeEl && "value" in sizeEl ? sizeEl.value : "";
+  const count = countEl && "value" in countEl ? countEl.value : "";
+  const style = styleEl && "value" in styleEl ? styleEl.value : "";
+  const model = modelEl && "value" in modelEl ? modelEl.value : "";
 
-      if (!prompt) {
-        resultBox.innerHTML = "Введите prompt перед запуском генерации.";
-        return;
-      }
+  if (!prompt) {
+    resultBox.innerHTML = "Введите prompt перед запуском генерации.";
+    return;
+  }
 
-      resultBox.innerHTML = "Создание задачи в KIE...";
+  const originalText = generateBtn.textContent || "Сгенерировать";
+  generateBtn.disabled = true;
+  generateBtn.textContent = "Генерация...";
+  generateBtn.style.opacity = "0.7";
+  generateBtn.style.cursor = "default";
+
+  resultBox.innerHTML = "Создание задачи в KIE...";
+
+  try {
+    const response = await fetch("/api/image/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        prompt: prompt,
+        negativePrompt: negativePrompt,
+        size: size,
+        count: count,
+        style: style,
+        model: model
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      resultBox.innerHTML = data.error || "Ошибка запроса";
+      generateBtn.disabled = false;
+      generateBtn.textContent = originalText;
+      generateBtn.style.opacity = "1";
+      generateBtn.style.cursor = "pointer";
+      return;
+    }
+
+    const taskId = data.taskId;
+    resultBox.innerHTML = "Задача создана. Ожидание результата...";
+
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    const poll = async function () {
+      attempts += 1;
 
       try {
-        const response = await fetch("/api/image/generate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            prompt: prompt,
-            negativePrompt: negativePrompt,
-            size: size,
-            count: count,
-            style: style,
-            model: model
-          })
-        });
+        const statusResponse = await fetch(
+          "/api/image/status?taskId=" + encodeURIComponent(taskId)
+        );
 
-        const data = await response.json();
+        const statusData = await statusResponse.json();
 
-        if (!response.ok || !data.ok) {
-          resultBox.innerHTML = data.error || "Ошибка запроса";
+        if (!statusResponse.ok || !statusData.ok) {
+          resultBox.innerHTML = statusData.error || "Ошибка проверки статуса";
+          generateBtn.disabled = false;
+          generateBtn.textContent = originalText;
+          generateBtn.style.opacity = "1";
+          generateBtn.style.cursor = "pointer";
           return;
         }
 
-        const taskId = data.taskId;
-        resultBox.innerHTML = "Задача создана. Ожидание результата...";
+        if (statusData.status === "GENERATING") {
+          resultBox.innerHTML =
+            "Генерация в KIE... Попытка " + attempts + " из " + maxAttempts;
 
-        let attempts = 0;
-        const maxAttempts = 30;
-
-        const poll = async function () {
-          attempts += 1;
-
-          try {
-            const statusResponse = await fetch(
-              "/api/image/status?taskId=" + encodeURIComponent(taskId)
-            );
-
-            const statusData = await statusResponse.json();
-
-            if (!statusResponse.ok || !statusData.ok) {
-              resultBox.innerHTML = statusData.error || "Ошибка проверки статуса";
-              return;
-            }
-
-            if (statusData.status === "GENERATING") {
-              resultBox.innerHTML =
-                "Генерация в KIE... Попытка " + attempts + " из " + maxAttempts;
-
-              if (attempts < maxAttempts) {
-                setTimeout(poll, 3000);
-              } else {
-                resultBox.innerHTML =
-                  "Время ожидания истекло. Попробуйте проверить позже.";
-              }
-              return;
-            }
-
-            if (statusData.status === "SUCCESS" && statusData.imageUrl) {
-              resultBox.innerHTML =
-                '<div style="text-align:left; width:100%;">' +
-                  '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
-                  '<div style="margin:14px 0;">' +
-                    '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
-                  '</div>' +
-                  '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">' +
-                    '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
-                    '<a href="/api/image/download?url=' + encodeURIComponent(statusData.imageUrl) + '&name=' + encodeURIComponent("generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
-                  '</div>' +
-                  '<div style="color:#9ca3af;">Изображение уже автоматически сохранено в Files.</div>' +
-                '</div>';
-              return;
-            }
-
+          if (attempts < maxAttempts) {
+            setTimeout(poll, 3000);
+          } else {
             resultBox.innerHTML =
-              "Ошибка генерации: " +
-              (statusData.errorMessage || statusData.status || "Неизвестная ошибка");
-          } catch (error) {
-            resultBox.innerHTML = "Не удалось проверить статус задачи.";
+              "Время ожидания истекло. Попробуйте проверить позже.";
+
+            generateBtn.disabled = false;
+            generateBtn.textContent = originalText;
+            generateBtn.style.opacity = "1";
+            generateBtn.style.cursor = "pointer";
           }
-        };
+          return;
+        }
+
+        if (statusData.status === "SUCCESS" && statusData.imageUrl) {
+          resultBox.innerHTML =
+            '<div style="text-align:left; width:100%;">' +
+              '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
+              '<div style="margin:14px 0;">' +
+                '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+              '</div>' +
+              '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">' +
+                '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
+                '<a href="/api/image/download?url=' + encodeURIComponent(statusData.imageUrl) + '&name=' + encodeURIComponent("generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
+              '</div>' +
+              '<div style="color:#9ca3af;">Изображение уже автоматически сохранено в Files.</div>' +
+            '</div>';
+
+          generateBtn.disabled = false;
+          generateBtn.textContent = originalText;
+          generateBtn.style.opacity = "1";
+          generateBtn.style.cursor = "pointer";
+          return;
+        }
+
+        resultBox.innerHTML =
+          "Ошибка генерации: " +
+          (statusData.errorMessage || statusData.status || "Неизвестная ошибка");
+
+        generateBtn.disabled = false;
+        generateBtn.textContent = originalText;
+        generateBtn.style.opacity = "1";
+        generateBtn.style.cursor = "pointer";
+      } catch (error) {
+        resultBox.innerHTML = "Не удалось проверить статус задачи.";
+        generateBtn.disabled = false;
+        generateBtn.textContent = originalText;
+        generateBtn.style.opacity = "1";
+        generateBtn.style.cursor = "pointer";
+      }
+    };
+
+    setTimeout(poll, 2500);
+  } catch (error) {
+    resultBox.innerHTML = "Не удалось отправить запрос.";
+    generateBtn.disabled = false;
+    generateBtn.textContent = originalText;
+    generateBtn.style.opacity = "1";
+    generateBtn.style.cursor = "pointer";
+  }
+});
 
         setTimeout(poll, 2500);
       } catch (error) {
