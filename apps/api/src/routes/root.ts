@@ -1636,10 +1636,13 @@ return;
       '<div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">' +
         '<div style="color:#9ca3af; font-size:13px;">Создан: ' + createdAt + '</div>' +
         (
-          file.url
-            ? '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Открыть файл</a>'
-            : '<div style="color:#9ca3af; font-size:13px;">URL файла отсутствует</div>'
-        ) +
+  file.url
+    ? '<div style="display:flex; flex-wrap:wrap; gap:10px;">' +
+        '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
+        '<a href="/api/image/download?url=' + encodeURIComponent(file.url) + '&name=' + encodeURIComponent(file.name || "generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
+      '</div>'
+    : '<div style="color:#9ca3af; font-size:13px;">URL файла отсутствует</div>'
+) +
       '</div>' +
     '</div>'
   );
