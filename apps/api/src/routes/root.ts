@@ -1469,7 +1469,7 @@ function renderPage(page: string) {
 
     if (!generateBtn || !resultBox) return;
 
-   generateBtn.addEventListener("click", async function () {
+  generateBtn.addEventListener("click", async function () {
   const prompt = promptEl && "value" in promptEl ? promptEl.value.trim() : "";
   const negativePrompt = negativePromptEl && "value" in negativePromptEl ? negativePromptEl.value.trim() : "";
   const size = sizeEl && "value" in sizeEl ? sizeEl.value : "";
@@ -1481,12 +1481,6 @@ function renderPage(page: string) {
     resultBox.innerHTML = "Введите prompt перед запуском генерации.";
     return;
   }
-
-  const originalText = generateBtn.textContent || "Сгенерировать";
-  generateBtn.disabled = true;
-  generateBtn.textContent = "Генерация...";
-  generateBtn.style.opacity = "0.7";
-  generateBtn.style.cursor = "default";
 
   resultBox.innerHTML = "Создание задачи в KIE...";
 
@@ -1510,10 +1504,6 @@ function renderPage(page: string) {
 
     if (!response.ok || !data.ok) {
       resultBox.innerHTML = data.error || "Ошибка запроса";
-      generateBtn.disabled = false;
-      generateBtn.textContent = originalText;
-      generateBtn.style.opacity = "1";
-      generateBtn.style.cursor = "pointer";
       return;
     }
 
@@ -1535,10 +1525,6 @@ function renderPage(page: string) {
 
         if (!statusResponse.ok || !statusData.ok) {
           resultBox.innerHTML = statusData.error || "Ошибка проверки статуса";
-          generateBtn.disabled = false;
-          generateBtn.textContent = originalText;
-          generateBtn.style.opacity = "1";
-          generateBtn.style.cursor = "pointer";
           return;
         }
 
@@ -1551,11 +1537,6 @@ function renderPage(page: string) {
           } else {
             resultBox.innerHTML =
               "Время ожидания истекло. Попробуйте проверить позже.";
-
-            generateBtn.disabled = false;
-            generateBtn.textContent = originalText;
-            generateBtn.style.opacity = "1";
-            generateBtn.style.cursor = "pointer";
           }
           return;
         }
@@ -1573,47 +1554,22 @@ function renderPage(page: string) {
               '</div>' +
               '<div style="color:#9ca3af;">Изображение уже автоматически сохранено в Files.</div>' +
             '</div>';
-
-          generateBtn.disabled = false;
-          generateBtn.textContent = originalText;
-          generateBtn.style.opacity = "1";
-          generateBtn.style.cursor = "pointer";
           return;
         }
 
         resultBox.innerHTML =
           "Ошибка генерации: " +
           (statusData.errorMessage || statusData.status || "Неизвестная ошибка");
-
-        generateBtn.disabled = false;
-        generateBtn.textContent = originalText;
-        generateBtn.style.opacity = "1";
-        generateBtn.style.cursor = "pointer";
       } catch (error) {
         resultBox.innerHTML = "Не удалось проверить статус задачи.";
-        generateBtn.disabled = false;
-        generateBtn.textContent = originalText;
-        generateBtn.style.opacity = "1";
-        generateBtn.style.cursor = "pointer";
       }
     };
 
     setTimeout(poll, 2500);
   } catch (error) {
     resultBox.innerHTML = "Не удалось отправить запрос.";
-    generateBtn.disabled = false;
-    generateBtn.textContent = originalText;
-    generateBtn.style.opacity = "1";
-    generateBtn.style.cursor = "pointer";
   }
 });
-
-        setTimeout(poll, 2500);
-      } catch (error) {
-        resultBox.innerHTML = "Не удалось отправить запрос.";
-      }
-    });
-
     if (clearBtn) {
       clearBtn.addEventListener("click", function () {
         if (promptEl && "value" in promptEl) promptEl.value = "";
