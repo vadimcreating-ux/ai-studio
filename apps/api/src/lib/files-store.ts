@@ -85,3 +85,14 @@ export async function getFiles(): Promise<FileItem[]> {
 
   return result.rows.map(mapRowToFileItem);
 }
+export async function deleteFileById(id: string): Promise<boolean> {
+  const result = await dbQuery(
+    `
+      DELETE FROM files
+      WHERE id = $1
+    `,
+    [id]
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
