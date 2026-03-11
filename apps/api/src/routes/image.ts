@@ -72,7 +72,7 @@ export async function imageRoutes(app: FastifyInstance) {
   ok: true,
   taskId: createData.data.taskId,
   mode: "kie",
-  debugVersion: "image-route-v2"
+  debugVersion: "image-route-v3-files"
 };
     } catch (error) {
       return reply.status(500).send({
