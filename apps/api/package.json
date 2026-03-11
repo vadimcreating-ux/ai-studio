@@ -9,7 +9,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "fastify": "...",
+    "fastify": "^5.0.0",
     "pg": "^8.20.0"
   },
   "devDependencies": {
