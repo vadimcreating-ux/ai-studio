@@ -15,3 +15,17 @@ export const pool = new Pool({
 export async function dbQuery(text: string, params: unknown[] = []) {
   return pool.query(text, params);
 }
+
+export async function ensureFilesTable() {
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS files (
+      id UUID PRIMARY KEY,
+      task_id TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      source TEXT NOT NULL
+    );
+  `);
+}
