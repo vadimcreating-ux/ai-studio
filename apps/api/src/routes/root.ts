@@ -1650,7 +1650,7 @@ function renderPage(page: string) {
             '</div>'
           );
         }).join("");
-        const deleteButtons = listEl.querySelectorAll(".file-delete-btn");
+       const deleteButtons = listEl.querySelectorAll(".file-delete-btn");
 
 deleteButtons.forEach(function (button) {
   button.addEventListener("click", async function () {
@@ -1666,6 +1666,12 @@ deleteButtons.forEach(function (button) {
       return;
     }
 
+    const originalText = button.textContent || "Удалить";
+    button.disabled = true;
+    button.textContent = "Удаление...";
+    button.style.opacity = "0.7";
+    button.style.cursor = "default";
+
     try {
       const response = await fetch("/api/files/" + encodeURIComponent(fileId), {
         method: "DELETE"
@@ -1679,6 +1685,11 @@ deleteButtons.forEach(function (button) {
 
       await loadFiles();
     } catch (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      button.style.opacity = "1";
+      button.style.cursor = "pointer";
+
       alert(error && error.message ? error.message : "Не удалось удалить файл");
     }
   });
