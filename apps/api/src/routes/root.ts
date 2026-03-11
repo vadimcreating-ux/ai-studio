@@ -1639,7 +1639,6 @@ return;
     ? '<div style="display:flex; flex-wrap:wrap; gap:10px;">' +
         '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
         '<a href="/api/image/download?url=' + encodeURIComponent(file.url) + '&name=' + encodeURIComponent(file.name || "generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
-        '<button type="button" class="file-delete-btn" data-file-id="' + file.id + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border:none; border-radius:12px; background:#dc2626; color:#ffffff; font-weight:600; font-size:14px; cursor:pointer;">Удалить</button>' +
       '</div>'
     : '<div style="color:#9ca3af; font-size:13px;">URL файла отсутствует</div>'
 ) +
@@ -1647,47 +1646,6 @@ return;
     '</div>'
   );
 }).join("");
-     listEl.onclick = async function (event) {
-  const target = event.target;
-  const button = target && target.closest
-    ? target.closest(".file-delete-btn")
-    : null;
-
-  if (!button) {
-    return;
-  }
-
-  const fileId = button.getAttribute("data-file-id");
-
-  if (!fileId) {
-    return;
-  }
-
-  const confirmed = window.confirm("Удалить этот файл?");
-
-  if (!confirmed) {
-    return;
-  }
-
-  const originalText = button.textContent || "Удалить";
-  button.disabled = true;
-  button.textContent = "Удаление...";
-
-  try {
-    const response = await fetch("/api/files/" + encodeURIComponent(fileId), {
-      method: "DELETE"
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || !data || !data.ok) {
-      throw new Error((data && data.error) || "Не удалось удалить файл");
-    }
-
-    window.location.reload();
-  } catch (error) {
-    alert(error && error.message ? error.message : "Не удалось удалить файл");
-    button.disabled = false;
-    button.textContent = originalText;
-  }
-};
+    } catch (error) {
+  listEl.innerHTML = "Не удалось загрузить файлы.";
+}
