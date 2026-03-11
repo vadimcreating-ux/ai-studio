@@ -1,0 +1,94 @@
+import { dbQuery } from "../lib/db.js";
+const KIE_BASE_URL = "https://api.kie.ai";
+export async function chatRoutes(app) {
+    // Создать новый чат
+    app.post("/api/chat/new", async (request, reply) => {
+        const body = request.body;
+        const module = body?.module?.trim() || "claude";
+        const model = body?.model?.trim() || "gpt-5-2";
+        const title = body?.title?.trim() || "Новый чат";
+        const result = await dbQuery(`INSERT INTO chats (module, model, title) VALUES ($1, $2, $3) RETURNING *`, [module, model, title]);
+        return { ok: true, chat: result.rows[0] };
+    });
+    // Получить список чатов модуля
+    app.get("/api/chat/list", async (request) => {
+        const query = request.query;
+        const module = query?.module?.trim() || "claude";
+        const result = await dbQuery(`SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`, [module]);
+        return { ok: true, chats: result.rows };
+    });
+    // Получить историю сообщений чата
+    app.get("/api/chat/:chatId/messages", async (request, reply) => {
+        const params = request.params;
+        const result = await dbQuery(`SELECT * FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [params.chatId]);
+        return { ok: true, messages: result.rows };
+    });
+    // Удалить чат
+    app.delete("/api/chat/:chatId", async (request, reply) => {
+        const params = request.params;
+        await dbQuery(`DELETE FROM chats WHERE id = $1`, [params.chatId]);
+        return { ok: true };
+    });
+    // Отправить сообщение — основной маршрут
+    app.post("/api/chat/:chatId/send", async (request, reply) => {
+        const params = request.params;
+        const body = request.body;
+        const userMessage = body?.message?.trim();
+        const apiKey = process.env.KIE_API_KEY;
+        if (!apiKey) {
+            return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+        }
+        if (!userMessage) {
+            return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
+        }
+        // Получить данные чата
+        const chatResult = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [params.chatId]);
+        if (chatResult.rows.length === 0) {
+            return reply.status(404).send({ ok: false, error: "Чат не найден" });
+        }
+        const chat = chatResult.rows[0];
+        // Сохранить сообщение пользователя
+        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`, [params.chatId, "user", userMessage]);
+        // Обновить заголовок чата если это первое сообщение
+        const countResult = await dbQuery(`SELECT COUNT(*) FROM chat_messages WHERE chat_id = $1`, [params.chatId]);
+        if (Number(countResult.rows[0].count) === 1) {
+            const shortTitle = userMessage.slice(0, 50);
+            await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [shortTitle, params.chatId]);
+        }
+        // Загрузить всю историю для контекста
+        const historyResult = await dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [params.chatId]);
+        const messages = historyResult.rows.map((row) => ({
+            role: row.role,
+            content: [{ type: "text", text: row.content }],
+        }));
+        // Запрос к kie.ai (без стриминга для простоты)
+        try {
+            const kieResponse = await fetch(`${KIE_BASE_URL}/${chat.model}/v1/chat/completions`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    messages,
+                    stream: false,
+                    reasoning_effort: "high",
+                }),
+            });
+            const kieData = await kieResponse.json();
+            if (!kieResponse.ok || !kieData?.choices?.[0]?.message?.content) {
+                return reply.status(500).send({
+                    ok: false,
+                    error: kieData?.error?.message || "KIE не вернул ответ",
+                });
+            }
+            const assistantText = kieData.choices[0].message.content;
+            // Сохранить ответ ассистента
+            await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`, [params.chatId, "assistant", assistantText]);
+            return { ok: true, reply: assistantText };
+        }
+        catch {
+            return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
+        }
+    });
+}

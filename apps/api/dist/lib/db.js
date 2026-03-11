@@ -1,23 +1,19 @@
 import { Pool } from "pg";
-
 export const pool = new Pool({
-  host: process.env.PGHOST,
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  ssl:
-    process.env.PGSSLMODE === "require"
-      ? { rejectUnauthorized: false }
-      : undefined,
+    host: process.env.PGHOST,
+    port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    ssl: process.env.PGSSLMODE === "require"
+        ? { rejectUnauthorized: false }
+        : undefined,
 });
-
-export async function dbQuery(text: string, params: unknown[] = []) {
-  return pool.query(text, params);
+export async function dbQuery(text, params = []) {
+    return pool.query(text, params);
 }
-
 export async function ensureChatsTable() {
-  await dbQuery(`
+    await dbQuery(`
     CREATE TABLE IF NOT EXISTS chats (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       module TEXT NOT NULL,
@@ -26,8 +22,7 @@ export async function ensureChatsTable() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
-
-  await dbQuery(`
+    await dbQuery(`
     CREATE TABLE IF NOT EXISTS chat_messages (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -37,9 +32,8 @@ export async function ensureChatsTable() {
     )
   `);
 }
-
 export async function ensureFilesTable() {
-  await dbQuery(`
+    await dbQuery(`
     CREATE TABLE IF NOT EXISTS files (
       id UUID PRIMARY KEY,
       task_id TEXT NOT NULL UNIQUE,
@@ -50,18 +44,16 @@ export async function ensureFilesTable() {
       source TEXT NOT NULL
     )
   `);
-
-  await dbQuery(`
+    await dbQuery(`
     ALTER TABLE files
     ADD CONSTRAINT files_task_id_unique UNIQUE (task_id)
   `).catch(() => {
-    // ограничение уже существует — это нормально
-  });
-
-  await dbQuery(`
+        // ограничение уже существует — это нормально
+    });
+    await dbQuery(`
     ALTER TABLE files
     ADD COLUMN prompt TEXT
   `).catch(() => {
-    // колонка уже существует — это нормально
-  });
+        // колонка уже существует — это нормально
+    });
 }
