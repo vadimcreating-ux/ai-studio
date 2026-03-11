@@ -26,6 +26,13 @@ export async function ensureFilesTable() {
       url TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL,
       source TEXT NOT NULL
-    );
+    )
   `);
+
+  await dbQuery(`
+    ALTER TABLE files
+    ADD CONSTRAINT files_task_id_unique UNIQUE (task_id)
+  `).catch(() => {
+    // ограничение уже существует — это нормально
+  });
 }
