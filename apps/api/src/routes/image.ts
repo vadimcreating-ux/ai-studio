@@ -138,7 +138,7 @@ imagePromptStore.set(createData.data.taskId, prompt);
   await saveImageToFiles({
     taskId: data.taskId,
     url: resultImageUrl,
-    prompt: imagePromptStore.get(data.taskId) || null,
+    prompt: imagePromptStore.get(data.taskId) || undefined,
   });
 
   imagePromptStore.delete(data.taskId);
