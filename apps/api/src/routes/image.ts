@@ -136,9 +136,10 @@ imagePromptStore.set(createData.data.taskId, prompt);
 
       if (successFlag === 1 && resultImageUrl) {
         await saveImageToFiles({
-          taskId: data.taskId,
-          url: resultImageUrl,
-        });
+  taskId: data.taskId,
+  url: resultImageUrl,
+  prompt,
+});
       }
 
       return {
