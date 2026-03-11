@@ -135,12 +135,14 @@ imagePromptStore.set(createData.data.taskId, prompt);
       const resultImageUrl = data?.response?.resultImageUrl || "";
 
       if (successFlag === 1 && resultImageUrl) {
-        await saveImageToFiles({
-  taskId: data.taskId,
-  url: resultImageUrl,
-  prompt,
-});
-      }
+  await saveImageToFiles({
+    taskId: data.taskId,
+    url: resultImageUrl,
+    prompt: imagePromptStore.get(data.taskId) || null,
+  });
+
+  imagePromptStore.delete(data.taskId);
+}
 
       return {
         ok: true,
