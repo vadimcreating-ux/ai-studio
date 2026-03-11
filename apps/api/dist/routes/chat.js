@@ -5,16 +5,24 @@ export async function chatRoutes(app) {
     app.post("/api/chat/new", async (request, reply) => {
         const body = request.body;
         const module = body?.module?.trim() || "claude";
-        const model = body?.model?.trim() || "gpt-5-2";
+        const model = body?.model?.trim() || "claude-opus-4-5";
         const title = body?.title?.trim() || "Новый чат";
-        const result = await dbQuery(`INSERT INTO chats (module, model, title) VALUES ($1, $2, $3) RETURNING *`, [module, model, title]);
+        const project_id = body?.project_id?.trim() || null;
+        const result = await dbQuery(`INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`, [module, model, title, project_id]);
         return { ok: true, chat: result.rows[0] };
     });
     // Получить список чатов модуля
     app.get("/api/chat/list", async (request) => {
         const query = request.query;
         const module = query?.module?.trim() || "claude";
-        const result = await dbQuery(`SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`, [module]);
+        const project_id = query?.project_id?.trim() || null;
+        let result;
+        if (project_id) {
+            result = await dbQuery(`SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC`, [module, project_id]);
+        }
+        else {
+            result = await dbQuery(`SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`, [module]);
+        }
         return { ok: true, chats: result.rows };
     });
     // Получить историю сообщений чата
@@ -57,10 +65,30 @@ export async function chatRoutes(app) {
         }
         // Загрузить всю историю для контекста
         const historyResult = await dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [params.chatId]);
-        const messages = historyResult.rows.map((row) => ({
-            role: row.role,
-            content: [{ type: "text", text: row.content }],
-        }));
+        const messages = [];
+        // Добавить system prompt из проекта, если есть
+        if (chat.project_id) {
+            const projectResult = await dbQuery(`SELECT system_prompt, style, memory FROM projects WHERE id = $1`, [chat.project_id]);
+            if (projectResult.rows.length > 0) {
+                const proj = projectResult.rows[0];
+                const parts = [];
+                if (proj.system_prompt)
+                    parts.push(proj.system_prompt);
+                if (proj.style)
+                    parts.push(`Стиль общения: ${proj.style}`);
+                if (proj.memory)
+                    parts.push(`Память проекта:\n${proj.memory}`);
+                if (parts.length > 0) {
+                    messages.push({ role: "system", content: parts.join("\n\n") });
+                }
+            }
+        }
+        historyResult.rows.forEach((row) => {
+            messages.push({
+                role: row.role,
+                content: [{ type: "text", text: row.content }],
+            });
+        });
         // Запрос к kie.ai (без стриминга для простоты)
         try {
             const kieResponse = await fetch(`${KIE_BASE_URL}/${chat.model}/v1/chat/completions`, {

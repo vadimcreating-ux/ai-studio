@@ -32,6 +32,24 @@ export async function ensureChatsTable() {
     )
   `);
 }
+export async function ensureProjectsTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      module TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      model TEXT DEFAULT '',
+      system_prompt TEXT DEFAULT '',
+      style TEXT DEFAULT '',
+      memory TEXT DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+    await dbQuery(`
+    ALTER TABLE chats ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE SET NULL
+  `).catch(() => { });
+}
 export async function ensureFilesTable() {
     await dbQuery(`
     CREATE TABLE IF NOT EXISTS files (
