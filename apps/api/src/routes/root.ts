@@ -1450,7 +1450,7 @@ function renderPage(page: string) {
             ${pageContent}
           </main>
         </div>
-       <script>
+              <script>
   async function initImagePage() {
     const params = new URLSearchParams(window.location.search);
     const currentPage = params.get("page") || "dashboard";
@@ -1529,31 +1529,33 @@ function renderPage(page: string) {
             }
 
             if (statusData.status === "GENERATING") {
-              resultBox.innerHTML = "Генерация в KIE... Попытка " + attempts + " из " + maxAttempts;
+              resultBox.innerHTML =
+                "Генерация в KIE... Попытка " + attempts + " из " + maxAttempts;
 
               if (attempts < maxAttempts) {
                 setTimeout(poll, 3000);
               } else {
-                resultBox.innerHTML = "Время ожидания истекло. Попробуйте проверить позже.";
+                resultBox.innerHTML =
+                  "Время ожидания истекло. Попробуйте проверить позже.";
               }
               return;
             }
 
             if (statusData.status === "SUCCESS" && statusData.imageUrl) {
-  resultBox.innerHTML =
- '<div style="text-align:left; width:100%;">' +
-  '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
-  '<div style="margin:14px 0;">' +
-    '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
-  '</div>' +
-  '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">' +
-    '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
-    '<a href="/api/image/download?url=' + encodeURIComponent(statusData.imageUrl) + '&name=' + encodeURIComponent("generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
-  '</div>' +
-  '<div style="color:#9ca3af;">Следующим шагом можно сохранить изображение в Files и добавить историю генераций.</div>' +
-'</div>';
-return;
-}
+              resultBox.innerHTML =
+                '<div style="text-align:left; width:100%;">' +
+                  '<div style="font-weight:700; margin-bottom:10px;">Изображение готово</div>' +
+                  '<div style="margin:14px 0;">' +
+                    '<img src="' + statusData.imageUrl + '" alt="Generated image" style="width:100%; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+                  '</div>' +
+                  '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;">' +
+                    '<a href="' + statusData.imageUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
+                    '<a href="/api/image/download?url=' + encodeURIComponent(statusData.imageUrl) + '&name=' + encodeURIComponent("generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
+                  '</div>' +
+                  '<div style="color:#9ca3af;">Изображение уже автоматически сохранено в Files.</div>' +
+                '</div>';
+              return;
+            }
 
             resultBox.innerHTML =
               "Ошибка генерации: " +
@@ -1609,43 +1611,68 @@ return;
         }
 
         listEl.innerHTML = files.map(function (file) {
-  const createdAt = file.createdAt
-    ? new Date(file.createdAt).toLocaleString("ru-RU")
-    : "-";
-  return (
-    '<div style="background:linear-gradient(180deg,#1b1f25 0%,#171b21 100%); border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:18px; margin-bottom:16px; box-shadow:0 10px 30px rgba(0,0,0,0.18);">' +
-      '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px;">' +
-        '<div>' +
-          '<div style="font-size:16px; font-weight:700; color:#f3f4f6; margin-bottom:6px;">' + (file.name || "Без имени") + '</div>' +
-          '<div style="display:flex; flex-wrap:wrap; gap:8px;">' +
-            '<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:rgba(59,130,246,0.12); color:#bfdbfe; font-size:12px; font-weight:600;">' + (file.type || "-") + '</span>' +
-            '<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,0.06); color:#d1d5db; font-size:12px;">' + (file.source || "-") + '</span>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
+          const createdAt = file.createdAt
+            ? new Date(file.createdAt).toLocaleString("ru-RU")
+            : "-";
 
-      (
-        file.url
-          ? '<div style="margin-bottom:14px;">' +
-              '<img src="' + file.url + '" alt="' + (file.name || "file") + '" style="width:100%; max-width:460px; border-radius:16px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+          return (
+            '<div style="background:linear-gradient(180deg,#1b1f25 0%,#171b21 100%); border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:18px; margin-bottom:16px; box-shadow:0 10px 30px rgba(0,0,0,0.18);">' +
+              '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px;">' +
+                '<div>' +
+                  '<div style="font-size:16px; font-weight:700; color:#f3f4f6; margin-bottom:6px;">' + (file.name || "Без имени") + '</div>' +
+                  '<div style="display:flex; flex-wrap:wrap; gap:8px;">' +
+                    '<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:rgba(59,130,246,0.12); color:#bfdbfe; font-size:12px; font-weight:600;">' + (file.type || "-") + '</span>' +
+                    '<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,0.06); color:#d1d5db; font-size:12px;">' + (file.source || "-") + '</span>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+
+              (
+                file.url
+                  ? '<div style="margin-bottom:14px;">' +
+                      '<img src="' + file.url + '" alt="' + (file.name || "file") + '" style="width:100%; max-width:460px; border-radius:16px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
+                    '</div>'
+                  : ''
+              ) +
+
+              '<div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">' +
+                '<div style="color:#9ca3af; font-size:13px;">Создан: ' + createdAt + '</div>' +
+                (
+                  file.url
+                    ? '<div style="display:flex; flex-wrap:wrap; gap:10px;">' +
+                        '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
+                        '<a href="/api/image/download?url=' + encodeURIComponent(file.url) + '&name=' + encodeURIComponent(file.name || "generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
+                      '</div>'
+                    : '<div style="color:#9ca3af; font-size:13px;">URL файла отсутствует</div>'
+                ) +
+              '</div>' +
             '</div>'
-          : ''
-      ) +
+          );
+        }).join("");
+      } catch (error) {
+        listEl.innerHTML = "Не удалось загрузить файлы.";
+      }
+    };
 
-      '<div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">' +
-        '<div style="color:#9ca3af; font-size:13px;">Создан: ' + createdAt + '</div>' +
-       (
-  file.url
-    ? '<div style="display:flex; flex-wrap:wrap; gap:10px;">' +
-        '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:rgba(255,255,255,0.06); color:#93c5fd; text-decoration:none; font-weight:600; font-size:14px;">Просмотр</a>' +
-        '<a href="/api/image/download?url=' + encodeURIComponent(file.url) + '&name=' + encodeURIComponent(file.name || "generated-image.jpg") + '" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Скачать</a>' +
-      '</div>'
-    : '<div style="color:#9ca3af; font-size:13px;">URL файла отсутствует</div>'
-) +
-      '</div>' +
-    '</div>'
-  );
-}).join("");
-    } catch (error) {
-  listEl.innerHTML = "Не удалось загрузить файлы.";
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", loadFiles);
+    }
+
+    loadFiles();
+  }
+
+  initImagePage();
+  initFilesPage();
+        </script>
+      </body>
+    </html>
+  `;
+}
+export async function rootRoutes(app: FastifyInstance) {
+  app.get("/", async (request, reply) => {
+    const query = request.query as { page?: string };
+    const page = query?.page || "dashboard";
+
+    reply.type("text/html").send(renderPage(page));
+  });
 }
