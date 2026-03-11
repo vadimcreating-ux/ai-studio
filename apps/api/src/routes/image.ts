@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { saveImageToFiles, getFiles } from '../lib/files-store.js'
+import { saveImageToFiles, getFiles } from "../lib/files-store.js";
+
 const KIE_BASE_URL = "https://api.kie.ai";
 
 export async function imageRoutes(app: FastifyInstance) {
@@ -19,21 +20,21 @@ export async function imageRoutes(app: FastifyInstance) {
     if (!apiKey) {
       return reply.status(500).send({
         ok: false,
-        error: "Не задан KIE_API_KEY в переменных окружения Timeweb"
+        error: "Не задан KIE_API_KEY в переменных окружения Timeweb",
       });
     }
 
     if (!prompt) {
       return reply.status(400).send({
         ok: false,
-        error: "Введите prompt"
+        error: "Введите prompt",
       });
     }
 
     const sizeMap: Record<string, string> = {
       "1024 × 1024": "1:1",
       "1536 × 1024": "3:2",
-      "1024 × 1536": "2:3"
+      "1024 × 1536": "2:3",
     };
 
     const aspectRatio = sizeMap[body?.size || "1024 × 1024"] || "1:1";
@@ -44,8 +45,8 @@ export async function imageRoutes(app: FastifyInstance) {
         {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
             prompt,
@@ -54,30 +55,34 @@ export async function imageRoutes(app: FastifyInstance) {
             outputFormat: "jpeg",
             promptUpsampling: false,
             model: "flux-kontext-pro",
-            safetyTolerance: 2
-          })
+            safetyTolerance: 2,
+          }),
         }
       );
 
       const createData = await createResponse.json();
 
-      if (!createResponse.ok || createData?.code !== 200 || !createData?.data?.taskId) {
+      if (
+        !createResponse.ok ||
+        createData?.code !== 200 ||
+        !createData?.data?.taskId
+      ) {
         return reply.status(500).send({
           ok: false,
-          error: createData?.msg || "KIE не вернул taskId"
+          error: createData?.msg || "KIE не вернул taskId",
         });
       }
 
       return {
-  ok: true,
-  taskId: createData.data.taskId,
-  mode: "kie",
-  debugVersion: "image-route-v3-files"
-};
+        ok: true,
+        taskId: createData.data.taskId,
+        mode: "kie",
+        debugVersion: "image-route-v3-files",
+      };
     } catch (error) {
       return reply.status(500).send({
         ok: false,
-        error: "Не удалось создать задачу в KIE"
+        error: "Не удалось создать задачу в KIE",
       });
     }
   });
@@ -90,14 +95,14 @@ export async function imageRoutes(app: FastifyInstance) {
     if (!apiKey) {
       return reply.status(500).send({
         ok: false,
-        error: "Не задан KIE_API_KEY в переменных окружения Timeweb"
+        error: "Не задан KIE_API_KEY в переменных окружения Timeweb",
       });
     }
 
     if (!taskId) {
       return reply.status(400).send({
         ok: false,
-        error: "Не передан taskId"
+        error: "Не передан taskId",
       });
     }
 
@@ -107,8 +112,8 @@ export async function imageRoutes(app: FastifyInstance) {
         {
           method: "GET",
           headers: {
-            "Authorization": `Bearer ${apiKey}`
-          }
+            Authorization: `Bearer ${apiKey}`,
+          },
         }
       );
 
@@ -117,20 +122,22 @@ export async function imageRoutes(app: FastifyInstance) {
       if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
         return reply.status(500).send({
           ok: false,
-          error: statusData?.msg || "Не удалось получить статус задачи"
+          error: statusData?.msg || "Не удалось получить статус задачи",
         });
       }
 
       const data = statusData.data;
       const successFlag = data.successFlag;
       const resultImageUrl = data?.response?.resultImageUrl || "";
-if (successFlag === 1 && resultImageUrl) {
-  await saveImageToFiles({
-  taskId: data.taskId,
-  url: resultImageUrl,
-});
-}
-            return {
+
+      if (successFlag === 1 && resultImageUrl) {
+        await saveImageToFiles({
+          taskId: data.taskId,
+          url: resultImageUrl,
+        });
+      }
+
+      return {
         ok: true,
         taskId: data.taskId,
         successFlag,
@@ -138,25 +145,25 @@ if (successFlag === 1 && resultImageUrl) {
           successFlag === 0
             ? "GENERATING"
             : successFlag === 1
-            ? "SUCCESS"
-            : successFlag === 2
-            ? "CREATE_TASK_FAILED"
-            : "GENERATE_FAILED",
+              ? "SUCCESS"
+              : successFlag === 2
+                ? "CREATE_TASK_FAILED"
+                : "GENERATE_FAILED",
         imageUrl: resultImageUrl,
-        errorMessage: data.errorMessage || ""
+        errorMessage: data.errorMessage || "",
       };
     } catch (error) {
       return reply.status(500).send({
         ok: false,
-        error: "Не удалось проверить статус в KIE"
+        error: "Не удалось проверить статус в KIE",
       });
     }
   });
 
   app.get("/api/files", async () => {
-  return {
-    ok: true,
-    files: await getFiles(),
-  };
-});
+    return {
+      ok: true,
+      files: await getFiles(),
+    };
+  });
 }
