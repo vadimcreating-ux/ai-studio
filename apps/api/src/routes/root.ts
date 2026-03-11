@@ -1552,7 +1552,7 @@ function renderPage(page: string) {
       });
     }
   }
-<script>
+
   async function initFilesPage() {
     const params = new URLSearchParams(window.location.search);
     const currentPage = params.get("page") || "dashboard";
@@ -1612,9 +1612,9 @@ function renderPage(page: string) {
 
     loadFiles();
   }
-</script>
+
   initImagePage();
-initFilesPage();
+  initFilesPage();
 </script>
       </body>
     </html>
