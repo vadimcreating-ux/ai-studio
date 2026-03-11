@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-
+import { saveImageToFiles } from '../lib/files-store'
 const KIE_BASE_URL = "https://api.kie.ai";
 
 export async function imageRoutes(app: FastifyInstance) {
@@ -124,7 +124,12 @@ export async function imageRoutes(app: FastifyInstance) {
       const data = statusData.data;
       const successFlag = data.successFlag;
       const resultImageUrl = data?.response?.resultImageUrl || "";
-
+if (successFlag === 1 && resultImageUrl) {
+  saveImageToFiles({
+    taskId: data.taskId,
+    url: resultImageUrl,
+  });
+}
       return {
         ok: true,
         taskId: data.taskId,
