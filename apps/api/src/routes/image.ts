@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { saveImageToFiles, getFiles } from '../lib/files-store'
+import { saveImageToFiles, getFiles } from '../lib/files-store.js'
 const KIE_BASE_URL = "https://api.kie.ai";
 
 export async function imageRoutes(app: FastifyInstance) {
