@@ -125,10 +125,10 @@ export async function imageRoutes(app: FastifyInstance) {
       const successFlag = data.successFlag;
       const resultImageUrl = data?.response?.resultImageUrl || "";
 if (successFlag === 1 && resultImageUrl) {
-  saveImageToFiles({
-    taskId: data.taskId,
-    url: resultImageUrl,
-  });
+  await saveImageToFiles({
+  taskId: data.taskId,
+  url: resultImageUrl,
+});
 }
             return {
         ok: true,
