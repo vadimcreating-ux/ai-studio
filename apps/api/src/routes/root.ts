@@ -88,160 +88,211 @@ function renderPage(page: string) {
     `,
            claude: `
       <div class="workspace">
-        <aside class="panel">
+        <aside class="panel" id="claude-sidebar">
           <div class="panel-header-row">
-            <h2>Проекты</h2>
-            <button class="mini-btn" type="button">Новый</button>
+            <h2>Чаты</h2>
+            <button class="mini-btn" type="button" onclick="claudeNewChat()">+ Новый</button>
           </div>
-          <p class="panel-text">Отдельные проекты Claude с собственной историей и памятью.</p>
-
-          <div class="project-list">
-            <div class="project-item active-project">
-              <strong>Бочкари</strong>
-              <span>PR, бренд, тексты, обновление 2026</span>
-            </div>
-            <div class="project-item">
-              <strong>Алтай / Гайды</strong>
-              <span>Маршруты, mini guide, master guide</span>
-            </div>
-            <div class="project-item">
-              <strong>Личный проект</strong>
-              <span>Тестовая рабочая среда Claude</span>
-            </div>
+          <div id="claude-chat-list" class="dialog-list">
+            <div class="panel-text">Загрузка...</div>
           </div>
-
-          <div class="subsection">
-            <div class="panel-header-row">
-              <h3>Диалоги</h3>
-              <button class="mini-btn" type="button">Чат</button>
-            </div>
-
-            <div class="dialog-list">
-              <div class="dialog-item active-dialog">
-                <strong>Новый бренд-пост</strong>
-                <span>Последнее сообщение: 5 минут назад</span>
-              </div>
-              <div class="dialog-item">
-                <strong>Текст для сайта</strong>
-                <span>Последнее сообщение: вчера</span>
-              </div>
-              <div class="dialog-item">
-                <strong>Описание лимонадов</strong>
-                <span>Последнее сообщение: 2 дня назад</span>
-              </div>
-            </div>
-          </div>
-
           <div class="footer-note">
-            Позже здесь появятся поиск, фильтрация и архив диалогов.
+            Модель: <span id="claude-model-name">gpt-5-2</span>
           </div>
         </aside>
 
-        <section class="panel chat-panel">
-          <div class="project-topbar">
-            <div>
-              <div class="project-top-label">Текущий проект</div>
-              <div class="project-top-title">Бочкари</div>
-            </div>
-            <div class="top-actions">
-              <button class="ghost-btn" type="button">Настройки проекта</button>
-              <button class="ghost-btn" type="button">Сохранить память</button>
-            </div>
+        <section class="panel chat-panel" id="claude-chat-panel">
+          <div id="claude-empty-state" style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:16px;color:#888;">
+            <div style="font-size:48px;">💬</div>
+            <div style="font-size:18px;font-weight:600;">Выберите чат или создайте новый</div>
+            <button class="ghost-btn" type="button" onclick="claudeNewChat()">Создать первый чат</button>
           </div>
 
-          <h2>Чат Claude</h2>
-          <p class="panel-text">Независимая среда общения внутри выбранного проекта.</p>
-
-          <div class="chat-box">
-            <div class="message assistant">
-              <div class="message-role">Claude</div>
-              <div class="message-text">
-                Добро пожаловать в модуль Claude. Здесь будет история диалогов,
-                работа по проектам и отдельная память только для Claude.
+          <div id="claude-chat-active" style="display:none;height:100%;display:none;flex-direction:column;">
+            <div class="project-topbar">
+              <div>
+                <div class="project-top-label">Активный чат</div>
+                <div class="project-top-title" id="claude-chat-title">—</div>
+              </div>
+              <div class="top-actions">
+                <button class="ghost-btn" type="button" onclick="claudeDeleteChat()">Удалить чат</button>
               </div>
             </div>
 
-            <div class="message user">
-              <div class="message-role">Вы</div>
-              <div class="message-text">
-                Покажи мне структуру будущего рабочего модуля.
-              </div>
-            </div>
+            <div class="chat-box" id="claude-messages"></div>
 
-            <div class="message assistant">
-              <div class="message-role">Claude</div>
-              <div class="message-text">
-                В этом модуле будут проекты, список диалогов, центральное окно чата,
-                а справа — контекст проекта, память и настройки.
-              </div>
+            <div class="composer">
+              <input type="text" id="claude-input" placeholder="Напишите сообщение..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();claudeSend();}" />
+              <button type="button" id="claude-send-btn" onclick="claudeSend()">Отправить</button>
             </div>
-
-            <div class="message user">
-              <div class="message-role">Вы</div>
-              <div class="message-text">
-                Добавь акцент на то, что данные Claude не должны смешиваться с ChatGPT и Gemini.
-              </div>
-            </div>
-
-            <div class="message assistant">
-              <div class="message-role">Claude</div>
-              <div class="message-text">
-                Принято. Claude будет работать как отдельная среда: свои проекты,
-                свой контекст, своя история, своя память и собственные настройки.
-              </div>
-            </div>
-          </div>
-
-          <div class="composer">
-            <input type="text" placeholder="Поле ввода сообщения появится здесь" />
-            <button type="button">Отправить</button>
           </div>
         </section>
 
         <aside class="panel">
           <div class="panel-header-row">
-            <h2>Контекст и память</h2>
-            <button class="mini-btn" type="button">Изменить</button>
+            <h2>Настройки</h2>
           </div>
-          <p class="panel-text">Правая панель с настройками выбранного проекта Claude.</p>
-
           <div class="right-section">
-            <h3>Контекст проекта</h3>
+            <h3>Модель</h3>
             <div class="info-card">
-              <strong>Роль модели</strong>
-              <span>PR-редактор и стратег проекта.</span>
-            </div>
-            <div class="info-card">
-              <strong>Стиль</strong>
-              <span>Живой, уверенный, без лишнего пафоса.</span>
+              <strong>Текущая модель</strong>
+              <select id="claude-model-select" style="width:100%;margin-top:6px;padding:6px;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:6px;" onchange="claudeSetModel(this.value)">
+                <option value="gpt-5-2">GPT-5-2</option>
+                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                <option value="gemini-2-5-pro">Gemini 2.5 Pro</option>
+              </select>
             </div>
           </div>
-
           <div class="right-section">
-            <h3>Память проекта</h3>
+            <h3>Информация</h3>
             <div class="info-card">
-              <strong>Закрепленные правила</strong>
-              <span>Не смешивать данные Claude с другими чат-модулями.</span>
-            </div>
-            <div class="info-card">
-              <strong>Важные факты</strong>
-              <span>Ключевые формулировки, бренд-контекст, рабочие договоренности.</span>
+              <strong>Всего чатов</strong>
+              <span id="claude-chat-count">—</span>
             </div>
           </div>
-
-          <div class="right-section">
-            <h3>История</h3>
-            <div class="info-card">
-              <strong>Быстрый доступ</strong>
-              <span>Позже сюда можно вынести последние чаты, поиск и закрепленные диалоги.</span>
-            </div>
-          </div>
-
           <div class="footer-note">
-            Это отдельная среда Claude, не связанная с ChatGPT и Gemini.
+            Все запросы идут через kie.ai API
           </div>
         </aside>
       </div>
+
+      <script>
+      (function() {
+        var currentChatId = null;
+        var currentModel = 'gpt-5-2';
+
+        window.claudeSetModel = function(model) {
+          currentModel = model;
+          document.getElementById('claude-model-name').textContent = model;
+        };
+
+        window.claudeNewChat = async function() {
+          var res = await fetch('/api/chat/new', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ module: 'claude', model: currentModel })
+          });
+          var data = await res.json();
+          if (data.ok) {
+            await claudeLoadChatList();
+            claudeOpenChat(data.chat.id, data.chat.title);
+          }
+        };
+
+        window.claudeDeleteChat = async function() {
+          if (!currentChatId) return;
+          if (!confirm('Удалить этот чат?')) return;
+          await fetch('/api/chat/' + currentChatId, { method: 'DELETE' });
+          currentChatId = null;
+          document.getElementById('claude-empty-state').style.display = 'flex';
+          document.getElementById('claude-chat-active').style.display = 'none';
+          await claudeLoadChatList();
+        };
+
+        window.claudeOpenChat = async function(chatId, title) {
+          currentChatId = chatId;
+          document.getElementById('claude-chat-title').textContent = title;
+          document.getElementById('claude-empty-state').style.display = 'none';
+          document.getElementById('claude-chat-active').style.display = 'flex';
+
+          // подсветить активный
+          document.querySelectorAll('#claude-chat-list .dialog-item').forEach(function(el) {
+            el.classList.remove('active-dialog');
+            if (el.dataset.chatId === chatId) el.classList.add('active-dialog');
+          });
+
+          var res = await fetch('/api/chat/' + chatId + '/messages');
+          var data = await res.json();
+          var box = document.getElementById('claude-messages');
+          box.innerHTML = '';
+          if (data.messages && data.messages.length > 0) {
+            data.messages.forEach(function(m) { claudeAddMessage(m.role, m.content); });
+          } else {
+            box.innerHTML = '<div class="message assistant"><div class="message-role">AI</div><div class="message-text">Чат создан. Напишите первое сообщение.</div></div>';
+          }
+          box.scrollTop = box.scrollHeight;
+        };
+
+        window.claudeSend = async function() {
+          if (!currentChatId) return;
+          var input = document.getElementById('claude-input');
+          var text = input.value.trim();
+          if (!text) return;
+
+          input.value = '';
+          input.disabled = true;
+          document.getElementById('claude-send-btn').disabled = true;
+
+          claudeAddMessage('user', text);
+
+          var thinking = document.createElement('div');
+          thinking.className = 'message assistant';
+          thinking.id = 'claude-thinking';
+          thinking.innerHTML = '<div class="message-role">AI</div><div class="message-text" style="color:#888;">Думаю...</div>';
+          document.getElementById('claude-messages').appendChild(thinking);
+          document.getElementById('claude-messages').scrollTop = 99999;
+
+          try {
+            var res = await fetch('/api/chat/' + currentChatId + '/send', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ message: text })
+            });
+            var data = await res.json();
+            var el = document.getElementById('claude-thinking');
+            if (el) el.remove();
+
+            if (data.ok) {
+              claudeAddMessage('assistant', data.reply);
+              await claudeLoadChatList();
+            } else {
+              claudeAddMessage('assistant', 'Ошибка: ' + (data.error || 'неизвестная ошибка'));
+            }
+          } catch(e) {
+            var el = document.getElementById('claude-thinking');
+            if (el) el.remove();
+            claudeAddMessage('assistant', 'Ошибка соединения с сервером.');
+          }
+
+          input.disabled = false;
+          document.getElementById('claude-send-btn').disabled = false;
+          input.focus();
+          document.getElementById('claude-messages').scrollTop = 99999;
+        };
+
+        function claudeAddMessage(role, text) {
+          var box = document.getElementById('claude-messages');
+          var div = document.createElement('div');
+          div.className = 'message ' + (role === 'user' ? 'user' : 'assistant');
+          div.innerHTML = '<div class="message-role">' + (role === 'user' ? 'Вы' : 'AI') + '</div><div class="message-text">' + escapeHtml(text) + '</div>';
+          box.appendChild(div);
+          box.scrollTop = box.scrollHeight;
+        }
+
+        function escapeHtml(str) {
+          return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>');
+        }
+
+        window.claudeLoadChatList = async function() {
+          var res = await fetch('/api/chat/list?module=claude');
+          var data = await res.json();
+          var list = document.getElementById('claude-chat-list');
+          document.getElementById('claude-chat-count').textContent = (data.chats || []).length;
+          if (!data.chats || data.chats.length === 0) {
+            list.innerHTML = '<div class="panel-text">Нет чатов. Создайте первый.</div>';
+            return;
+          }
+          list.innerHTML = data.chats.map(function(c) {
+            var active = c.id === currentChatId ? ' active-dialog' : '';
+            return '<div class="dialog-item' + active + '" data-chat-id="' + c.id + '" onclick="claudeOpenChat(\'' + c.id + '\', \'' + c.title.replace(/'/g,"\\'") + '\')" style="cursor:pointer"><strong>' + escapeHtml(c.title) + '</strong><span>' + new Date(c.created_at).toLocaleDateString('ru') + '</span></div>';
+          }).join('');
+        };
+
+        // Загрузить список при открытии вкладки
+        claudeLoadChatList();
+      })();
+      </script>
     `,
        chatgpt: `
       <div class="workspace">

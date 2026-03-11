@@ -16,6 +16,28 @@ export async function dbQuery(text: string, params: unknown[] = []) {
   return pool.query(text, params);
 }
 
+export async function ensureChatsTable() {
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS chats (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      module TEXT NOT NULL,
+      model TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT 'Новый чат',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+
 export async function ensureFilesTable() {
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS files (
