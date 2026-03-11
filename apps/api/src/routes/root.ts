@@ -677,9 +677,9 @@ function renderPage(page: string) {
 
         <aside class="panel">
           <div class="panel-header-row">
-            <h2>Результат</h2>
-            <button class="mini-btn" type="button">Files</button>
-          </div>
+  <h2>Результат</h2>
+  <a class="mini-btn-link" href="/?page=files">Files</a>
+</div>
           <p class="panel-text">Правая зона результата и дальнейших действий.</p>
 
           <div class="result-preview">
@@ -1050,7 +1050,23 @@ function renderPage(page: string) {
             font-size: 13px;
             cursor: pointer;
           }
+          .mini-btn-link {
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #20242a;
+  color: #e5e7eb;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
+.mini-btn-link:hover {
+  background: rgba(255,255,255,0.05);
+}
           .project-topbar {
             display: flex;
             align-items: center;
