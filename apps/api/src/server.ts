@@ -1,5 +1,5 @@
 import { buildApp } from "./app.js";
-import { ensureFilesTable, ensureChatsTable } from "./lib/db.js";
+import { ensureFilesTable, ensureChatsTable, ensureProjectsTable } from "./lib/db.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -8,6 +8,7 @@ async function start() {
   const app = buildApp();
 
   try {
+    await ensureProjectsTable();
     await ensureFilesTable();
     await ensureChatsTable();
 

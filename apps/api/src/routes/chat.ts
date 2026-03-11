@@ -6,14 +6,15 @@ const KIE_BASE_URL = "https://api.kie.ai";
 export async function chatRoutes(app: FastifyInstance) {
   // Создать новый чат
   app.post("/api/chat/new", async (request, reply) => {
-    const body = request.body as { module?: string; model?: string; title?: string };
+    const body = request.body as { module?: string; model?: string; title?: string; project_id?: string };
     const module = body?.module?.trim() || "claude";
-    const model = body?.model?.trim() || "gpt-5-2";
+    const model = body?.model?.trim() || "claude-opus-4-5";
     const title = body?.title?.trim() || "Новый чат";
+    const project_id = body?.project_id?.trim() || null;
 
     const result = await dbQuery(
-      `INSERT INTO chats (module, model, title) VALUES ($1, $2, $3) RETURNING *`,
-      [module, model, title]
+      `INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [module, model, title, project_id]
     );
 
     return { ok: true, chat: result.rows[0] };
@@ -21,13 +22,22 @@ export async function chatRoutes(app: FastifyInstance) {
 
   // Получить список чатов модуля
   app.get("/api/chat/list", async (request) => {
-    const query = request.query as { module?: string };
+    const query = request.query as { module?: string; project_id?: string };
     const module = query?.module?.trim() || "claude";
+    const project_id = query?.project_id?.trim() || null;
 
-    const result = await dbQuery(
-      `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`,
-      [module]
-    );
+    let result;
+    if (project_id) {
+      result = await dbQuery(
+        `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC`,
+        [module, project_id]
+      );
+    } else {
+      result = await dbQuery(
+        `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`,
+        [module]
+      );
+    }
 
     return { ok: true, chats: result.rows };
   });
@@ -97,10 +107,32 @@ export async function chatRoutes(app: FastifyInstance) {
       [params.chatId]
     );
 
-    const messages = historyResult.rows.map((row: { role: string; content: string }) => ({
-      role: row.role,
-      content: [{ type: "text", text: row.content }],
-    }));
+    const messages: Array<{ role: string; content: Array<{ type: string; text: string }> | string }> = [];
+
+    // Добавить system prompt из проекта, если есть
+    if (chat.project_id) {
+      const projectResult = await dbQuery(
+        `SELECT system_prompt, style, memory FROM projects WHERE id = $1`,
+        [chat.project_id]
+      );
+      if (projectResult.rows.length > 0) {
+        const proj = projectResult.rows[0];
+        const parts: string[] = [];
+        if (proj.system_prompt) parts.push(proj.system_prompt);
+        if (proj.style) parts.push(`Стиль общения: ${proj.style}`);
+        if (proj.memory) parts.push(`Память проекта:\n${proj.memory}`);
+        if (parts.length > 0) {
+          messages.push({ role: "system", content: parts.join("\n\n") });
+        }
+      }
+    }
+
+    historyResult.rows.forEach((row: { role: string; content: string }) => {
+      messages.push({
+        role: row.role,
+        content: [{ type: "text", text: row.content }],
+      });
+    });
 
     // Запрос к kie.ai (без стриминга для простоты)
     try {
