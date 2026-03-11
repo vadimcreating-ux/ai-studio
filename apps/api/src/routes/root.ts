@@ -1584,23 +1584,41 @@ function renderPage(page: string) {
         }
 
         listEl.innerHTML = files.map(function (file) {
-          return (
-            '<div style="background:#20242a; border:1px solid rgba(255,255,255,0.05); border-radius:16px; padding:16px; margin-bottom:14px;">' +
-              '<div style="font-weight:700; margin-bottom:10px;">' + (file.name || "Без имени") + '</div>' +
-              '<div style="color:#9ca3af; font-size:14px; margin-bottom:8px;"><strong>Тип:</strong> ' + (file.type || "-") + '</div>' +
-              '<div style="color:#9ca3af; font-size:14px; margin-bottom:8px;"><strong>Источник:</strong> ' + (file.source || "-") + '</div>' +
-              '<div style="color:#9ca3af; font-size:14px; margin-bottom:14px;"><strong>Создан:</strong> ' + (file.createdAt || "-") + '</div>' +
-              (
-                file.url
-                  ? '<div style="margin-bottom:14px;">' +
-                      '<img src="' + file.url + '" alt="' + (file.name || "file") + '" style="width:100%; max-width:420px; border-radius:14px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
-                    '</div>' +
-                    '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="color:#93c5fd;">Открыть файл</a>'
-                  : '<div style="color:#9ca3af;">URL файла отсутствует</div>'
-              ) +
+  const createdAt = file.createdAt
+    ? new Date(file.createdAt).toLocaleString("ru-RU")
+    : "-";
+
+  return (
+    '<div style="background:linear-gradient(180deg,#1b1f25 0%,#171b21 100%); border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:18px; margin-bottom:16px; box-shadow:0 10px 30px rgba(0,0,0,0.18);">' +
+      '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px;">' +
+        '<div>' +
+          '<div style="font-size:16px; font-weight:700; color:#f3f4f6; margin-bottom:6px;">' + (file.name || "Без имени") + '</div>' +
+          '<div style="display:flex; flex-wrap:wrap; gap:8px;">' +
+            '<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:rgba(59,130,246,0.12); color:#bfdbfe; font-size:12px; font-weight:600;">' + (file.type || "-") + '</span>' +
+            '<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,0.06); color:#d1d5db; font-size:12px;">' + (file.source || "-") + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      (
+        file.url
+          ? '<div style="margin-bottom:14px;">' +
+              '<img src="' + file.url + '" alt="' + (file.name || "file") + '" style="width:100%; max-width:460px; border-radius:16px; display:block; border:1px solid rgba(255,255,255,0.08);" />' +
             '</div>'
-          );
-        }).join("");
+          : ''
+      ) +
+
+      '<div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">' +
+        '<div style="color:#9ca3af; font-size:13px;">Создан: ' + createdAt + '</div>' +
+        (
+          file.url
+            ? '<a href="' + file.url + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; background:#2563eb; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px;">Открыть файл</a>'
+            : '<div style="color:#9ca3af; font-size:13px;">URL файла отсутствует</div>'
+        ) +
+      '</div>' +
+    '</div>'
+  );
+}).join("");
       } catch (error) {
         listEl.innerHTML = "Не удалось загрузить файлы.";
       }
