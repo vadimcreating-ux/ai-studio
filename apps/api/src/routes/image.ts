@@ -160,6 +160,48 @@ export async function imageRoutes(app: FastifyInstance) {
     }
   });
 
+    app.get("/api/image/download", async (request, reply) => {
+    const query = request.query as { url?: string; name?: string };
+    const fileUrl = query?.url?.trim();
+    const fileName = (query?.name?.trim() || "generated-image.jpg").replace(
+      /[^a-zA-Z0-9._-]/g,
+      "_"
+    );
+
+    if (!fileUrl) {
+      return reply.status(400).send({
+        ok: false,
+        error: "Не передан url файла",
+      });
+    }
+
+    try {
+      const fileResponse = await fetch(fileUrl);
+
+      if (!fileResponse.ok) {
+        return reply.status(500).send({
+          ok: false,
+          error: "Не удалось скачать файл из источника",
+        });
+      }
+
+      const contentType =
+        fileResponse.headers.get("content-type") || "application/octet-stream";
+      const arrayBuffer = await fileResponse.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      reply
+        .header("Content-Type", contentType)
+        .header("Content-Disposition", `attachment; filename="${fileName}"`)
+        .send(buffer);
+    } catch (error) {
+      return reply.status(500).send({
+        ok: false,
+        error: "Ошибка при скачивании файла",
+      });
+    }
+  });
+
   app.get("/api/files", async () => {
     return {
       ok: true,
