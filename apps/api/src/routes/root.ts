@@ -1612,7 +1612,48 @@ return;
   const createdAt = file.createdAt
     ? new Date(file.createdAt).toLocaleString("ru-RU")
     : "-";
+listEl.onclick = async function (event) {
+  const target = event.target as HTMLElement | null;
+  const button = target?.closest(".file-delete-btn") as HTMLButtonElement | null;
 
+  if (!button) {
+    return;
+  }
+
+  const fileId = button.getAttribute("data-file-id");
+
+  if (!fileId) {
+    return;
+  }
+
+  const confirmed = window.confirm("Удалить этот файл?");
+
+  if (!confirmed) {
+    return;
+  }
+
+  const originalText = button.textContent || "Удалить";
+  button.disabled = true;
+  button.textContent = "Удаление...";
+
+  try {
+    const response = await fetch("/api/files/" + encodeURIComponent(fileId), {
+      method: "DELETE",
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error || "Не удалось удалить файл");
+    }
+
+    window.location.reload();
+  } catch (error) {
+    alert(error instanceof Error ? error.message : "Не удалось удалить файл");
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+};
   return (
     '<div style="background:linear-gradient(180deg,#1b1f25 0%,#171b21 100%); border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:18px; margin-bottom:16px; box-shadow:0 10px 30px rgba(0,0,0,0.18);">' +
       '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px;">' +
