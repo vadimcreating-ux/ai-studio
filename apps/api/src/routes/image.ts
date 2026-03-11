@@ -154,9 +154,9 @@ if (successFlag === 1 && resultImageUrl) {
   });
 
   app.get("/api/files", async () => {
-    return {
-      ok: true,
-      files: getFiles(),
-    };
-  });
+  return {
+    ok: true,
+    files: await getFiles(),
+  };
+});
 }
