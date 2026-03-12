@@ -105,9 +105,11 @@ export async function chatRoutes(app) {
             });
             const kieData = await kieResponse.json();
             if (!kieResponse.ok || !kieData?.choices?.[0]?.message?.content) {
+                console.error("KIE error:", kieResponse.status, JSON.stringify(kieData));
                 return reply.status(500).send({
                     ok: false,
                     error: kieData?.error?.message || "KIE не вернул ответ",
+                    debug: { status: kieResponse.status, body: kieData },
                 });
             }
             const assistantText = kieData.choices[0].message.content;
