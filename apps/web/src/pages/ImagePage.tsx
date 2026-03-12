@@ -8,7 +8,6 @@ import {
   Loader2,
   Trash2,
   RotateCcw,
-  Search,
   Clock,
   Copy,
   Check,
@@ -436,16 +435,13 @@ export default function ImagePage() {
                 </span>
               )}
             </div>
-            <div className="relative">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-              <input
-                type="text"
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                placeholder="Поиск по промпту..."
-                className="input-field pl-8 text-[12px] py-1.5"
-              />
-            </div>
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Поиск по промпту..."
+              className="input-field text-[12px] py-1.5"
+            />
           </div>
 
           {/* History list */}
