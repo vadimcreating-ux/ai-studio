@@ -7,7 +7,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const data = await res.json();
 
   if (!res.ok || !data.ok) {
-    throw new Error(data.error || `HTTP ${res.status}`);
+    const debugStr = data.debug ? ` | debug: ${JSON.stringify(data.debug)}` : "";
+    throw new Error((data.error || `HTTP ${res.status}`) + debugStr);
   }
 
   return data as T;
