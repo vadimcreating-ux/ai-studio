@@ -130,14 +130,14 @@ export async function chatRoutes(app: FastifyInstance) {
     historyResult.rows.forEach((row: { role: string; content: string }) => {
       messages.push({
         role: row.role,
-        content: row.content,
+        content: [{ type: "text", text: row.content }],
       });
     });
 
     // Запрос к kie.ai (без стриминга для простоты)
     try {
       const kieResponse = await fetch(
-        `${KIE_BASE_URL}/v1/chat/completions`,
+        `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
         {
           method: "POST",
           headers: {
@@ -145,7 +145,6 @@ export async function chatRoutes(app: FastifyInstance) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: chat.model,
             messages,
             stream: false,
           }),
