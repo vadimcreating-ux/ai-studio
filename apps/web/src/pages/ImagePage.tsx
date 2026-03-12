@@ -443,7 +443,7 @@ export default function ImagePage() {
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
                 placeholder="Поиск по промпту..."
-                className="input-field pl-7 text-[12px] py-1.5"
+                className="input-field pl-8 text-[12px] py-1.5"
               />
             </div>
           </div>
