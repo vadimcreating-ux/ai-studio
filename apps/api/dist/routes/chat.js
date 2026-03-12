@@ -86,21 +86,21 @@ export async function chatRoutes(app) {
         historyResult.rows.forEach((row) => {
             messages.push({
                 role: row.role,
-                content: [{ type: "text", text: row.content }],
+                content: row.content,
             });
         });
         // Запрос к kie.ai (без стриминга для простоты)
         try {
-            const kieResponse = await fetch(`${KIE_BASE_URL}/${chat.model}/v1/chat/completions`, {
+            const kieResponse = await fetch(`${KIE_BASE_URL}/v1/chat/completions`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                    model: chat.model,
                     messages,
                     stream: false,
-                    reasoning_effort: "high",
                 }),
             });
             const kieData = await kieResponse.json();
