@@ -4,7 +4,7 @@ import {
   FolderOpen, Settings, Cpu, Bot, Sparkles,
 } from "lucide-react";
 
-type NavItem = { to: string; label: string; icon: React.ReactNode };
+type NavItem = { to: string; label: string; icon: React.ReactNode; disabled?: boolean };
 
 const sections: Array<{ title: string; items: NavItem[] }> = [
   {
@@ -14,7 +14,7 @@ const sections: Array<{ title: string; items: NavItem[] }> = [
   {
     title: "AI CHAT",
     items: [
-      { to: "/claude",  label: "Claude",  icon: <Cpu      size={14} /> },
+      { to: "/claude",  label: "Claude",  icon: <Cpu      size={14} />, disabled: true },
       { to: "/chatgpt", label: "ChatGPT", icon: <Bot      size={14} /> },
       { to: "/gemini",  label: "Gemini",  icon: <Sparkles size={14} /> },
     ],
@@ -55,7 +55,17 @@ export default function Sidebar() {
             <div className="px-4 pt-3 pb-1 text-[10px] font-semibold tracking-widest text-muted uppercase">
               {section.title}
             </div>
-            {section.items.map((item) => (
+            {section.items.map((item) =>
+              item.disabled ? (
+                <div
+                  key={item.to}
+                  className="flex items-center gap-2.5 px-4 py-[7px] text-[13px] text-[#484f58] cursor-not-allowed select-none"
+                  title="Недоступно"
+                >
+                  {item.icon}
+                  {item.label}
+                </div>
+              ) : (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -70,7 +80,8 @@ export default function Sidebar() {
                 {item.icon}
                 {item.label}
               </NavLink>
-            ))}
+              )
+            )}
           </div>
         ))}
       </nav>
