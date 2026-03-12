@@ -207,14 +207,14 @@ export async function imageRoutes(app: FastifyInstance) {
       return reply.status(400).send({ ok: false, error: "Введите prompt" });
     }
 
-    const systemMessage = `You are an expert AI image prompt engineer.
-Your task is to transform a user's simple description into a highly detailed, professional image generation prompt.
-Rules:
-- Write the improved prompt in English only
-- Add specific details: lighting, style, camera angle, mood, colors, textures, artistic style
-- Include technical parameters like "photorealistic", "8K resolution", "cinematic lighting" where appropriate
-- Keep it concise but descriptive (2-4 sentences max)
-- Return ONLY the improved prompt text, nothing else — no explanations, no labels`;
+    const systemMessage = `Ты — эксперт по составлению промптов для генерации изображений с помощью ИИ.
+Твоя задача: взять описание пользователя и превратить его в детальный, профессиональный промпт.
+Правила:
+- Пиши улучшенный промпт ТОЛЬКО на русском языке
+- Добавляй конкретные детали: освещение, стиль, ракурс камеры, настроение, цвета, текстуры, художественный стиль
+- Добавляй технические параметры: "фотореализм", "кинематографическое освещение", "высокая детализация" и т.п.
+- Объём: 2–4 предложения, ёмко и описательно
+- Верни ТОЛЬКО текст улучшенного промпта — без пояснений, без заголовков`;
 
     try {
       const kieResponse = await fetch(
@@ -247,6 +247,62 @@ Rules:
       }
 
       return { ok: true, improvedPrompt: improved };
+    } catch {
+      return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
+    }
+  });
+
+  // Перевод промпта на английский через GPT
+  app.post("/api/image/translate-prompt", async (request, reply) => {
+    const body = request.body as { prompt?: string };
+    const prompt = body?.prompt?.trim();
+    const apiKey = process.env.KIE_API_KEY;
+
+    if (!apiKey) {
+      return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+    }
+    if (!prompt) {
+      return reply.status(400).send({ ok: false, error: "Введите prompt" });
+    }
+
+    const systemMessage = `You are a professional translator specializing in AI image generation prompts.
+Translate the given text to English accurately and naturally.
+Rules:
+- Translate to English only
+- Preserve all technical image generation terms, artistic styles, and descriptive details
+- Return ONLY the translated text — no explanations, no labels`;
+
+    try {
+      const kieResponse = await fetch(
+        `${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: "system", content: [{ type: "text", text: systemMessage }] },
+              { role: "user", content: [{ type: "text", text: prompt }] },
+            ],
+            stream: false,
+          }),
+        }
+      );
+
+      const kieData = await kieResponse.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+        error?: { message?: string };
+      };
+
+      const translated = kieData.choices?.[0]?.message?.content?.trim();
+      if (!translated) {
+        console.error("KIE translate-prompt error:", JSON.stringify(kieData));
+        return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось перевести промпт" });
+      }
+
+      return { ok: true, translatedPrompt: translated };
     } catch {
       return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
     }

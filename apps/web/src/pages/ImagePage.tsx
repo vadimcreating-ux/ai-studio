@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
   Wand2,
+  Languages,
 } from "lucide-react";
 import { api } from "../shared/api/client";
 
@@ -167,9 +168,18 @@ export default function ImagePage() {
       );
       return data.improvedPrompt;
     },
-    onSuccess: (improved) => {
-      setPrompt(improved);
+    onSuccess: (improved) => setPrompt(improved),
+  });
+
+  const translatePrompt = useMutation({
+    mutationFn: async () => {
+      const data = await api.post<{ ok: boolean; translatedPrompt: string }>(
+        "/api/image/translate-prompt",
+        { prompt }
+      );
+      return data.translatedPrompt;
     },
+    onSuccess: (translated) => setPrompt(translated),
   });
 
   const generate = useMutation({
@@ -250,28 +260,50 @@ export default function ImagePage() {
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Описание изображения на английском..."
+              placeholder="Описание изображения..."
               rows={5}
               className="input-field resize-none scrollbar-thin"
             />
             <div className="flex items-center justify-between mt-1.5">
-              <button
-                onClick={() => improvePrompt.mutate()}
-                disabled={!prompt.trim() || improvePrompt.isPending}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-[11px] text-muted hover:text-white hover:border-[#484f58] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {improvePrompt.isPending ? (
-                  <Loader2 size={11} className="animate-spin" />
-                ) : (
-                  <Wand2 size={11} />
-                )}
-                {improvePrompt.isPending ? "Улучшаем..." : "Улучшить промпт"}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => improvePrompt.mutate()}
+                  disabled={!prompt.trim() || improvePrompt.isPending || translatePrompt.isPending}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${
+                    improvePrompt.isPending
+                      ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                      : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"
+                  }`}
+                >
+                  {improvePrompt.isPending ? (
+                    <Loader2 size={11} className="animate-spin" />
+                  ) : (
+                    <Wand2 size={11} />
+                  )}
+                  {improvePrompt.isPending ? "Улучшаем..." : "Улучшить"}
+                </button>
+                <button
+                  onClick={() => translatePrompt.mutate()}
+                  disabled={!prompt.trim() || translatePrompt.isPending || improvePrompt.isPending}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${
+                    translatePrompt.isPending
+                      ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                      : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"
+                  }`}
+                >
+                  {translatePrompt.isPending ? (
+                    <Loader2 size={11} className="animate-spin" />
+                  ) : (
+                    <Languages size={11} />
+                  )}
+                  {translatePrompt.isPending ? "Переводим..." : "Перевести"}
+                </button>
+              </div>
               <span className="text-[11px] text-muted">{prompt.length} / 20000</span>
             </div>
-            {improvePrompt.isError && (
+            {(improvePrompt.isError || translatePrompt.isError) && (
               <div className="text-[11px] text-red-400 mt-1">
-                {improvePrompt.error?.message ?? "Ошибка улучшения промпта"}
+                {improvePrompt.error?.message ?? translatePrompt.error?.message ?? "Ошибка"}
               </div>
             )}
           </Field>
