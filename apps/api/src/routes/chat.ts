@@ -66,15 +66,19 @@ export async function chatRoutes(app: FastifyInstance) {
   // Отправить сообщение — основной маршрут
   app.post("/api/chat/:chatId/send", async (request, reply) => {
     const params = request.params as { chatId: string };
-    const body = request.body as { message?: string };
-    const userMessage = body?.message?.trim();
+    const body = request.body as {
+      message?: string;
+      files?: Array<{ dataUrl: string; mimeType: string; name: string }>;
+    };
+    const userMessage = body?.message?.trim() || "";
+    const attachedFiles = body?.files ?? [];
     const apiKey = process.env.KIE_API_KEY;
 
     if (!apiKey) {
       return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
     }
 
-    if (!userMessage) {
+    if (!userMessage && attachedFiles.length === 0) {
       return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
     }
 
@@ -85,10 +89,13 @@ export async function chatRoutes(app: FastifyInstance) {
     }
     const chat = chatResult.rows[0];
 
-    // Сохранить сообщение пользователя
+    // Сохранить сообщение пользователя (текст + имена файлов для истории)
+    const savedContent = attachedFiles.length > 0
+      ? `${userMessage}${userMessage ? "\n" : ""}[Файлы: ${attachedFiles.map(f => f.name).join(", ")}]`
+      : userMessage;
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`,
-      [params.chatId, "user", userMessage]
+      [params.chatId, "user", savedContent]
     );
 
     // Обновить заголовок чата если это первое сообщение
@@ -97,7 +104,7 @@ export async function chatRoutes(app: FastifyInstance) {
       [params.chatId]
     );
     if (Number(countResult.rows[0].count) === 1) {
-      const shortTitle = userMessage.slice(0, 50);
+      const shortTitle = (userMessage || attachedFiles[0]?.name || "Новый чат").slice(0, 50);
       await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [shortTitle, params.chatId]);
     }
 
@@ -107,7 +114,8 @@ export async function chatRoutes(app: FastifyInstance) {
       [params.chatId]
     );
 
-    const messages: Array<{ role: string; content: Array<{ type: string; text: string }> | string }> = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messages: Array<{ role: string; content: any }> = [];
 
     // Добавить system prompt из проекта, если есть
     if (chat.project_id) {
@@ -127,11 +135,27 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    historyResult.rows.forEach((row: { role: string; content: string }) => {
-      messages.push({
-        role: row.role,
-        content: [{ type: "text", text: row.content }],
-      });
+    const historyRows: Array<{ role: string; content: string }> = historyResult.rows;
+    historyRows.forEach((row, index) => {
+      // Последнее сообщение пользователя — добавляем прикреплённые файлы
+      const isLastUserMsg = index === historyRows.length - 1 && row.role === "user";
+      if (isLastUserMsg && attachedFiles.length > 0) {
+        const contentItems: Array<Record<string, unknown>> = [];
+        if (userMessage) contentItems.push({ type: "text", text: userMessage });
+        for (const file of attachedFiles) {
+          if (file.mimeType.startsWith("image/")) {
+            contentItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
+          } else {
+            // Текстовые файлы — декодируем base64 и вставляем как текст
+            const base64 = file.dataUrl.split(",")[1] ?? "";
+            const decoded = Buffer.from(base64, "base64").toString("utf-8");
+            contentItems.push({ type: "text", text: `[Файл: ${file.name}]\n${decoded}` });
+          }
+        }
+        messages.push({ role: row.role, content: contentItems });
+      } else {
+        messages.push({ role: row.role, content: [{ type: "text", text: row.content }] });
+      }
     });
 
     // Запрос к kie.ai (без стриминга для простоты)

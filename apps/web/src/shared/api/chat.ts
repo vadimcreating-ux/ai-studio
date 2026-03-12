@@ -30,8 +30,8 @@ export const chatApi = {
   messages: (chatId: string) =>
     api.get<{ ok: true; messages: Message[] }>(`/api/chat/${chatId}/messages`),
 
-  send: (chatId: string, message: string) =>
-    api.post<{ ok: true; reply: string }>(`/api/chat/${chatId}/send`, { message }),
+  send: (chatId: string, message: string, files?: Array<{ dataUrl: string; mimeType: string; name: string }>) =>
+    api.post<{ ok: true; reply: string }>(`/api/chat/${chatId}/send`, { message, files }),
 
   delete: (chatId: string) =>
     api.delete<{ ok: true }>(`/api/chat/${chatId}`),

@@ -41,12 +41,13 @@ export async function chatRoutes(app) {
     app.post("/api/chat/:chatId/send", async (request, reply) => {
         const params = request.params;
         const body = request.body;
-        const userMessage = body?.message?.trim();
+        const userMessage = body?.message?.trim() || "";
+        const attachedFiles = body?.files ?? [];
         const apiKey = process.env.KIE_API_KEY;
         if (!apiKey) {
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
         }
-        if (!userMessage) {
+        if (!userMessage && attachedFiles.length === 0) {
             return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
         }
         // Получить данные чата
@@ -55,16 +56,20 @@ export async function chatRoutes(app) {
             return reply.status(404).send({ ok: false, error: "Чат не найден" });
         }
         const chat = chatResult.rows[0];
-        // Сохранить сообщение пользователя
-        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`, [params.chatId, "user", userMessage]);
+        // Сохранить сообщение пользователя (текст + имена файлов для истории)
+        const savedContent = attachedFiles.length > 0
+            ? `${userMessage}${userMessage ? "\n" : ""}[Файлы: ${attachedFiles.map(f => f.name).join(", ")}]`
+            : userMessage;
+        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`, [params.chatId, "user", savedContent]);
         // Обновить заголовок чата если это первое сообщение
         const countResult = await dbQuery(`SELECT COUNT(*) FROM chat_messages WHERE chat_id = $1`, [params.chatId]);
         if (Number(countResult.rows[0].count) === 1) {
-            const shortTitle = userMessage.slice(0, 50);
+            const shortTitle = (userMessage || attachedFiles[0]?.name || "Новый чат").slice(0, 50);
             await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [shortTitle, params.chatId]);
         }
         // Загрузить всю историю для контекста
         const historyResult = await dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [params.chatId]);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const messages = [];
         // Добавить system prompt из проекта, если есть
         if (chat.project_id) {
@@ -83,11 +88,30 @@ export async function chatRoutes(app) {
                 }
             }
         }
-        historyResult.rows.forEach((row) => {
-            messages.push({
-                role: row.role,
-                content: [{ type: "text", text: row.content }],
-            });
+        const historyRows = historyResult.rows;
+        historyRows.forEach((row, index) => {
+            // Последнее сообщение пользователя — добавляем прикреплённые файлы
+            const isLastUserMsg = index === historyRows.length - 1 && row.role === "user";
+            if (isLastUserMsg && attachedFiles.length > 0) {
+                const contentItems = [];
+                if (userMessage)
+                    contentItems.push({ type: "text", text: userMessage });
+                for (const file of attachedFiles) {
+                    if (file.mimeType.startsWith("image/")) {
+                        contentItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
+                    }
+                    else {
+                        // Текстовые файлы — декодируем base64 и вставляем как текст
+                        const base64 = file.dataUrl.split(",")[1] ?? "";
+                        const decoded = Buffer.from(base64, "base64").toString("utf-8");
+                        contentItems.push({ type: "text", text: `[Файл: ${file.name}]\n${decoded}` });
+                    }
+                }
+                messages.push({ role: row.role, content: contentItems });
+            }
+            else {
+                messages.push({ role: row.role, content: [{ type: "text", text: row.content }] });
+            }
         });
         // Запрос к kie.ai (без стриминга для простоты)
         try {

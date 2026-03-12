@@ -27,9 +27,37 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
     enabled: !!chat,
   });
 
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const readFileAsText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+
   const sendMessage = useMutation({
-    mutationFn: ({ chatId, message }: { chatId: string; message: string }) =>
-      chatApi.send(chatId, message),
+    mutationFn: async ({ chatId, message, files }: { chatId: string; message: string; files: File[] }) => {
+      const converted = await Promise.all(
+        files.map(async (file) => {
+          if (file.type.startsWith("image/")) {
+            const dataUrl = await readFileAsDataUrl(file);
+            return { dataUrl, mimeType: file.type, name: file.name };
+          } else {
+            const text = await readFileAsText(file);
+            return { dataUrl: `data:text/plain;base64,${btoa(unescape(encodeURIComponent(text)))}`, mimeType: "text/plain", name: file.name };
+          }
+        })
+      );
+      return chatApi.send(chatId, message, converted.length > 0 ? converted : undefined);
+    },
     onMutate: ({ message }) => {
       const opt: Message = {
         id: `opt-${Date.now()}`,
@@ -141,7 +169,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
 
       {/* Input */}
       <MessageInput
-        onSend={(text) => chat && sendMessage.mutate({ chatId: chat.id, message: text })}
+        onSend={(text, files) => chat && sendMessage.mutate({ chatId: chat.id, message: text, files })}
         isLoading={sendMessage.isPending}
         disabled={!chat}
       />
