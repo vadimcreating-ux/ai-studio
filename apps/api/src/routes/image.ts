@@ -92,7 +92,7 @@ export async function imageRoutes(app: FastifyInstance) {
 
     try {
       const statusResponse = await fetch(
-        `${KIE_BASE_URL}/api/v1/jobs/queryTask?taskId=${encodeURIComponent(taskId)}`,
+        `${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
         {
           headers: { Authorization: `Bearer ${apiKey}` },
         }
@@ -103,9 +103,11 @@ export async function imageRoutes(app: FastifyInstance) {
         message?: string;
         data?: {
           taskId?: string;
-          successFlag?: number;
-          errorMessage?: string;
-          response?: { resultImageUrl?: string; resultImageUrls?: string[] };
+          model?: string;
+          state?: string;
+          resultJson?: string;
+          failCode?: number;
+          failMsg?: string;
         };
       };
 
@@ -118,12 +120,20 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       const data = statusData.data;
-      const successFlag = data.successFlag ?? 0;
-      const resultImageUrl =
-        data?.response?.resultImageUrl ||
-        data?.response?.resultImageUrls?.[0] || "";
+      const state = data.state ?? "waiting";
 
-      if (successFlag === 1 && resultImageUrl) {
+      // Parse resultJson string to get image URLs
+      let resultImageUrl = "";
+      if (data.resultJson) {
+        try {
+          const parsed = JSON.parse(data.resultJson) as { resultUrls?: string[] };
+          resultImageUrl = parsed.resultUrls?.[0] ?? "";
+        } catch {
+          // ignore parse error
+        }
+      }
+
+      if (state === "success" && resultImageUrl) {
         await saveImageToFiles({
           taskId: data.taskId ?? taskId,
           url: resultImageUrl,
@@ -132,20 +142,21 @@ export async function imageRoutes(app: FastifyInstance) {
         imagePromptStore.delete(taskId);
       }
 
-      const statusMap: Record<number, string> = {
-        0: "GENERATING",
-        1: "SUCCESS",
-        2: "CREATE_TASK_FAILED",
-        3: "GENERATE_FAILED",
+      const statusMap: Record<string, string> = {
+        waiting: "GENERATING",
+        queuing: "GENERATING",
+        generating: "GENERATING",
+        success: "SUCCESS",
+        fail: "FAILED",
       };
 
       return {
         ok: true,
         taskId: data.taskId ?? taskId,
-        successFlag,
-        status: statusMap[successFlag] ?? "UNKNOWN",
+        state,
+        status: statusMap[state] ?? "GENERATING",
         imageUrl: resultImageUrl,
-        errorMessage: data.errorMessage || "",
+        errorMessage: data.failMsg || "",
       };
     } catch {
       return reply.status(500).send({ ok: false, error: "Не удалось проверить статус в KIE" });
