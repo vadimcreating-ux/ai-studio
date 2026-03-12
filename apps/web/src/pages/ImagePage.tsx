@@ -255,59 +255,6 @@ export default function ImagePage() {
             </select>
           </Field>
 
-          {/* Prompt */}
-          <Field label="Промпт" required>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Описание изображения..."
-              rows={5}
-              className="input-field resize-none scrollbar-thin"
-            />
-            <div className="flex items-center justify-between mt-1.5">
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => improvePrompt.mutate()}
-                  disabled={!prompt.trim() || improvePrompt.isPending || translatePrompt.isPending}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${
-                    improvePrompt.isPending
-                      ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
-                      : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"
-                  }`}
-                >
-                  {improvePrompt.isPending ? (
-                    <Loader2 size={11} className="animate-spin" />
-                  ) : (
-                    <Wand2 size={11} />
-                  )}
-                  {improvePrompt.isPending ? "Улучшаем..." : "Улучшить"}
-                </button>
-                <button
-                  onClick={() => translatePrompt.mutate()}
-                  disabled={!prompt.trim() || translatePrompt.isPending || improvePrompt.isPending}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${
-                    translatePrompt.isPending
-                      ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
-                      : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"
-                  }`}
-                >
-                  {translatePrompt.isPending ? (
-                    <Loader2 size={11} className="animate-spin" />
-                  ) : (
-                    <Languages size={11} />
-                  )}
-                  {translatePrompt.isPending ? "Переводим..." : "Перевести"}
-                </button>
-              </div>
-              <span className="text-[11px] text-muted">{prompt.length} / 20000</span>
-            </div>
-            {(improvePrompt.isError || translatePrompt.isError) && (
-              <div className="text-[11px] text-red-400 mt-1">
-                {improvePrompt.error?.message ?? translatePrompt.error?.message ?? "Ошибка"}
-              </div>
-            )}
-          </Field>
-
           {/* Reference images (img2img) */}
           <Field label="Референсные изображения (опционально)">
             <div className="flex flex-wrap gap-2 mb-2">
@@ -397,92 +344,125 @@ export default function ImagePage() {
             </div>
           </Field>
 
-          {/* Generate button */}
-          <button
-            onClick={() => generate.mutate()}
-            disabled={!prompt.trim() || generate.isPending}
-            className="w-full py-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-[14px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {generate.isPending ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Генерация...
-              </>
-            ) : (
-              <>
-                <ImageIcon size={16} />
-                Сгенерировать
-              </>
-            )}
-          </button>
-
-          {/* Status */}
-          {statusText && (
-            <div className="text-[12px] text-muted text-center animate-pulse">{statusText}</div>
-          )}
-
-          {/* Error */}
-          {generate.isError && (
-            <div className="text-[12px] text-red-400 text-center">
-              {generate.error?.message ?? "Ошибка генерации"}
-            </div>
-          )}
         </div>
 
-        {/* Center — current session results */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin p-5">
-          {results.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-              {generate.isPending ? (
-                <>
-                  <div className="w-12 h-12 rounded-xl bg-[#161b22] border border-border flex items-center justify-center">
-                    <Loader2 size={24} className="text-muted animate-spin" />
+        {/* Center — gallery + prompt at bottom */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+
+          {/* Gallery */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-5">
+            {results.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
+                {generate.isPending ? (
+                  <>
+                    <div className="w-12 h-12 rounded-xl bg-[#161b22] border border-border flex items-center justify-center">
+                      <Loader2 size={24} className="text-muted animate-spin" />
+                    </div>
+                    <div className="text-[13px] text-muted">{statusText || "Генерация..."}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-xl bg-[#161b22] border border-border flex items-center justify-center">
+                      <ImageIcon size={24} className="text-muted" />
+                    </div>
+                    <div className="text-[13px] text-muted">Результаты появятся здесь</div>
+                    <div className="text-[12px] text-muted/60">Введите промпт и нажмите «Сгенерировать»</div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="columns-2 gap-4 space-y-4">
+                {generate.isPending && (
+                  <div className="break-inside-avoid aspect-square rounded-xl bg-[#161b22] border border-border flex items-center justify-center">
+                    <Loader2 size={32} className="text-muted animate-spin" />
                   </div>
-                  <div className="text-[13px] text-muted">{statusText || "Генерация..."}</div>
-                </>
-              ) : (
-                <>
-                  <div className="w-12 h-12 rounded-xl bg-[#161b22] border border-border flex items-center justify-center">
-                    <ImageIcon size={24} className="text-muted" />
+                )}
+                {results.map((result) => (
+                  <div
+                    key={result.taskId}
+                    className="break-inside-avoid group relative rounded-xl overflow-hidden border border-border cursor-pointer"
+                    onClick={() => setLightboxUrl(result.imageUrl)}
+                  >
+                    <img
+                      src={result.imageUrl}
+                      alt={result.prompt}
+                      className="w-full block"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3 gap-2">
+                      <p className="text-[11px] text-white/80 line-clamp-2 leading-snug">{result.prompt}</p>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); downloadImage(result.imageUrl, result.taskId); }}
+                        className="flex items-center gap-1.5 self-end px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[12px] transition-colors"
+                      >
+                        <Download size={13} />
+                        Скачать
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-[13px] text-muted">Результаты появятся здесь</div>
-                  <div className="text-[12px] text-muted/60">Введите промпт и нажмите «Сгенерировать»</div>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="columns-2 gap-4 space-y-4">
-              {generate.isPending && (
-                <div className="break-inside-avoid aspect-square rounded-xl bg-[#161b22] border border-border flex items-center justify-center">
-                  <Loader2 size={32} className="text-muted animate-spin" />
-                </div>
-              )}
-              {results.map((result) => (
-                <div
-                  key={result.taskId}
-                  className="break-inside-avoid group relative rounded-xl overflow-hidden border border-border cursor-pointer"
-                  onClick={() => setLightboxUrl(result.imageUrl)}
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Prompt panel — pinned to bottom */}
+          <div className="border-t border-border px-5 py-4 shrink-0">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Описание изображения..."
+              rows={5}
+              className="input-field resize-none scrollbar-thin w-full"
+            />
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => improvePrompt.mutate()}
+                  disabled={!prompt.trim() || improvePrompt.isPending || translatePrompt.isPending}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${
+                    improvePrompt.isPending
+                      ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                      : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"
+                  }`}
                 >
-                  <img
-                    src={result.imageUrl}
-                    alt={result.prompt}
-                    className="w-full block"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3 gap-2">
-                    <p className="text-[11px] text-white/80 line-clamp-2 leading-snug">{result.prompt}</p>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); downloadImage(result.imageUrl, result.taskId); }}
-                      className="flex items-center gap-1.5 self-end px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[12px] transition-colors"
-                    >
-                      <Download size={13} />
-                      Скачать
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  {improvePrompt.isPending ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                  {improvePrompt.isPending ? "Улучшаем..." : "Улучшить"}
+                </button>
+                <button
+                  onClick={() => translatePrompt.mutate()}
+                  disabled={!prompt.trim() || translatePrompt.isPending || improvePrompt.isPending}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${
+                    translatePrompt.isPending
+                      ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                      : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"
+                  }`}
+                >
+                  {translatePrompt.isPending ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
+                  {translatePrompt.isPending ? "Переводим..." : "Перевести"}
+                </button>
+                <span className="text-[11px] text-muted ml-1">{prompt.length} / 20000</span>
+              </div>
+              <button
+                onClick={() => generate.mutate()}
+                disabled={!prompt.trim() || generate.isPending}
+                className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {generate.isPending ? (
+                  <><Loader2 size={14} className="animate-spin" />Генерация...</>
+                ) : (
+                  <><ImageIcon size={14} />Сгенерировать</>
+                )}
+              </button>
             </div>
-          )}
+            {(generate.isError || improvePrompt.isError || translatePrompt.isError) && (
+              <div className="text-[11px] text-red-400 mt-1.5">
+                {generate.error?.message ?? improvePrompt.error?.message ?? translatePrompt.error?.message ?? "Ошибка"}
+              </div>
+            )}
+            {statusText && !generate.isError && (
+              <div className="text-[11px] text-muted mt-1.5 animate-pulse">{statusText}</div>
+            )}
+          </div>
         </div>
 
         {/* Right — history */}
