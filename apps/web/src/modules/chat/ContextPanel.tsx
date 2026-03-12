@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit3, Clock, BookOpen, Brain } from "lucide-react";
+import { Clock, BookOpen, Brain } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
 
 type Props = {
@@ -38,13 +38,30 @@ export default function ContextPanel({ project, engine, engineLabel }: Props) {
       </div>
 
       {!project ? (
-        <div className="px-4 py-4">
-          <p className="text-[12px] text-muted leading-snug">
-            Правая панель с настройками выбранного проекта {engineLabel}.
-          </p>
-          <p className="text-[11px] text-muted/60 mt-3 leading-snug">
-            Выберите или создайте проект, чтобы увидеть его контекст и память.
-          </p>
+        <div className="px-4 py-4 flex flex-col gap-4">
+          <div>
+            <p className="text-[12px] text-muted leading-snug">
+              Выберите или создайте проект, чтобы увидеть его контекст и память.
+            </p>
+          </div>
+          <div className="border border-border rounded-lg px-3 py-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Brain size={12} className="text-muted" />
+              <span className="text-[11px] font-bold text-white uppercase tracking-wider">Memory</span>
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] text-white font-medium">Память чата</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-[#3fb950]">Вкл.</span>
+                <div className="w-9 h-5 rounded-full bg-[#238636] flex items-center px-0.5 cursor-default">
+                  <div className="w-4 h-4 rounded-full bg-white ml-auto" />
+                </div>
+              </div>
+            </div>
+            <p className="text-[12px] text-muted leading-snug">
+              Модель помнит предыдущие сообщения в рамках чата. История всегда передаётся в API.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -110,6 +127,22 @@ export default function ContextPanel({ project, engine, engineLabel }: Props) {
                 Память пуста. Нажмите «Изменить» чтобы добавить правила и факты.
               </p>
             )}
+          </Section>
+
+          {/* Память */}
+          <Section icon={<Brain size={12} />} title="Memory">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] text-white font-medium">Память чата</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-[#3fb950]">Вкл.</span>
+                <div className="w-9 h-5 rounded-full bg-[#238636] flex items-center px-0.5 cursor-default">
+                  <div className="w-4 h-4 rounded-full bg-white ml-auto" />
+                </div>
+              </div>
+            </div>
+            <p className="text-[12px] text-muted leading-snug">
+              Модель помнит предыдущие сообщения в рамках чата. История всегда передаётся в API.
+            </p>
           </Section>
 
           {/* История */}
