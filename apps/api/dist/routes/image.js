@@ -61,7 +61,7 @@ export async function imageRoutes(app) {
             return reply.status(400).send({ ok: false, error: "Не передан taskId" });
         }
         try {
-            const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/queryTask?taskId=${encodeURIComponent(taskId)}`, {
+            const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
                 headers: { Authorization: `Bearer ${apiKey}` },
             });
             const statusData = await statusResponse.json();
@@ -73,10 +73,19 @@ export async function imageRoutes(app) {
                 });
             }
             const data = statusData.data;
-            const successFlag = data.successFlag ?? 0;
-            const resultImageUrl = data?.response?.resultImageUrl ||
-                data?.response?.resultImageUrls?.[0] || "";
-            if (successFlag === 1 && resultImageUrl) {
+            const state = data.state ?? "waiting";
+            // Parse resultJson string to get image URLs
+            let resultImageUrl = "";
+            if (data.resultJson) {
+                try {
+                    const parsed = JSON.parse(data.resultJson);
+                    resultImageUrl = parsed.resultUrls?.[0] ?? "";
+                }
+                catch {
+                    // ignore parse error
+                }
+            }
+            if (state === "success" && resultImageUrl) {
                 await saveImageToFiles({
                     taskId: data.taskId ?? taskId,
                     url: resultImageUrl,
@@ -85,18 +94,19 @@ export async function imageRoutes(app) {
                 imagePromptStore.delete(taskId);
             }
             const statusMap = {
-                0: "GENERATING",
-                1: "SUCCESS",
-                2: "CREATE_TASK_FAILED",
-                3: "GENERATE_FAILED",
+                waiting: "GENERATING",
+                queuing: "GENERATING",
+                generating: "GENERATING",
+                success: "SUCCESS",
+                fail: "FAILED",
             };
             return {
                 ok: true,
                 taskId: data.taskId ?? taskId,
-                successFlag,
-                status: statusMap[successFlag] ?? "UNKNOWN",
+                state,
+                status: statusMap[state] ?? "GENERATING",
                 imageUrl: resultImageUrl,
-                errorMessage: data.errorMessage || "",
+                errorMessage: data.failMsg || "",
             };
         }
         catch {
@@ -130,6 +140,96 @@ export async function imageRoutes(app) {
     // Список файлов
     app.get("/api/files", async () => {
         return { ok: true, files: await getFiles() };
+    });
+    // Улучшение промпта через GPT
+    app.post("/api/image/improve-prompt", async (request, reply) => {
+        const body = request.body;
+        const prompt = body?.prompt?.trim();
+        const apiKey = process.env.KIE_API_KEY;
+        if (!apiKey) {
+            return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+        }
+        if (!prompt) {
+            return reply.status(400).send({ ok: false, error: "Введите prompt" });
+        }
+        const systemMessage = `Ты — эксперт по составлению промптов для генерации изображений с помощью ИИ.
+Твоя задача: взять описание пользователя и превратить его в детальный, профессиональный промпт.
+Правила:
+- Пиши улучшенный промпт ТОЛЬКО на русском языке
+- Добавляй конкретные детали: освещение, стиль, ракурс камеры, настроение, цвета, текстуры, художественный стиль
+- Добавляй технические параметры: "фотореализм", "кинематографическое освещение", "высокая детализация" и т.п.
+- Объём: 2–4 предложения, ёмко и описательно
+- Верни ТОЛЬКО текст улучшенного промпта — без пояснений, без заголовков`;
+        try {
+            const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    messages: [
+                        { role: "system", content: [{ type: "text", text: systemMessage }] },
+                        { role: "user", content: [{ type: "text", text: prompt }] },
+                    ],
+                    stream: false,
+                }),
+            });
+            const kieData = await kieResponse.json();
+            const improved = kieData.choices?.[0]?.message?.content?.trim();
+            if (!improved) {
+                console.error("KIE improve-prompt error:", JSON.stringify(kieData));
+                return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
+            }
+            return { ok: true, improvedPrompt: improved };
+        }
+        catch {
+            return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
+        }
+    });
+    // Перевод промпта на английский через GPT
+    app.post("/api/image/translate-prompt", async (request, reply) => {
+        const body = request.body;
+        const prompt = body?.prompt?.trim();
+        const apiKey = process.env.KIE_API_KEY;
+        if (!apiKey) {
+            return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+        }
+        if (!prompt) {
+            return reply.status(400).send({ ok: false, error: "Введите prompt" });
+        }
+        const systemMessage = `You are a professional translator specializing in AI image generation prompts.
+Translate the given text to English accurately and naturally.
+Rules:
+- Translate to English only
+- Preserve all technical image generation terms, artistic styles, and descriptive details
+- Return ONLY the translated text — no explanations, no labels`;
+        try {
+            const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    messages: [
+                        { role: "system", content: [{ type: "text", text: systemMessage }] },
+                        { role: "user", content: [{ type: "text", text: prompt }] },
+                    ],
+                    stream: false,
+                }),
+            });
+            const kieData = await kieResponse.json();
+            const translated = kieData.choices?.[0]?.message?.content?.trim();
+            if (!translated) {
+                console.error("KIE translate-prompt error:", JSON.stringify(kieData));
+                return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось перевести промпт" });
+            }
+            return { ok: true, translatedPrompt: translated };
+        }
+        catch {
+            return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
+        }
     });
     // Удаление файла
     app.delete("/api/files/:id", async (request, reply) => {
