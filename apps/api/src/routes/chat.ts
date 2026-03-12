@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
+const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+const ANTHROPIC_VERSION = "2023-06-01";
 
 export async function chatRoutes(app: FastifyInstance) {
   // Создать новый чат
@@ -158,38 +160,114 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     });
 
-    // Запрос к kie.ai (без стриминга для простоты)
+    // Роутинг: Claude → Anthropic API, остальные → KIE
+    const isClaudeModel = chat.model?.startsWith("claude-");
+
     try {
-      const kieResponse = await fetch(
-        `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
-        {
+      let assistantText: string;
+
+      if (isClaudeModel) {
+        // ── Anthropic API ──────────────────────────────────────────
+        const anthropicKey = process.env.ANTHROPIC_API_KEY;
+        if (!anthropicKey) {
+          return reply.status(500).send({ ok: false, error: "Не задан ANTHROPIC_API_KEY" });
+        }
+
+        // Anthropic требует system отдельно, убираем system-роль из messages
+        let systemPrompt: string | undefined;
+        const anthropicMessages: Array<{ role: string; content: unknown }> = [];
+
+        for (const msg of messages) {
+          if (msg.role === "system") {
+            // Собираем system в строку
+            if (Array.isArray(msg.content)) {
+              systemPrompt = (msg.content as Array<{ text?: string }>)
+                .map((c) => c.text ?? "").join("\n");
+            } else {
+              systemPrompt = String(msg.content);
+            }
+          } else {
+            // Конвертируем image_url (OpenAI) → image source (Anthropic)
+            if (Array.isArray(msg.content)) {
+              const converted = (msg.content as Array<Record<string, unknown>>).map((c) => {
+                if (c.type === "image_url" && c.image_url) {
+                  const url = (c.image_url as { url: string }).url;
+                  const [meta, data] = url.split(",");
+                  const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+                  return { type: "image", source: { type: "base64", media_type: mimeType, data } };
+                }
+                return c;
+              });
+              anthropicMessages.push({ role: msg.role, content: converted });
+            } else {
+              anthropicMessages.push(msg);
+            }
+          }
+        }
+
+        const anthropicBody: Record<string, unknown> = {
+          model: chat.model,
+          max_tokens: 8096,
+          messages: anthropicMessages,
+        };
+        if (systemPrompt) anthropicBody.system = systemPrompt;
+
+        const anthropicResponse = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${apiKey}`,
+            "x-api-key": anthropicKey,
+            "anthropic-version": ANTHROPIC_VERSION,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            messages,
-            stream: false,
-          }),
-        }
-      );
-
-      const kieData = await kieResponse.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
-        error?: { message?: string };
-      };
-
-      if (!kieResponse.ok || !kieData?.choices?.[0]?.message?.content) {
-        console.error("KIE error:", kieResponse.status, JSON.stringify(kieData));
-        return reply.status(500).send({
-          ok: false,
-          error: kieData?.error?.message || "KIE не вернул ответ",
-          debug: { status: kieResponse.status, body: kieData },
+          body: JSON.stringify(anthropicBody),
         });
-      }
 
-      const assistantText = kieData.choices[0].message.content;
+        const anthropicData = await anthropicResponse.json() as {
+          content?: Array<{ type: string; text?: string }>;
+          error?: { message?: string };
+        };
+
+        if (!anthropicResponse.ok || !anthropicData.content?.[0]?.text) {
+          console.error("Anthropic error:", anthropicResponse.status, JSON.stringify(anthropicData));
+          return reply.status(500).send({
+            ok: false,
+            error: anthropicData.error?.message || "Anthropic не вернул ответ",
+            debug: { status: anthropicResponse.status, body: anthropicData },
+          });
+        }
+
+        assistantText = anthropicData.content[0].text;
+
+      } else {
+        // ── KIE API ────────────────────────────────────────────────
+        const kieResponse = await fetch(
+          `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ messages, stream: false }),
+          }
+        );
+
+        const kieData = await kieResponse.json() as {
+          choices?: Array<{ message?: { content?: string } }>;
+          error?: { message?: string };
+        };
+
+        if (!kieResponse.ok || !kieData?.choices?.[0]?.message?.content) {
+          console.error("KIE error:", kieResponse.status, JSON.stringify(kieData));
+          return reply.status(500).send({
+            ok: false,
+            error: kieData?.error?.message || "KIE не вернул ответ",
+            debug: { status: kieResponse.status, body: kieData },
+          });
+        }
+
+        assistantText = kieData.choices[0].message.content!;
+      }
 
       // Сохранить ответ ассистента
       await dbQuery(
@@ -198,8 +276,9 @@ export async function chatRoutes(app: FastifyInstance) {
       );
 
       return { ok: true, reply: assistantText };
-    } catch {
-      return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
+    } catch (e) {
+      console.error("Chat send error:", e);
+      return reply.status(500).send({ ok: false, error: "Ошибка при обращении к API" });
     }
   });
 }

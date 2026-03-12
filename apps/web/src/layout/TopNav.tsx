@@ -14,7 +14,7 @@ const groups: Array<{ items: NavItem[] }> = [
   },
   {
     items: [
-      { to: "/claude",  label: "Claude",  icon: <Cpu      size={13} />, disabled: true },
+      { to: "/claude",  label: "Claude",  icon: <Cpu      size={13} /> },
       { to: "/chatgpt", label: "ChatGPT", icon: <Bot      size={13} /> },
       { to: "/gemini",  label: "Gemini",  icon: <Sparkles size={13} /> },
     ],

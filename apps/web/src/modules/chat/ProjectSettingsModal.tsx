@@ -4,8 +4,9 @@ import { X } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
 
 const CLAUDE_MODELS = [
-  { value: "claude-opus-4-5", label: "Claude Opus 4.5" },
-  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 — быстрый, дешёвый" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 — баланс" },
+  { value: "claude-opus-4-6", label: "Claude Opus 4.6 — мощный" },
 ];
 
 const CHATGPT_MODELS = [
