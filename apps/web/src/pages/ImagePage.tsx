@@ -1,6 +1,18 @@
 import { useState, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Download, X, Paperclip, ImageIcon, Loader2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Download,
+  X,
+  Paperclip,
+  ImageIcon,
+  Loader2,
+  Trash2,
+  RotateCcw,
+  Search,
+  Clock,
+  Copy,
+  Check,
+} from "lucide-react";
 import { api } from "../shared/api/client";
 
 const MODELS = [
@@ -38,7 +50,18 @@ type GeneratedImage = {
   prompt: string;
 };
 
-function pollStatus(taskId: string, apiKey?: string): Promise<string> {
+type FileItem = {
+  id: string;
+  taskId: string;
+  type: "image";
+  name: string;
+  url: string;
+  createdAt: string;
+  source: "kie";
+  prompt: string | null;
+};
+
+function pollStatus(taskId: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const maxAttempts = 60;
@@ -69,24 +92,77 @@ function pollStatus(taskId: string, apiKey?: string): Promise<string> {
   });
 }
 
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "только что";
+  if (diffMin < 60) return `${diffMin} мин назад`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH} ч назад`;
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+function CopyUrlButton({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      title="Копировать URL"
+      onClick={() => {
+        navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors"
+    >
+      {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+    </button>
+  );
+}
+
 export default function ImagePage() {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("nano-banana-pro");
   const [aspectRatio, setAspectRatio] = useState("");
   const [resolution, setResolution] = useState("1K");
   const [outputFormat, setOutputFormat] = useState("png");
-  const [refImages, setRefImages] = useState<string[]>([]); // URLs
+  const [refImages, setRefImages] = useState<string[]>([]);
   const [refImageFiles, setRefImageFiles] = useState<File[]>([]);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   const [statusText, setStatusText] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+
+  const { data: filesData } = useQuery({
+    queryKey: ["files"],
+    queryFn: () => api.get<{ ok: boolean; files: FileItem[] }>("/api/files"),
+    refetchInterval: 5000,
+  });
+
+  const historyItems = filesData?.files ?? [];
+
+  const filteredHistory = historySearch.trim()
+    ? historyItems.filter((f) =>
+        f.prompt?.toLowerCase().includes(historySearch.toLowerCase())
+      )
+    : historyItems;
+
+  const deleteFile = useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/api/files/${id}`),
+    onSuccess: () => {
+      setDeleteConfirm(null);
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+    },
+  });
 
   const generate = useMutation({
     mutationFn: async () => {
       setStatusText("Создаём задачу...");
 
-      // Конвертировать загруженные файлы в data URLs (для превью)
-      // В реальности KIE ожидает hosted URLs — для простоты передаём только если они URL
       const imageInput = refImages.length > 0 ? refImages : undefined;
 
       const data = await api.post<{ ok: boolean; taskId: string }>(
@@ -108,6 +184,7 @@ export default function ImagePage() {
     },
     onSuccess: (result) => {
       setResults((prev) => [result, ...prev]);
+      queryClient.invalidateQueries({ queryKey: ["files"] });
     },
     onError: () => {
       setStatusText("");
@@ -116,7 +193,6 @@ export default function ImagePage() {
 
   const handleFileAdd = (files: FileList | null) => {
     if (!files) return;
-    // Пока просто добавляем как превью — реальный img2img требует hosted URL
     setRefImageFiles((prev) => [...prev, ...Array.from(files)]);
   };
 
@@ -141,7 +217,7 @@ export default function ImagePage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left — settings */}
-        <div className="w-[320px] min-w-[320px] border-r border-border flex flex-col overflow-y-auto scrollbar-thin px-5 py-5 gap-4">
+        <div className="w-[280px] min-w-[280px] border-r border-border flex flex-col overflow-y-auto scrollbar-thin px-5 py-5 gap-4">
 
           {/* Model */}
           <Field label="Модель">
@@ -172,7 +248,7 @@ export default function ImagePage() {
           <Field label="Референсные изображения (опционально)">
             <div className="flex flex-wrap gap-2 mb-2">
               {refImageFiles.map((file, i) => (
-                <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-border">
+                <div key={i} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-border">
                   <img
                     src={URL.createObjectURL(file)}
                     className="w-full h-full object-cover"
@@ -189,9 +265,9 @@ export default function ImagePage() {
               {refImageFiles.length < 8 && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-16 h-16 rounded-lg border border-dashed border-border hover:border-accent flex items-center justify-center text-muted hover:text-white transition-colors"
+                  className="w-14 h-14 rounded-lg border border-dashed border-border hover:border-accent flex items-center justify-center text-muted hover:text-white transition-colors"
                 >
-                  <Paperclip size={16} />
+                  <Paperclip size={14} />
                 </button>
               )}
             </div>
@@ -203,7 +279,7 @@ export default function ImagePage() {
               className="hidden"
               onChange={(e) => handleFileAdd(e.target.files)}
             />
-            <p className="text-[11px] text-muted leading-snug">До 8 изображений (jpeg/png/webp, макс. 30 МБ). Нужен hosted URL — загрузка через Files.</p>
+            <p className="text-[11px] text-muted leading-snug">До 8 изображений. Нужен hosted URL — загрузка через Files.</p>
           </Field>
 
           {/* Aspect ratio */}
@@ -289,7 +365,7 @@ export default function ImagePage() {
           )}
         </div>
 
-        {/* Right — results */}
+        {/* Center — current session results */}
         <div className="flex-1 overflow-y-auto scrollbar-thin p-5">
           {results.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
@@ -318,7 +394,11 @@ export default function ImagePage() {
                 </div>
               )}
               {results.map((result) => (
-                <div key={result.taskId} className="break-inside-avoid group relative rounded-xl overflow-hidden border border-border">
+                <div
+                  key={result.taskId}
+                  className="break-inside-avoid group relative rounded-xl overflow-hidden border border-border cursor-pointer"
+                  onClick={() => setLightboxUrl(result.imageUrl)}
+                >
                   <img
                     src={result.imageUrl}
                     alt={result.prompt}
@@ -328,7 +408,7 @@ export default function ImagePage() {
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3 gap-2">
                     <p className="text-[11px] text-white/80 line-clamp-2 leading-snug">{result.prompt}</p>
                     <button
-                      onClick={() => downloadImage(result.imageUrl, result.taskId)}
+                      onClick={(e) => { e.stopPropagation(); downloadImage(result.imageUrl, result.taskId); }}
                       className="flex items-center gap-1.5 self-end px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[12px] transition-colors"
                     >
                       <Download size={13} />
@@ -339,6 +419,178 @@ export default function ImagePage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Right — history */}
+        <div className="w-[280px] min-w-[280px] border-l border-border flex flex-col overflow-hidden">
+          {/* History header */}
+          <div className="px-4 pt-4 pb-3 border-b border-border shrink-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock size={14} className="text-muted" />
+                <span className="text-[13px] font-semibold text-white">История</span>
+              </div>
+              {historyItems.length > 0 && (
+                <span className="text-[11px] text-muted bg-[#161b22] border border-border px-1.5 py-0.5 rounded-full">
+                  {historyItems.length}
+                </span>
+              )}
+            </div>
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Поиск по промпту..."
+                className="input-field pl-7 text-[12px] py-1.5"
+              />
+            </div>
+          </div>
+
+          {/* History list */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
+            {filteredHistory.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
+                <ImageIcon size={20} className="text-muted/40" />
+                <div className="text-[12px] text-muted/60">
+                  {historySearch ? "Ничего не найдено" : "История пуста"}
+                </div>
+              </div>
+            ) : (
+              filteredHistory.map((file) => (
+                <HistoryItem
+                  key={file.id}
+                  file={file}
+                  onUsePrompt={(p) => setPrompt(p)}
+                  onDownload={() => downloadImage(file.url, file.taskId)}
+                  onDelete={() => setDeleteConfirm(file.id)}
+                  onOpen={() => setLightboxUrl(file.url)}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Delete confirmation */}
+      {deleteConfirm && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => setDeleteConfirm(null)}
+        >
+          <div
+            className="bg-[#161b22] border border-border rounded-xl p-5 w-[300px] flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-[14px] font-semibold text-white">Удалить изображение?</div>
+            <div className="text-[13px] text-muted">Это действие нельзя отменить.</div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => deleteFile.mutate(deleteConfirm)}
+                disabled={deleteFile.isPending}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50"
+              >
+                {deleteFile.isPending ? "Удаление..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={lightboxUrl}
+              className="max-w-full max-h-[85vh] rounded-xl object-contain"
+              alt=""
+            />
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute -top-3 -right-3 w-7 h-7 bg-[#161b22] border border-border rounded-full flex items-center justify-center text-muted hover:text-white transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryItem({
+  file,
+  onUsePrompt,
+  onDownload,
+  onDelete,
+  onOpen,
+}: {
+  file: FileItem;
+  onUsePrompt: (p: string) => void;
+  onDownload: () => void;
+  onDelete: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="group flex gap-3 px-4 py-2.5 hover:bg-white/[0.03] transition-colors">
+      {/* Thumbnail */}
+      <div
+        className="w-14 h-14 rounded-lg overflow-hidden border border-border shrink-0 cursor-pointer hover:border-accent transition-colors"
+        onClick={onOpen}
+      >
+        <img src={file.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+      </div>
+
+      {/* Info + actions */}
+      <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+        <div>
+          <p
+            className="text-[12px] text-white/80 leading-snug line-clamp-2 cursor-pointer hover:text-white transition-colors"
+            title={file.prompt ?? ""}
+            onClick={onOpen}
+          >
+            {file.prompt || <span className="text-muted italic">без промпта</span>}
+          </p>
+          <p className="text-[10px] text-muted mt-0.5">{formatDate(file.createdAt)}</p>
+        </div>
+
+        {/* Actions row */}
+        <div className="flex items-center gap-0.5 mt-1">
+          {file.prompt && (
+            <button
+              title="Использовать промпт"
+              onClick={() => onUsePrompt(file.prompt!)}
+              className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors"
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
+          <CopyUrlButton url={file.url} />
+          <button
+            title="Скачать"
+            onClick={onDownload}
+            className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors"
+          >
+            <Download size={12} />
+          </button>
+          <button
+            title="Удалить"
+            onClick={onDelete}
+            className="p-1 rounded hover:bg-white/10 text-muted hover:text-red-400 transition-colors ml-auto"
+          >
+            <Trash2 size={12} />
+          </button>
         </div>
       </div>
     </div>
