@@ -194,6 +194,64 @@ export async function imageRoutes(app: FastifyInstance) {
     return { ok: true, files: await getFiles() };
   });
 
+  // Улучшение промпта через GPT
+  app.post("/api/image/improve-prompt", async (request, reply) => {
+    const body = request.body as { prompt?: string };
+    const prompt = body?.prompt?.trim();
+    const apiKey = process.env.KIE_API_KEY;
+
+    if (!apiKey) {
+      return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+    }
+    if (!prompt) {
+      return reply.status(400).send({ ok: false, error: "Введите prompt" });
+    }
+
+    const systemMessage = `You are an expert AI image prompt engineer.
+Your task is to transform a user's simple description into a highly detailed, professional image generation prompt.
+Rules:
+- Write the improved prompt in English only
+- Add specific details: lighting, style, camera angle, mood, colors, textures, artistic style
+- Include technical parameters like "photorealistic", "8K resolution", "cinematic lighting" where appropriate
+- Keep it concise but descriptive (2-4 sentences max)
+- Return ONLY the improved prompt text, nothing else — no explanations, no labels`;
+
+    try {
+      const kieResponse = await fetch(
+        `${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: "system", content: [{ type: "text", text: systemMessage }] },
+              { role: "user", content: [{ type: "text", text: prompt }] },
+            ],
+            stream: false,
+          }),
+        }
+      );
+
+      const kieData = await kieResponse.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+        error?: { message?: string };
+      };
+
+      const improved = kieData.choices?.[0]?.message?.content?.trim();
+      if (!improved) {
+        console.error("KIE improve-prompt error:", JSON.stringify(kieData));
+        return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
+      }
+
+      return { ok: true, improvedPrompt: improved };
+    } catch {
+      return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
+    }
+  });
+
   // Удаление файла
   app.delete("/api/files/:id", async (request, reply) => {
     const params = request.params as { id?: string };

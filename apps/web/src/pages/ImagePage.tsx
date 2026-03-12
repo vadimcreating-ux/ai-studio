@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   Check,
+  Wand2,
 } from "lucide-react";
 import { api } from "../shared/api/client";
 
@@ -158,6 +159,19 @@ export default function ImagePage() {
     },
   });
 
+  const improvePrompt = useMutation({
+    mutationFn: async () => {
+      const data = await api.post<{ ok: boolean; improvedPrompt: string }>(
+        "/api/image/improve-prompt",
+        { prompt }
+      );
+      return data.improvedPrompt;
+    },
+    onSuccess: (improved) => {
+      setPrompt(improved);
+    },
+  });
+
   const generate = useMutation({
     mutationFn: async () => {
       setStatusText("Создаём задачу...");
@@ -240,7 +254,26 @@ export default function ImagePage() {
               rows={5}
               className="input-field resize-none scrollbar-thin"
             />
-            <div className="text-[11px] text-muted mt-1 text-right">{prompt.length} / 20000</div>
+            <div className="flex items-center justify-between mt-1.5">
+              <button
+                onClick={() => improvePrompt.mutate()}
+                disabled={!prompt.trim() || improvePrompt.isPending}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-[11px] text-muted hover:text-white hover:border-[#484f58] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {improvePrompt.isPending ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Wand2 size={11} />
+                )}
+                {improvePrompt.isPending ? "Улучшаем..." : "Улучшить промпт"}
+              </button>
+              <span className="text-[11px] text-muted">{prompt.length} / 20000</span>
+            </div>
+            {improvePrompt.isError && (
+              <div className="text-[11px] text-red-400 mt-1">
+                {improvePrompt.error?.message ?? "Ошибка улучшения промпта"}
+              </div>
+            )}
           </Field>
 
           {/* Reference images (img2img) */}
