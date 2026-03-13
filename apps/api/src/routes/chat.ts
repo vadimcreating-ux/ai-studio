@@ -6,6 +6,31 @@ const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
 
 export async function chatRoutes(app: FastifyInstance) {
+  // Диагностика Anthropic API ключа
+  app.get("/api/debug/anthropic", async (request, reply) => {
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) return { ok: false, error: "ANTHROPIC_API_KEY не задан" };
+
+    const keyPreview = `${key.slice(0, 10)}...${key.slice(-4)}`;
+
+    const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-20241022",
+        max_tokens: 10,
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    const data = await res.json();
+    return { ok: true, keyPreview, status: res.status, body: data };
+  });
+
   // Создать новый чат
   app.post("/api/chat/new", async (request, reply) => {
     const body = request.body as { module?: string; model?: string; title?: string; project_id?: string };
