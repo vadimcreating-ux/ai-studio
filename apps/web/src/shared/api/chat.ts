@@ -33,6 +33,9 @@ export const chatApi = {
   send: (chatId: string, message: string, files?: Array<{ dataUrl: string; mimeType: string; name: string }>) =>
     api.post<{ ok: true; reply: string }>(`/api/chat/${chatId}/send`, { message, files }),
 
+  updateModel: (chatId: string, model: string) =>
+    api.patch<{ ok: true; chat: Chat }>(`/api/chat/${chatId}`, { model }),
+
   delete: (chatId: string) =>
     api.delete<{ ok: true }>(`/api/chat/${chatId}`),
 };

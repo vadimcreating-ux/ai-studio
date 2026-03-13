@@ -56,6 +56,20 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, messages: result.rows };
   });
 
+  // Обновить модель чата
+  app.patch("/api/chat/:chatId", async (request, reply) => {
+    const params = request.params as { chatId: string };
+    const body = request.body as { model?: string };
+    const model = body?.model?.trim();
+    if (!model) return reply.status(400).send({ ok: false, error: "model required" });
+
+    const result = await dbQuery(
+      `UPDATE chats SET model = $1 WHERE id = $2 RETURNING *`,
+      [model, params.chatId]
+    );
+    return { ok: true, chat: result.rows[0] };
+  });
+
   // Удалить чат
   app.delete("/api/chat/:chatId", async (request, reply) => {
     const params = request.params as { chatId: string };
