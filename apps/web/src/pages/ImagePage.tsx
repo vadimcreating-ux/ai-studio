@@ -304,11 +304,8 @@ export default function ImagePage() {
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Left + Center combined (flex-col) */}
-        <div className="flex flex-col flex-1 overflow-hidden">
-
-          {/* Top row: Projects | Gallery */}
-          <div className="flex flex-1 overflow-hidden">
+        {/* Left + Center combined */}
+        <div className="flex flex-1 overflow-hidden">
 
             {/* Left column: Projects (top, scrollable) + Settings (bottom, pinned) */}
             <div className="w-[260px] min-w-[260px] border-r border-border flex flex-col overflow-hidden">
@@ -451,7 +448,7 @@ export default function ImagePage() {
                 </div>
               </div>
             </div>
-
+          <div className="flex flex-col flex-1 overflow-hidden">
             {/* Gallery */}
             <div className="flex-1 overflow-y-auto scrollbar-thin p-5">
               {results.length === 0 ? (
@@ -497,16 +494,9 @@ export default function ImagePage() {
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Bottom bar: Prompt — aligned with center gallery column */}
-          <div className="border-t border-border shrink-0 flex">
-
-            {/* Left spacer — matches left column width, with separator */}
-            <div className="w-[260px] min-w-[260px] shrink-0 border-r border-border" />
 
             {/* Prompt */}
-            <div className="flex-1 px-5 pt-3 pb-4 flex flex-col gap-2">
+            <div className="shrink-0 px-5 pt-3 pb-4 flex flex-col gap-2">
               {activeProject && (
                 <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/10 border border-accent/30">
                   <FolderOpen size={16} className="text-accent shrink-0" />
