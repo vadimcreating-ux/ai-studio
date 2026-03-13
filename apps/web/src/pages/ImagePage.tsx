@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Plus,
   Pencil,
+  FileText,
 } from "lucide-react";
 import { api } from "../shared/api/client";
 
@@ -53,9 +54,12 @@ type FileItem = {
   url: string; createdAt: string; source: "kie"; prompt: string | null;
 };
 
+type ProjectFile = { name: string; mimeType: string; dataUrl: string };
+
 type Project = {
   id: string; name: string; description: string;
   system_prompt: string; style: string; memory: string; module: string;
+  context_files?: ProjectFile[];
 };
 
 function pollStatus(taskId: string): Promise<string> {
@@ -114,9 +118,11 @@ export default function ImagePage() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectForm, setProjectForm] = useState<{
     mode: "create" | "edit"; id?: string;
-    name: string; description: string; system_prompt: string; style: string; memory: string;
+    name: string; system_prompt: string; style: string; memory: string;
+    context_files: ProjectFile[];
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const contextFilesRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const { data: filesData } = useQuery({
@@ -211,16 +217,27 @@ export default function ImagePage() {
   });
 
   const openCreateForm = () =>
-    setProjectForm({ mode: "create", name: "", description: "", system_prompt: "", style: "", memory: "" });
+    setProjectForm({ mode: "create", name: "", system_prompt: "", style: "", memory: "", context_files: [] });
 
   const openEditForm = (p: Project) =>
-    setProjectForm({ mode: "edit", id: p.id, name: p.name, description: p.description, system_prompt: p.system_prompt, style: p.style, memory: p.memory });
+    setProjectForm({ mode: "edit", id: p.id, name: p.name, system_prompt: p.system_prompt, style: p.style, memory: p.memory, context_files: p.context_files ?? [] });
 
   const submitProjectForm = () => {
     if (!projectForm) return;
-    const d = { name: projectForm.name, description: projectForm.description, system_prompt: projectForm.system_prompt, style: projectForm.style, memory: projectForm.memory };
+    const d = { name: projectForm.name, description: "", system_prompt: projectForm.system_prompt, style: projectForm.style, memory: projectForm.memory, context_files: projectForm.context_files };
     if (projectForm.mode === "create") createProject.mutate(d);
     else if (projectForm.id) updateProject.mutate({ id: projectForm.id, ...d });
+  };
+
+  const addContextFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const items = await Promise.all(Array.from(files).map((file) => new Promise<ProjectFile>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, mimeType: file.type || "text/plain", dataUrl: reader.result as string });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    })));
+    setProjectForm((f) => f ? { ...f, context_files: [...f.context_files, ...items] } : f);
   };
 
   const handleFileAdd = (files: FileList | null) => {
@@ -240,12 +257,6 @@ export default function ImagePage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="px-6 pt-4 pb-3 border-b border-border shrink-0">
-        <h1 className="text-[22px] font-semibold text-white leading-tight">Image</h1>
-        <p className="text-[13px] text-muted mt-0.5">Генерация изображений через KIE API</p>
-      </div>
-
       <div className="flex flex-1 overflow-hidden">
 
         {/* Left + Center combined (flex-col) */}
@@ -369,7 +380,7 @@ export default function ImagePage() {
           </div>
 
           {/* Bottom bar: Settings (left) + Prompt (right) — unified block */}
-          <div className="border-t border-border shrink-0 flex">
+          <div className="border-t border-border shrink-0 flex min-h-[270px]">
 
             {/* Settings — left part, no right border */}
             <div className="w-[260px] min-w-[260px] px-4 pt-3 pb-4 flex flex-col gap-2.5">
@@ -459,7 +470,7 @@ export default function ImagePage() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={activeProject?.system_prompt || "Описание изображения..."}
-                rows={7}
+                rows={11}
                 className="input-field resize-none scrollbar-thin w-full flex-1"
               />
               <div className="flex items-center justify-between">
@@ -546,27 +557,38 @@ export default function ImagePage() {
                   onChange={(e) => setProjectForm((f) => f && { ...f, name: e.target.value })}
                   placeholder="Например: Предметная съёмка" className="input-field" />
               </FormField>
-              <FormField label="Описание">
-                <input type="text" value={projectForm.description}
-                  onChange={(e) => setProjectForm((f) => f && { ...f, description: e.target.value })}
-                  placeholder="Короткое описание сценария" className="input-field" />
-              </FormField>
-              <FormField label="Шаблон промпта" hint="Используется как placeholder в поле ввода при выборе проекта">
-                <textarea value={projectForm.system_prompt}
-                  onChange={(e) => setProjectForm((f) => f && { ...f, system_prompt: e.target.value })}
-                  placeholder="Например: A studio photo of {subject} on white background..." rows={3}
-                  className="input-field resize-none scrollbar-thin" />
-              </FormField>
               <FormField label="Стиль" hint="Автоматически добавляется к промпту при генерации">
                 <input type="text" value={projectForm.style}
                   onChange={(e) => setProjectForm((f) => f && { ...f, style: e.target.value })}
                   placeholder="Например: photorealistic, soft lighting, 8K" className="input-field" />
               </FormField>
-              <FormField label="Память / заметки" hint="Контекст и важные детали для этого проекта">
+              <FormField label="Контекст проекта">
                 <textarea value={projectForm.memory}
                   onChange={(e) => setProjectForm((f) => f && { ...f, memory: e.target.value })}
                   placeholder="Бренд-гайдлайны, предпочтения, цветовая палитра..." rows={3}
                   className="input-field resize-none scrollbar-thin" />
+                <div className="mt-2">
+                  {projectForm.context_files.length > 0 && (
+                    <div className="flex flex-col gap-1 mb-2">
+                      {projectForm.context_files.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 px-2 py-1 rounded bg-[#1c2128] border border-border">
+                          {f.mimeType.startsWith("image/") ? <ImageIcon size={11} className="text-muted shrink-0" /> : <FileText size={11} className="text-muted shrink-0" />}
+                          <span className="text-[11px] text-[#c9d1d9] truncate flex-1">{f.name}</span>
+                          <button onClick={() => setProjectForm((pf) => pf ? { ...pf, context_files: pf.context_files.filter((_, idx) => idx !== i) } : pf)}
+                            className="text-muted hover:text-red-400 transition-colors shrink-0">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => contextFilesRef.current?.click()}
+                    className="flex items-center gap-1.5 text-[11px] text-muted hover:text-white transition-colors">
+                    <Paperclip size={11} />Прикрепить файл
+                  </button>
+                  <input ref={contextFilesRef} type="file" multiple accept="image/*,.txt,.md"
+                    className="hidden" onChange={(e) => addContextFiles(e.target.files)} />
+                </div>
               </FormField>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2">
