@@ -429,20 +429,20 @@ export default function ImagePage() {
                 {/* Ref images */}
                 <div>
                   <label className="block text-[10px] text-muted mb-1.5">Референсы (img2img)</label>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="grid grid-cols-2 gap-2">
                     {refImageFiles.map((file, i) => (
-                      <div key={i} className="relative group w-10 h-10 rounded-lg overflow-hidden border border-border">
+                      <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-border">
                         <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt={file.name} />
                         <button onClick={() => removeRefFile(i)}
-                          className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X size={8} className="text-white" />
+                          className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X size={10} className="text-white" />
                         </button>
                       </div>
                     ))}
                     {refImageFiles.length < 8 && (
                       <button onClick={() => fileInputRef.current?.click()}
-                        className="w-10 h-10 rounded-lg border border-dashed border-border hover:border-accent flex items-center justify-center text-muted hover:text-white transition-colors">
-                        <Paperclip size={12} />
+                        className="aspect-square rounded-lg border border-dashed border-border hover:border-accent flex items-center justify-center text-muted hover:text-white transition-colors">
+                        <Paperclip size={16} />
                       </button>
                     )}
                   </div>
