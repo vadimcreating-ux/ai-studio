@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { dbQuery } from "../lib/db.js";
 
+const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
+
 const KIE_BASE_URL = "https://api.kie.ai";
 const videoPromptStore = new Map<string, string>();
 
@@ -33,31 +35,47 @@ export async function videoRoutes(app: FastifyInstance) {
     const body = request.body as {
       model?: string;
       prompt?: string;
+      // Sora params
       image_urls?: string[];
       aspect_ratio?: string;
       n_frames?: string;
       size?: string;
       remove_watermark?: boolean;
+      // Kling params
+      input_urls?: string[];
+      video_urls?: string[];
+      character_orientation?: string;
+      mode?: string;
     };
 
     const prompt = body?.prompt?.trim();
     const apiKey = process.env.KIE_API_KEY;
+    const model = body?.model?.trim() || "sora-2-pro-image-to-video";
+    const isKling = KLING_MODELS.has(model);
 
     if (!apiKey) {
       return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
     }
-    if (!prompt) {
+    // Kling: prompt is optional; Sora: required
+    if (!isKling && !prompt) {
       return reply.status(400).send({ ok: false, error: "Введите prompt" });
     }
 
-    const model = (body as any)?.model?.trim() || "sora-2-pro-image-to-video";
+    const input: Record<string, unknown> = {};
+    if (prompt) input.prompt = prompt;
 
-    const input: Record<string, unknown> = { prompt };
-    if (body?.image_urls?.length) input.image_urls = body.image_urls;
-    if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
-    if (body?.n_frames) input.n_frames = body.n_frames;
-    if (body?.size) input.size = body.size;
-    if (body?.remove_watermark !== undefined) input.remove_watermark = body.remove_watermark;
+    if (isKling) {
+      if (body?.input_urls?.length) input.input_urls = body.input_urls;
+      if (body?.video_urls?.length) input.video_urls = body.video_urls;
+      if (body?.character_orientation) input.character_orientation = body.character_orientation;
+      if (body?.mode) input.mode = body.mode;
+    } else {
+      if (body?.image_urls?.length) input.image_urls = body.image_urls;
+      if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
+      if (body?.n_frames) input.n_frames = body.n_frames;
+      if (body?.size) input.size = body.size;
+      if (body?.remove_watermark !== undefined) input.remove_watermark = body.remove_watermark;
+    }
 
     try {
       const createResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/createTask`, {
@@ -325,5 +343,40 @@ Rules:
     } catch {
       return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
     }
+  });
+
+  // ─── Шаблоны промптов ────────────────────────────────────────────────────
+
+  app.get("/api/video-templates", async () => {
+    const result = await dbQuery(
+      `SELECT id, title, text, created_at FROM video_prompt_templates ORDER BY created_at DESC`
+    );
+    return { ok: true, templates: result.rows };
+  });
+
+  app.post("/api/video-templates", async (request, reply) => {
+    const body = request.body as { title?: string; text?: string };
+    const title = body?.title?.trim();
+    const text = body?.text?.trim();
+    if (!title || !text) {
+      return reply.status(400).send({ ok: false, error: "title и text обязательны" });
+    }
+    const result = await dbQuery(
+      `INSERT INTO video_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`,
+      [title, text]
+    );
+    return { ok: true, template: result.rows[0] };
+  });
+
+  app.delete("/api/video-templates/:id", async (request, reply) => {
+    const params = request.params as { id: string };
+    const result = await dbQuery(
+      `DELETE FROM video_prompt_templates WHERE id = $1`,
+      [params.id]
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return reply.status(404).send({ ok: false, error: "Шаблон не найден" });
+    }
+    return { ok: true };
   });
 }

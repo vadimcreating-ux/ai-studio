@@ -73,6 +73,17 @@ export async function ensureImageTemplatesTable() {
   `);
 }
 
+export async function ensureVideoTemplatesTable() {
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS video_prompt_templates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+
 export async function ensureFilesTable() {
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS files (
