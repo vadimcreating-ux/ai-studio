@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
-import { projectsApi, type Project } from "../../shared/api/projects";
+import { X, Paperclip, FileText, Image, Trash2 } from "lucide-react";
+import { projectsApi, type Project, type ProjectFile } from "../../shared/api/projects";
 
 const CLAUDE_MODELS = [
   { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku — быстрый, дешёвый" },
@@ -36,17 +36,25 @@ type Props = {
 
 export default function ProjectSettingsModal({ project, onClose, onSaved }: Props) {
   const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     name: project.name,
-    description: project.description,
     model: project.model,
     system_prompt: project.system_prompt,
     style: project.style,
     memory: project.memory,
+    context_files: (project.context_files ?? []) as ProjectFile[],
   });
 
   const update = useMutation({
-    mutationFn: () => projectsApi.update(project.id, form),
+    mutationFn: () => projectsApi.update(project.id, {
+      name: form.name,
+      model: form.model,
+      system_prompt: form.system_prompt,
+      style: form.style,
+      memory: form.memory,
+      context_files: form.context_files,
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects", project.module] });
       onSaved();
@@ -54,6 +62,36 @@ export default function ProjectSettingsModal({ project, onClose, onSaved }: Prop
   });
 
   const models = getModels(project.module);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setForm((prev) => ({
+          ...prev,
+          context_files: [
+            ...prev.context_files,
+            { name: file.name, mimeType: file.type || "text/plain", dataUrl },
+          ],
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // reset so same file can be re-added if removed
+    e.target.value = "";
+  }
+
+  function removeFile(index: number) {
+    setForm((prev) => ({
+      ...prev,
+      context_files: prev.context_files.filter((_, i) => i !== index),
+    }));
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -82,15 +120,6 @@ export default function ProjectSettingsModal({ project, onClose, onSaved }: Prop
             />
           </Field>
 
-          <Field label="Описание">
-            <input
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="Краткое описание проекта"
-              className="input-field"
-            />
-          </Field>
-
           <Field label="Модель">
             <select
               value={form.model}
@@ -104,7 +133,7 @@ export default function ProjectSettingsModal({ project, onClose, onSaved }: Prop
             </select>
           </Field>
 
-          <Field label="Роль модели (System prompt)">
+          <Field label="Роль в проекте">
             <textarea
               value={form.system_prompt}
               onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
@@ -123,13 +152,55 @@ export default function ProjectSettingsModal({ project, onClose, onSaved }: Prop
             />
           </Field>
 
-          <Field label="Память проекта">
+          <Field label="Контекст проекта">
             <textarea
               value={form.memory}
               onChange={(e) => setForm({ ...form, memory: e.target.value })}
-              rows={5}
+              rows={4}
               placeholder="Факты, правила, ограничения для этого проекта..."
               className="input-field resize-none"
+            />
+
+            {/* Attached files */}
+            {form.context_files.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {form.context_files.map((file, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface border border-border group"
+                  >
+                    {file.mimeType.startsWith("image/") ? (
+                      <Image size={13} className="text-muted flex-shrink-0" />
+                    ) : (
+                      <FileText size={13} className="text-muted flex-shrink-0" />
+                    )}
+                    <span className="text-[12px] text-[#c9d1d9] truncate flex-1">{file.name}</span>
+                    <button
+                      onClick={() => removeFile(i)}
+                      className="text-muted hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add file button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-2 flex items-center gap-1.5 text-[12px] text-muted hover:text-white transition-colors"
+            >
+              <Paperclip size={13} />
+              Прикрепить файл (TXT, изображение)
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.txt,.md"
+              className="hidden"
+              onChange={handleFileSelect}
             />
           </Field>
         </div>

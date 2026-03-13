@@ -1,5 +1,11 @@
 import { api } from "./client";
 
+export type ProjectFile = {
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+};
+
 export type Project = {
   id: string;
   module: string;
@@ -9,6 +15,7 @@ export type Project = {
   system_prompt: string;
   style: string;
   memory: string;
+  context_files: ProjectFile[];
   created_at: string;
 };
 

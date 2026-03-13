@@ -56,6 +56,10 @@ export async function ensureProjectsTable() {
   await dbQuery(`
     ALTER TABLE chats ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE SET NULL
   `).catch(() => {});
+
+  await dbQuery(`
+    ALTER TABLE projects ADD COLUMN context_files JSONB DEFAULT '[]'
+  `).catch(() => {});
 }
 
 export async function ensureFilesTable() {

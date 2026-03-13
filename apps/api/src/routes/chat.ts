@@ -133,9 +133,10 @@ export async function chatRoutes(app: FastifyInstance) {
     const messages: Array<{ role: string; content: any }> = [];
 
     // Добавить system prompt из проекта, если есть
+    let projectContextFiles: Array<{ name: string; mimeType: string; dataUrl: string }> = [];
     if (chat.project_id) {
       const projectResult = await dbQuery(
-        `SELECT system_prompt, style, memory FROM projects WHERE id = $1`,
+        `SELECT system_prompt, style, memory, context_files FROM projects WHERE id = $1`,
         [chat.project_id]
       );
       if (projectResult.rows.length > 0) {
@@ -143,11 +144,38 @@ export async function chatRoutes(app: FastifyInstance) {
         const parts: string[] = [];
         if (proj.system_prompt) parts.push(proj.system_prompt);
         if (proj.style) parts.push(`Стиль общения: ${proj.style}`);
-        if (proj.memory) parts.push(`Память проекта:\n${proj.memory}`);
+        if (proj.memory) parts.push(`Контекст проекта:\n${proj.memory}`);
+
+        // Текстовые файлы — добавляем содержимое прямо в system prompt
+        const files: Array<{ name: string; mimeType: string; dataUrl: string }> =
+          Array.isArray(proj.context_files) ? proj.context_files : [];
+        for (const file of files) {
+          if (!file.mimeType.startsWith("image/")) {
+            const base64 = file.dataUrl.split(",")[1] ?? "";
+            const decoded = Buffer.from(base64, "base64").toString("utf-8");
+            parts.push(`[Файл контекста: ${file.name}]\n${decoded}`);
+          }
+        }
+
         if (parts.length > 0) {
           messages.push({ role: "system", content: parts.join("\n\n") });
         }
+
+        // Изображения — сохраняем для инжекции в виде user/assistant пары
+        projectContextFiles = files.filter((f) => f.mimeType.startsWith("image/"));
       }
+    }
+
+    // Если есть контекстные изображения — добавляем их как user/assistant пару до истории
+    if (projectContextFiles.length > 0) {
+      const imageItems: Array<Record<string, unknown>> = [
+        { type: "text", text: "Вот файлы контекста проекта, учитывай их во всех ответах:" },
+      ];
+      for (const file of projectContextFiles) {
+        imageItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
+      }
+      messages.push({ role: "user", content: imageItems });
+      messages.push({ role: "assistant", content: [{ type: "text", text: "Понял, учту эти материалы как контекст проекта." }] });
     }
 
     const historyRows: Array<{ role: string; content: string }> = historyResult.rows;

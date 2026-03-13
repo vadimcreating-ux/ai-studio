@@ -23,6 +23,7 @@ export async function projectRoutes(app: FastifyInstance) {
       system_prompt?: string;
       style?: string;
       memory?: string;
+      context_files?: Array<{ name: string; mimeType: string; dataUrl: string }>;
     };
 
     const module = body?.module?.trim() || "claude";
@@ -33,8 +34,8 @@ export async function projectRoutes(app: FastifyInstance) {
     }
 
     const result = await dbQuery(
-      `INSERT INTO projects (module, name, description, model, system_prompt, style, memory)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO projects (module, name, description, model, system_prompt, style, memory, context_files)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [
         module,
         name,
@@ -43,6 +44,7 @@ export async function projectRoutes(app: FastifyInstance) {
         body?.system_prompt || "",
         body?.style || "",
         body?.memory || "",
+        JSON.stringify(body?.context_files ?? []),
       ]
     );
 
@@ -58,6 +60,7 @@ export async function projectRoutes(app: FastifyInstance) {
       system_prompt?: string;
       style?: string;
       memory?: string;
+      context_files?: Array<{ name: string; mimeType: string; dataUrl: string }>;
     };
 
     const result = await dbQuery(
@@ -68,8 +71,9 @@ export async function projectRoutes(app: FastifyInstance) {
          model = COALESCE($3, model),
          system_prompt = COALESCE($4, system_prompt),
          style = COALESCE($5, style),
-         memory = COALESCE($6, memory)
-       WHERE id = $7 RETURNING *`,
+         memory = COALESCE($6, memory),
+         context_files = COALESCE($7, context_files)
+       WHERE id = $8 RETURNING *`,
       [
         body?.name ?? null,
         body?.description ?? null,
@@ -77,6 +81,7 @@ export async function projectRoutes(app: FastifyInstance) {
         body?.system_prompt ?? null,
         body?.style ?? null,
         body?.memory ?? null,
+        body?.context_files !== undefined ? JSON.stringify(body.context_files) : null,
         params.id,
       ]
     );

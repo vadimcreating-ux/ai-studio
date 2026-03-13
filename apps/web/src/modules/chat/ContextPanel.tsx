@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Clock, BookOpen, Brain } from "lucide-react";
+import { Clock, BookOpen, Brain, FileText, Image } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
 
 type Props = {
@@ -51,22 +51,22 @@ export default function ContextPanel({ project, engine, engineLabel }: Props) {
             </p>
           </div>
 
-          {/* Контекст проекта */}
-          <Section icon={<BookOpen size={12} />} title="Контекст проекта">
+          {/* Роль в проекте */}
+          <Section icon={<BookOpen size={12} />} title="Роль в проекте">
             {project.system_prompt ? (
               <>
-                <SubItem title="Роль модели" value={project.system_prompt} />
+                <SubItem title="Роль в проекте" value={project.system_prompt} />
                 {project.style && <SubItem title="Стиль" value={project.style} />}
               </>
             ) : (
               <p className="text-[12px] text-muted/70 leading-snug">
-                Роль и контекст не заданы. Настройте в «Настройках проекта».
+                Роль не задана. Настройте в «Настройках проекта».
               </p>
             )}
           </Section>
 
-          {/* Память проекта */}
-          <Section icon={<Brain size={12} />} title="Память проекта">
+          {/* Контекст проекта */}
+          <Section icon={<Brain size={12} />} title="Контекст проекта">
             {editingMemory ? (
               <div>
                 <textarea
@@ -93,11 +93,27 @@ export default function ContextPanel({ project, engine, engineLabel }: Props) {
                 </div>
               </div>
             ) : project.memory ? (
-              <SubItem title="Закрепленные правила" value={project.memory} />
+              <SubItem title="Текст контекста" value={project.memory} />
             ) : (
               <p className="text-[12px] text-muted/70 leading-snug">
-                Память пуста. Нажмите «Изменить» чтобы добавить правила и факты.
+                Контекст пуст. Нажмите «Изменить» или откройте настройки проекта.
               </p>
+            )}
+
+            {/* Прикреплённые файлы контекста */}
+            {(project.context_files ?? []).length > 0 && (
+              <div className="mt-2 space-y-1">
+                {(project.context_files ?? []).map((file, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    {file.mimeType.startsWith("image/") ? (
+                      <Image size={11} className="text-muted flex-shrink-0" />
+                    ) : (
+                      <FileText size={11} className="text-muted flex-shrink-0" />
+                    )}
+                    <span className="text-[11px] text-muted truncate">{file.name}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </Section>
 
