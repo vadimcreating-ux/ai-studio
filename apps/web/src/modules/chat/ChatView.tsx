@@ -111,11 +111,13 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
   return (
     <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
       {/* Header bar */}
-      <div className="px-6 py-3 border-b border-[#21262d] shrink-0 flex items-center justify-between gap-3">
-        <div className="text-[14px] font-semibold text-white truncate">
+      <div className="px-6 py-3 border-b border-[#21262d] shrink-0 relative flex items-center justify-center">
+        {/* Centered title */}
+        <div className="text-[14px] font-semibold text-white truncate max-w-[50%] text-center">
           {project ? `Проект — ${project.name}` : engineLabel}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right actions */}
+        <div className="absolute right-6 flex items-center gap-2">
           {chat && isClaudeEngine && (
             <select
               value={chat.model}
