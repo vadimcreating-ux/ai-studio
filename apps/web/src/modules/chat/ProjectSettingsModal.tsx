@@ -4,9 +4,12 @@ import { X } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
 
 const CLAUDE_MODELS = [
-  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 — быстрый, дешёвый" },
-  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 — баланс" },
-  { value: "claude-opus-4-6", label: "Claude Opus 4.6 — мощный" },
+  { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku — быстрый, дешёвый" },
+  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet — баланс" },
+  { value: "claude-3-7-sonnet-20250219", label: "Claude 3.7 Sonnet — умный" },
+  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 — новейший быстрый" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 — новейший баланс" },
+  { value: "claude-opus-4-6", label: "Claude Opus 4.6 — новейший мощный" },
 ];
 
 const CHATGPT_MODELS = [
