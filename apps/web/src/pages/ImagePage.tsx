@@ -499,8 +499,11 @@ export default function ImagePage() {
             </div>
           </div>
 
-          {/* Bottom bar: Prompt — full width */}
+          {/* Bottom bar: Prompt — aligned with center gallery column */}
           <div className="border-t border-border shrink-0 flex">
+
+            {/* Left spacer — matches left column width, with separator */}
+            <div className="w-[260px] min-w-[260px] shrink-0 border-r border-border" />
 
             {/* Prompt */}
             <div className="flex-1 px-5 pt-3 pb-4 flex flex-col gap-2">
