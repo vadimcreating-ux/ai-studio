@@ -4,6 +4,7 @@ import {
   getFiles,
   deleteFileById,
 } from "../lib/files-store.js";
+import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map<string, string>();
@@ -323,5 +324,39 @@ Rules:
     }
 
     return { ok: true, id };
+  });
+
+  // Шаблоны промптов для изображений
+  app.get("/api/image-templates", async () => {
+    const result = await dbQuery(
+      `SELECT id, title, text, created_at FROM image_prompt_templates ORDER BY created_at DESC`
+    );
+    return { ok: true, templates: result.rows };
+  });
+
+  app.post("/api/image-templates", async (request, reply) => {
+    const body = request.body as { title?: string; text?: string };
+    const title = body?.title?.trim();
+    const text = body?.text?.trim();
+    if (!title || !text) {
+      return reply.status(400).send({ ok: false, error: "title и text обязательны" });
+    }
+    const result = await dbQuery(
+      `INSERT INTO image_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`,
+      [title, text]
+    );
+    return { ok: true, template: result.rows[0] };
+  });
+
+  app.delete("/api/image-templates/:id", async (request, reply) => {
+    const params = request.params as { id: string };
+    const result = await dbQuery(
+      `DELETE FROM image_prompt_templates WHERE id = $1`,
+      [params.id]
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return reply.status(404).send({ ok: false, error: "Шаблон не найден" });
+    }
+    return { ok: true };
   });
 }

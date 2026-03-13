@@ -17,6 +17,8 @@ import {
   Plus,
   Pencil,
   FileText,
+  BookOpen,
+  Search,
 } from "lucide-react";
 import { api } from "../shared/api/client";
 
@@ -116,6 +118,12 @@ export default function ImagePage() {
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [newTplTitle, setNewTplTitle] = useState("");
+  const [newTplText, setNewTplText] = useState("");
+  const [addingTemplate, setAddingTemplate] = useState(false);
+  const [deleteTplConfirm, setDeleteTplConfirm] = useState<string | null>(null);
   const [projectForm, setProjectForm] = useState<{
     mode: "create" | "edit"; id?: string;
     name: string; system_prompt: string; style: string; memory: string;
@@ -124,6 +132,36 @@ export default function ImagePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contextFilesRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  type ImageTemplate = { id: string; title: string; text: string; created_at: string };
+
+  const { data: templatesData } = useQuery({
+    queryKey: ["image-templates"],
+    queryFn: () => api.get<{ ok: boolean; templates: ImageTemplate[] }>("/api/image-templates"),
+  });
+  const templates = templatesData?.templates ?? [];
+  const filteredTemplates = templateSearch.trim()
+    ? templates.filter((t) => t.title.toLowerCase().includes(templateSearch.toLowerCase()) || t.text.toLowerCase().includes(templateSearch.toLowerCase()))
+    : templates;
+
+  const createTemplate = useMutation({
+    mutationFn: (d: { title: string; text: string }) =>
+      api.post<{ ok: boolean; template: ImageTemplate }>("/api/image-templates", d),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["image-templates"] });
+      setNewTplTitle("");
+      setNewTplText("");
+      setAddingTemplate(false);
+    },
+  });
+
+  const deleteTemplate = useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/api/image-templates/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["image-templates"] });
+      setDeleteTplConfirm(null);
+    },
+  });
 
   const { data: filesData } = useQuery({
     queryKey: ["files"],
@@ -386,20 +424,12 @@ export default function ImagePage() {
             <div className="w-[260px] min-w-[260px] px-4 pt-3 pb-4 flex flex-col gap-2.5">
               <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Настройки</span>
 
-              {/* Model + Aspect ratio */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-muted mb-1">Модель</label>
-                  <select value={model} onChange={(e) => setModel(e.target.value)} className="input-field text-[11px] py-1">
-                    {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted mb-1">Соотношение</label>
-                  <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1">
-                    {ASPECT_RATIOS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                  </select>
-                </div>
+              {/* Model — full width */}
+              <div>
+                <label className="block text-[10px] text-muted mb-1">Модель</label>
+                <select value={model} onChange={(e) => setModel(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                  {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </div>
 
               {/* Resolution + Format */}
@@ -426,6 +456,14 @@ export default function ImagePage() {
                     ))}
                   </div>
                 </div>
+              </div>
+
+              {/* Aspect ratio */}
+              <div>
+                <label className="block text-[10px] text-muted mb-1">Соотношение</label>
+                <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                  {ASPECT_RATIOS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
               </div>
 
               {/* Ref images */}
@@ -456,14 +494,17 @@ export default function ImagePage() {
             {/* Prompt — right part */}
             <div className="flex-1 px-5 pt-3 pb-4 flex flex-col gap-2">
               {activeProject && (
-                <div className="flex items-center gap-2">
-                  <FolderOpen size={11} className="text-accent" />
-                  <span className="text-[11px] text-accent font-medium">{activeProject.name}</span>
-                  {activeProject.style && (
-                    <span className="text-[11px] text-muted truncate">
-                      · {activeProject.style.length > 50 ? activeProject.style.slice(0, 50) + "…" : activeProject.style}
-                    </span>
-                  )}
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/10 border border-accent/30">
+                  <FolderOpen size={16} className="text-accent shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-accent/70 uppercase tracking-wider font-medium">Сейчас работаем в проекте</div>
+                    <div className="text-[15px] text-accent font-semibold truncate leading-tight">{activeProject.name}</div>
+                    {activeProject.style && (
+                      <div className="text-[11px] text-muted truncate mt-0.5">
+                        {activeProject.style.length > 60 ? activeProject.style.slice(0, 60) + "…" : activeProject.style}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               <textarea
@@ -475,6 +516,11 @@ export default function ImagePage() {
               />
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
+                  <button onClick={() => setShowTemplates(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] border-border text-muted hover:text-white hover:border-[#484f58] transition-all">
+                    <BookOpen size={11} />
+                    Шаблоны
+                  </button>
                   <button onClick={() => improvePrompt.mutate()}
                     disabled={!prompt.trim() || improvePrompt.isPending || translatePrompt.isPending}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${improvePrompt.isPending ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"}`}>
@@ -631,6 +677,109 @@ export default function ImagePage() {
               <button onClick={() => deleteFile.mutate(deleteFileConfirm)} disabled={deleteFile.isPending}
                 className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50">
                 {deleteFile.isPending ? "Удаление..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Templates modal */}
+      {showTemplates && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowTemplates(false)}>
+          <div className="bg-[#161b22] border border-border rounded-xl w-[540px] flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <BookOpen size={16} className="text-accent" />
+                <h3 className="text-[15px] font-semibold text-white">Шаблоны промптов</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setAddingTemplate((v) => !v)}
+                  className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors">
+                  <Plus size={12} />Добавить
+                </button>
+                <button onClick={() => setShowTemplates(false)} className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 py-3 border-b border-border shrink-0">
+              <div className="relative">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                <input value={templateSearch} onChange={(e) => setTemplateSearch(e.target.value)}
+                  placeholder="Поиск шаблонов..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded-lg text-[12px] text-white placeholder:text-muted outline-none focus:border-accent" />
+              </div>
+            </div>
+
+            {/* Add form */}
+            {addingTemplate && (
+              <div className="px-5 py-3 border-b border-border bg-[#1c2128] shrink-0 flex flex-col gap-2">
+                <input autoFocus value={newTplTitle} onChange={(e) => setNewTplTitle(e.target.value)}
+                  placeholder="Название шаблона"
+                  className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-[12px] text-white placeholder:text-muted outline-none focus:border-accent" />
+                <textarea value={newTplText} onChange={(e) => setNewTplText(e.target.value)}
+                  placeholder="Текст промпта..." rows={3}
+                  className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-[12px] text-white placeholder:text-muted outline-none focus:border-accent resize-none scrollbar-thin" />
+                <div className="flex gap-2">
+                  <button onClick={() => newTplTitle.trim() && newTplText.trim() && createTemplate.mutate({ title: newTplTitle.trim(), text: newTplText.trim() })}
+                    disabled={!newTplTitle.trim() || !newTplText.trim() || createTemplate.isPending}
+                    className="flex-1 text-[12px] py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-40 transition-colors">
+                    {createTemplate.isPending ? "Сохраняем..." : "Сохранить"}
+                  </button>
+                  <button onClick={() => { setAddingTemplate(false); setNewTplTitle(""); setNewTplText(""); }}
+                    className="flex-1 text-[12px] py-1.5 rounded-lg bg-surface hover:bg-border text-muted transition-colors">
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Templates list */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
+              {filteredTemplates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-2 text-center px-6">
+                  <BookOpen size={24} className="text-muted/40" />
+                  <p className="text-[13px] text-muted">{templateSearch ? "Ничего не найдено" : "Нет шаблонов. Нажмите «Добавить»."}</p>
+                </div>
+              ) : (
+                filteredTemplates.map((tpl) => (
+                  <div key={tpl.id} className="group px-5 py-3 border-b border-border hover:bg-surface transition-colors">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-[13px] font-semibold text-white truncate flex-1">{tpl.title}</span>
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setPrompt(tpl.text); setShowTemplates(false); }}
+                          className="text-[11px] px-2 py-0.5 rounded bg-accent/20 hover:bg-accent/30 text-accent transition-colors">
+                          Вставить
+                        </button>
+                        <button onClick={() => setDeleteTplConfirm(tpl.id)}
+                          className="p-1 rounded hover:bg-white/10 text-muted hover:text-red-400 transition-colors">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted leading-snug line-clamp-2">{tpl.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete template confirmation */}
+      {deleteTplConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={() => setDeleteTplConfirm(null)}>
+          <div className="bg-[#161b22] border border-border rounded-xl p-5 w-[300px] flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[14px] font-semibold text-white">Удалить шаблон?</div>
+            <div className="text-[13px] text-muted">Это действие нельзя отменить.</div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteTplConfirm(null)} className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors">Отмена</button>
+              <button onClick={() => deleteTemplate.mutate(deleteTplConfirm)} disabled={deleteTemplate.isPending}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50">
+                {deleteTemplate.isPending ? "Удаление..." : "Удалить"}
               </button>
             </div>
           </div>
