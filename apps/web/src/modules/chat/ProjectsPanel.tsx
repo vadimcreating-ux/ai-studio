@@ -75,84 +75,85 @@ export default function ProjectsPanel({
 
   return (
     <div className="flex flex-col w-[280px] min-w-[280px] h-full bg-panel border-r border-border overflow-y-auto scrollbar-thin">
-      {/* Projects header */}
-      <div className="px-4 pt-4 pb-3 border-b border-border">
-        <div className="flex items-center justify-between">
+      {/* Projects block */}
+      <div className="mx-3 mt-3 mb-1 rounded-lg border border-border bg-[#161b22] overflow-hidden">
+        {/* Projects header */}
+        <div className="px-3 pt-3 pb-2 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="text-[15px] font-semibold text-white">Проекты</span>
+            <span className="text-[13px] font-semibold text-white">Проекты</span>
             <span
               title={`Отдельные проекты ${engineLabel} с собственной историей и памятью.`}
               className="text-muted hover:text-white cursor-help transition-colors"
             >
-              <HelpCircle size={13} />
+              <HelpCircle size={12} />
             </span>
           </div>
           <button
             onClick={() => setShowNewProject(true)}
-            className="text-[12px] px-2.5 py-0.5 rounded bg-surface hover:bg-border text-[#c9d1d9] transition-colors"
+            className="text-[11px] px-2 py-0.5 rounded bg-surface hover:bg-border text-[#c9d1d9] transition-colors"
           >
             Новый
           </button>
         </div>
-      </div>
 
-      {/* New project input */}
-      {showNewProject && (
-        <div className="px-4 py-3 border-b border-border bg-[#1c2128]">
-          <input
-            autoFocus
-            type="text"
-            placeholder="Название проекта"
-            value={newProjectName}
-            onChange={(e) => setNewProjectName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newProjectName.trim()) createProject.mutate(newProjectName.trim());
-              if (e.key === "Escape") { setShowNewProject(false); setNewProjectName(""); }
-            }}
-            className="w-full bg-base border border-border rounded px-2.5 py-1.5 text-[13px] text-white placeholder:text-muted outline-none focus:border-accent"
-          />
-          <div className="flex gap-2 mt-2">
-            <button
-              disabled={!newProjectName.trim()}
-              onClick={() => newProjectName.trim() && createProject.mutate(newProjectName.trim())}
-              className="flex-1 text-[12px] py-1 rounded bg-accent hover:bg-accent-hover text-white disabled:opacity-40"
-            >
-              Создать
-            </button>
-            <button
-              onClick={() => { setShowNewProject(false); setNewProjectName(""); }}
-              className="flex-1 text-[12px] py-1 rounded bg-surface hover:bg-border text-[#8b949e]"
-            >
-              Отмена
-            </button>
+        {/* New project input */}
+        {showNewProject && (
+          <div className="px-3 py-2.5 border-b border-border bg-[#1c2128]">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Название проекта"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newProjectName.trim()) createProject.mutate(newProjectName.trim());
+                if (e.key === "Escape") { setShowNewProject(false); setNewProjectName(""); }
+              }}
+              className="w-full bg-base border border-border rounded px-2.5 py-1.5 text-[12px] text-white placeholder:text-muted outline-none focus:border-accent"
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                disabled={!newProjectName.trim()}
+                onClick={() => newProjectName.trim() && createProject.mutate(newProjectName.trim())}
+                className="flex-1 text-[11px] py-1 rounded bg-accent hover:bg-accent-hover text-white disabled:opacity-40"
+              >
+                Создать
+              </button>
+              <button
+                onClick={() => { setShowNewProject(false); setNewProjectName(""); }}
+                className="flex-1 text-[11px] py-1 rounded bg-surface hover:bg-border text-[#8b949e]"
+              >
+                Отмена
+              </button>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Projects list */}
-      <div>
-        {projects.map((project) => (
-          <ProjectItem
-            key={project.id}
-            project={project}
-            isActive={selectedProjectId === project.id}
-            onClick={() => onSelectProject(selectedProjectId === project.id ? null : project.id)}
-            onDelete={() => deleteProject.mutate(project.id)}
-          />
-        ))}
-        {projects.length === 0 && !showNewProject && (
-          <p className="px-4 py-3 text-[12px] text-muted">Нет проектов. Создайте первый.</p>
         )}
+
+        {/* Projects list */}
+        <div>
+          {projects.map((project) => (
+            <ProjectItem
+              key={project.id}
+              project={project}
+              isActive={selectedProjectId === project.id}
+              onClick={() => onSelectProject(selectedProjectId === project.id ? null : project.id)}
+              onDelete={() => deleteProject.mutate(project.id)}
+            />
+          ))}
+          {projects.length === 0 && !showNewProject && (
+            <p className="px-3 py-2.5 text-[12px] text-muted">Нет проектов. Создайте первый.</p>
+          )}
+        </div>
       </div>
 
       {/* Dialogs header */}
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between border-t border-border mt-1">
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <span className="text-[14px] font-semibold text-white">Диалоги</span>
         <button
           onClick={() => createChat.mutate()}
           className="text-[12px] px-2.5 py-0.5 rounded bg-surface hover:bg-border text-[#c9d1d9] transition-colors"
         >
-          Чат
+          Новый чат
         </button>
       </div>
 
@@ -169,7 +170,7 @@ export default function ProjectsPanel({
         ))}
         {chats.length === 0 && (
           <p className="px-4 py-2 text-[12px] text-muted leading-snug">
-            {selectedProjectId ? "Нет диалогов в этом проекте." : "Нет диалогов. Нажмите «Чат»."}
+            {selectedProjectId ? "Нет диалогов в этом проекте." : "Нет диалогов. Нажмите «Новый чат»."}
           </p>
         )}
       </div>
@@ -185,7 +186,7 @@ function ProjectItem({
   return (
     <div
       onClick={onClick}
-      className={`group relative px-4 py-3 cursor-pointer border-l-[3px] transition-all ${
+      className={`group relative px-3 py-2.5 cursor-pointer border-l-[3px] transition-all ${
         isActive
           ? "border-accent bg-[#1c2740]"
           : "border-transparent hover:bg-[#1c2128]"

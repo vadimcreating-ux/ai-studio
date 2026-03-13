@@ -15,16 +15,37 @@ function useBackendStatus() {
   });
 }
 
+function useKieBalance() {
+  return useQuery({
+    queryKey: ["kie-balance"],
+    queryFn: async () => {
+      const res = await fetch("/api/kie-balance");
+      if (!res.ok) return null;
+      const data = await res.json() as { ok: boolean; balance: unknown };
+      return data.ok ? data.balance : null;
+    },
+    refetchInterval: 5 * 60_000,
+    retry: false,
+  });
+}
+
 export default function AppLayout() {
   const { data, isError } = useBackendStatus();
+  const { data: kieBalance } = useKieBalance();
   const online = !!data?.ok && !isError;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-base text-white">
       <div className="relative shrink-0">
         <TopNav />
-        {/* Backend status — right side of topnav */}
-        <div className="absolute top-1/2 -translate-y-1/2 right-4 z-50">
+        {/* Right side of topnav */}
+        <div className="absolute top-1/2 -translate-y-1/2 right-4 z-50 flex items-center gap-2">
+          {kieBalance !== null && kieBalance !== undefined && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border bg-[#0d1f35] text-[#58a6ff] border-[#1f4070]">
+              <span className="text-[10px] text-muted">KIE</span>
+              {typeof kieBalance === "number" ? kieBalance.toLocaleString() : String(kieBalance)}
+            </span>
+          )}
           <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border ${
             online
               ? "bg-[#0f2e1a] text-green-400 border-green-900"
@@ -36,7 +57,7 @@ export default function AppLayout() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden flex flex-col">
         <Outlet />
       </div>
     </div>

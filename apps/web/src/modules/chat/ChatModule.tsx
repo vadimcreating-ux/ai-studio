@@ -39,7 +39,7 @@ export default function ChatModule({ engine, engineLabel, engineDescription, def
   }, [qc, engine]);
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       <ProjectsPanel
         engine={engine}
         engineLabel={engineLabel}
