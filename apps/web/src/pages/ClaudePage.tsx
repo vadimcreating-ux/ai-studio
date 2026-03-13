@@ -1,12 +1,13 @@
-import ChatModule from "../modules/chat/ChatModule";
-
 export default function ClaudePage() {
   return (
-    <ChatModule
-      engine="claude"
-      engineLabel="Claude"
-      engineDescription="Прямое подключение к Anthropic API. Модели: Haiku (быстрый/дешёвый), Sonnet, Opus."
-      defaultModel="claude-3-5-haiku-20241022"
-    />
+    <div className="flex-1 flex items-center justify-center h-full">
+      <div className="text-center max-w-sm">
+        <div className="text-[40px] mb-4">🚧</div>
+        <div className="text-[18px] font-semibold text-white mb-2">Claude — скоро</div>
+        <div className="text-[13px] text-muted leading-relaxed">
+          Раздел находится в разработке и будет доступен в ближайшее время.
+        </div>
+      </div>
+    </div>
   );
 }
