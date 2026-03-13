@@ -12,31 +12,17 @@ export async function healthRoutes(app: FastifyInstance) {
     const apiKey = process.env.KIE_API_KEY;
     if (!apiKey) return { ok: true, balance: null, reason: "no_key" };
 
-    // Try known KIE API balance endpoints
-    const endpoints = [
-      "https://api.kie.ai/v1/user/credits",
-      "https://api.kie.ai/v1/credits",
-      "https://api.kie.ai/v1/account",
-      "https://api.kie.ai/v1/me",
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-        });
-        if (!res.ok) continue;
-        const data = await res.json() as Record<string, unknown>;
-        const balance =
-          data.credits ?? data.balance ?? data.remaining ??
-          (data.data as Record<string, unknown>)?.credits ??
-          (data.data as Record<string, unknown>)?.balance ?? null;
-        if (balance !== null) return { ok: true, balance };
-      } catch {
-        // try next
-      }
+    try {
+      // Официальный endpoint из документации KIE API
+      const res = await fetch("https://api.kie.ai/api/v1/chat/credit", {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!res.ok) return { ok: true, balance: null };
+      // Ответ: { "code": 200, "msg": "success", "data": 100 }
+      const data = await res.json() as { code?: number; msg?: string; data?: unknown };
+      return { ok: true, balance: data.data ?? null };
+    } catch {
+      return { ok: true, balance: null };
     }
-
-    return { ok: true, balance: null, reason: "not_found" };
   });
 }
