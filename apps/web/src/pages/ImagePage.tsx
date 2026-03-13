@@ -381,7 +381,7 @@ export default function ImagePage() {
               </div>
 
               {/* Settings — pinned to bottom */}
-              <div className="border-t border-border shrink-0 px-4 pt-3 pb-4 flex flex-col gap-2.5">
+              <div className="shrink-0 px-4 pt-3 pb-4 flex flex-col gap-2.5">
                 <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Настройки</span>
 
                 {/* Model — full width */}
