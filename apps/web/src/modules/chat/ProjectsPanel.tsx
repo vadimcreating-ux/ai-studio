@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Trash2, HelpCircle } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
 import { chatApi, type Chat } from "../../shared/api/chat";
 import { formatDate } from "../../shared/utils/date";
@@ -77,8 +77,16 @@ export default function ProjectsPanel({
     <div className="flex flex-col w-[280px] min-w-[280px] h-full bg-panel border-r border-border overflow-y-auto scrollbar-thin">
       {/* Projects header */}
       <div className="px-4 pt-4 pb-3 border-b border-border">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[15px] font-semibold text-white">Проекты</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[15px] font-semibold text-white">Проекты</span>
+            <span
+              title={`Отдельные проекты ${engineLabel} с собственной историей и памятью.`}
+              className="text-muted hover:text-white cursor-help transition-colors"
+            >
+              <HelpCircle size={13} />
+            </span>
+          </div>
           <button
             onClick={() => setShowNewProject(true)}
             className="text-[12px] px-2.5 py-0.5 rounded bg-surface hover:bg-border text-[#c9d1d9] transition-colors"
@@ -86,9 +94,6 @@ export default function ProjectsPanel({
             Новый
           </button>
         </div>
-        <p className="text-[12px] text-muted leading-snug">
-          Отдельные проекты {engineLabel} с собственной историей и памятью.
-        </p>
       </div>
 
       {/* New project input */}
@@ -165,11 +170,6 @@ export default function ProjectsPanel({
         {chats.length === 0 && (
           <p className="px-4 py-2 text-[12px] text-muted leading-snug">
             {selectedProjectId ? "Нет диалогов в этом проекте." : "Нет диалогов. Нажмите «Чат»."}
-          </p>
-        )}
-        {chats.length === 0 && (
-          <p className="px-4 mt-2 text-[11px] text-muted/60 leading-snug">
-            Позже здесь появится поиск, фильтрация и архив диалогов.
           </p>
         )}
       </div>

@@ -5,10 +5,14 @@ type Props = {
   onSend: (message: string, files: File[]) => void;
   isLoading: boolean;
   disabled?: boolean;
+  value?: string;
+  onChange?: (val: string) => void;
 };
 
-export default function MessageInput({ onSend, isLoading, disabled }: Props) {
-  const [text, setText] = useState("");
+export default function MessageInput({ onSend, isLoading, disabled, value, onChange }: Props) {
+  const [internalText, setInternalText] = useState("");
+  const text = value !== undefined ? value : internalText;
+  const setText = (val: string) => { onChange ? onChange(val) : setInternalText(val); };
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

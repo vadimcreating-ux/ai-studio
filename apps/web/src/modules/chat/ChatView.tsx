@@ -7,6 +7,7 @@ import ChatMessage from "./ChatMessage";
 import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
+
 const CLAUDE_MODELS = [
   { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
   { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
@@ -21,16 +22,26 @@ type Props = {
   project: Project | null;
   engineLabel: string;
   engineDescription: string;
+  insertText: string | null;
+  onInsertConsumed: () => void;
   onProjectUpdated: () => void;
 };
 
-export default function ChatView({ chat, project, engineLabel, engineDescription, onProjectUpdated }: Props) {
+export default function ChatView({ chat, project, engineLabel, engineDescription, insertText, onInsertConsumed, onProjectUpdated }: Props) {
   const qc = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
 
   const isClaudeEngine = engineLabel === "Claude";
+  const [inputText, setInputText] = useState("");
+
+  useEffect(() => {
+    if (insertText !== null) {
+      setInputText(insertText);
+      onInsertConsumed();
+    }
+  }, [insertText]);
 
   const updateModel = useMutation({
     mutationFn: (model: string) => chatApi.updateModel(chat!.id, model),
@@ -99,50 +110,33 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
-      {/* Project header */}
-      {project ? (
-        <div className="px-6 py-3 border-b border-[#21262d] shrink-0">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-[10px] font-semibold tracking-widest text-muted uppercase mb-0.5">
-                Текущий проект
-              </div>
-              <div className="text-[20px] font-semibold text-white leading-tight">{project.name}</div>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <button
-                onClick={() => setShowSettings(true)}
-                className="text-[12px] px-3 py-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] transition-colors"
-              >
-                Настройки проекта
-              </button>
-            </div>
-          </div>
+      {/* Header bar */}
+      <div className="px-6 py-3 border-b border-[#21262d] shrink-0 flex items-center justify-between gap-3">
+        <div className="text-[14px] font-semibold text-white truncate">
+          {project ? `Проект — ${project.name}` : engineLabel}
         </div>
-      ) : null}
-
-      {/* Chat title */}
-      <div className="px-6 py-3 border-b border-[#21262d] shrink-0 flex items-center justify-between">
-        <div>
-          <div className="text-[15px] font-semibold text-white">Чат {engineLabel}</div>
-          <div className="text-[12px] text-muted mt-0.5">
-            {project
-              ? `Независимая рабочая среда для задач через ${engineLabel}.`
-              : engineDescription}
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {chat && isClaudeEngine && (
+            <select
+              value={chat.model}
+              onChange={(e) => updateModel.mutate(e.target.value)}
+              disabled={updateModel.isPending}
+              className="text-[12px] bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md px-2 py-1 cursor-pointer hover:bg-[#30363d] transition-colors"
+            >
+              {CLAUDE_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          )}
+          {project && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-[12px] px-3 py-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] transition-colors"
+            >
+              Настройки проекта
+            </button>
+          )}
         </div>
-        {chat && isClaudeEngine && (
-          <select
-            value={chat.model}
-            onChange={(e) => updateModel.mutate(e.target.value)}
-            disabled={updateModel.isPending}
-            className="text-[12px] bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md px-2 py-1 cursor-pointer hover:bg-[#30363d] transition-colors"
-          >
-            {CLAUDE_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-        )}
       </div>
 
       {/* Messages */}
@@ -193,7 +187,9 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
 
       {/* Input */}
       <MessageInput
-        onSend={(text, files) => chat && sendMessage.mutate({ chatId: chat.id, message: text, files })}
+        value={inputText}
+        onChange={setInputText}
+        onSend={(text, files) => { chat && sendMessage.mutate({ chatId: chat.id, message: text, files }); setInputText(""); }}
         isLoading={sendMessage.isPending}
         disabled={!chat}
       />
