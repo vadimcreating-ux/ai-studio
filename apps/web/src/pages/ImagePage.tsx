@@ -310,70 +310,145 @@ export default function ImagePage() {
           {/* Top row: Projects | Gallery */}
           <div className="flex flex-1 overflow-hidden">
 
-            {/* Projects panel */}
+            {/* Left column: Projects (top, scrollable) + Settings (bottom, pinned) */}
             <div className="w-[260px] min-w-[260px] border-r border-border flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
-                <div className="flex items-center gap-2">
-                  <FolderOpen size={14} className="text-muted" />
-                  <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Проекты</span>
-                </div>
-                <button onClick={openCreateForm}
-                  className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors" title="Создать проект">
-                  <Plus size={14} />
-                </button>
-              </div>
 
-              <div className="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3">
-                {projects.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-2 text-center py-8">
-                    <FolderOpen size={20} className="text-muted/40" />
-                    <div className="text-[12px] text-muted/60 leading-snug px-2">
-                      Создайте проект со стилем, памятью и шаблонами промптов
-                    </div>
-                    <button onClick={openCreateForm}
-                      className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-border hover:border-accent text-[12px] text-muted hover:text-white transition-colors">
-                      <Plus size={12} />Новый проект
-                    </button>
+              {/* Projects — scrollable top area */}
+              <div className="flex flex-col flex-1 overflow-hidden">
+                <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen size={14} className="text-muted" />
+                    <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Проекты</span>
                   </div>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {projects.map((p) => {
-                      const isActive = p.id === activeProjectId;
-                      return (
-                        <div key={p.id} onClick={() => setActiveProjectId(isActive ? null : p.id)}
-                          className={`group flex flex-col gap-1 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${isActive ? "border-accent bg-accent/10" : "border-border hover:border-[#484f58] hover:bg-white/[0.02]"}`}>
-                          <div className="flex items-center justify-between">
-                            <span className={`text-[13px] font-medium truncate ${isActive ? "text-white" : "text-white/80"}`}>{p.name}</span>
-                            <div className="flex items-center gap-0.5 shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={(e) => { e.stopPropagation(); openEditForm(p); }}
-                                className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors" title="Редактировать">
-                                <Pencil size={11} />
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); setDeleteProjectConfirm(p.id); }}
-                                className="p-1 rounded hover:bg-white/10 text-muted hover:text-red-400 transition-colors" title="Удалить">
-                                <Trash2 size={11} />
-                              </button>
+                  <button onClick={openCreateForm}
+                    className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors" title="Создать проект">
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3">
+                  {projects.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 text-center py-8">
+                      <FolderOpen size={20} className="text-muted/40" />
+                      <div className="text-[12px] text-muted/60 leading-snug px-2">
+                        Создайте проект со стилем, памятью и шаблонами промптов
+                      </div>
+                      <button onClick={openCreateForm}
+                        className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-border hover:border-accent text-[12px] text-muted hover:text-white transition-colors">
+                        <Plus size={12} />Новый проект
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {projects.map((p) => {
+                        const isActive = p.id === activeProjectId;
+                        return (
+                          <div key={p.id} onClick={() => setActiveProjectId(isActive ? null : p.id)}
+                            className={`group flex flex-col gap-1 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${isActive ? "border-accent bg-accent/10" : "border-border hover:border-[#484f58] hover:bg-white/[0.02]"}`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[13px] font-medium truncate ${isActive ? "text-white" : "text-white/80"}`}>{p.name}</span>
+                              <div className="flex items-center gap-0.5 shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={(e) => { e.stopPropagation(); openEditForm(p); }}
+                                  className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors" title="Редактировать">
+                                  <Pencil size={11} />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); setDeleteProjectConfirm(p.id); }}
+                                  className="p-1 rounded hover:bg-white/10 text-muted hover:text-red-400 transition-colors" title="Удалить">
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            </div>
+                            {p.description && <p className="text-[11px] text-muted leading-snug line-clamp-2">{p.description}</p>}
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {p.style && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 border border-border text-muted truncate max-w-full">
+                                  {p.style.length > 28 ? p.style.slice(0, 28) + "…" : p.style}
+                                </span>
+                              )}
+                              {p.system_prompt && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">промпт</span>
+                              )}
+                              {p.memory && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400">память</span>
+                              )}
                             </div>
                           </div>
-                          {p.description && <p className="text-[11px] text-muted leading-snug line-clamp-2">{p.description}</p>}
-                          <div className="flex flex-wrap gap-1 mt-0.5">
-                            {p.style && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 border border-border text-muted truncate max-w-full">
-                                {p.style.length > 28 ? p.style.slice(0, 28) + "…" : p.style}
-                              </span>
-                            )}
-                            {p.system_prompt && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">промпт</span>
-                            )}
-                            {p.memory && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400">память</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Settings — pinned to bottom */}
+              <div className="border-t border-border shrink-0 px-4 pt-3 pb-4 flex flex-col gap-2.5">
+                <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Настройки</span>
+
+                {/* Model — full width */}
+                <div>
+                  <label className="block text-[10px] text-muted mb-1">Модель</label>
+                  <select value={model} onChange={(e) => setModel(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                    {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Resolution + Format */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-muted mb-1">Разрешение</label>
+                    <div className="flex gap-1">
+                      {RESOLUTIONS.map((r) => (
+                        <button key={r.value} onClick={() => setResolution(r.value)}
+                          className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${resolution === r.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                )}
+                  <div>
+                    <label className="block text-[10px] text-muted mb-1">Формат</label>
+                    <div className="flex gap-1">
+                      {OUTPUT_FORMATS.map((f) => (
+                        <button key={f.value} onClick={() => setOutputFormat(f.value)}
+                          className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${outputFormat === f.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Aspect ratio */}
+                <div>
+                  <label className="block text-[10px] text-muted mb-1">Соотношение</label>
+                  <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                    {ASPECT_RATIOS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Ref images */}
+                <div>
+                  <label className="block text-[10px] text-muted mb-1.5">Референсы (img2img)</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {refImageFiles.map((file, i) => (
+                      <div key={i} className="relative group w-10 h-10 rounded-lg overflow-hidden border border-border">
+                        <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt={file.name} />
+                        <button onClick={() => removeRefFile(i)}
+                          className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X size={8} className="text-white" />
+                        </button>
+                      </div>
+                    ))}
+                    {refImageFiles.length < 8 && (
+                      <button onClick={() => fileInputRef.current?.click()}
+                        className="w-10 h-10 rounded-lg border border-dashed border-border hover:border-accent flex items-center justify-center text-muted hover:text-white transition-colors">
+                        <Paperclip size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp"
+                    className="hidden" onChange={(e) => handleFileAdd(e.target.files)} />
+                </div>
               </div>
             </div>
 
@@ -424,81 +499,10 @@ export default function ImagePage() {
             </div>
           </div>
 
-          {/* Bottom bar: Settings (left) + Prompt (right) — unified block */}
-          <div className="border-t border-border shrink-0 flex min-h-[270px]">
+          {/* Bottom bar: Prompt — full width */}
+          <div className="border-t border-border shrink-0 flex">
 
-            {/* Settings — left part, no right border */}
-            <div className="w-[260px] min-w-[260px] px-4 pt-3 pb-4 flex flex-col gap-2.5">
-              <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Настройки</span>
-
-              {/* Model — full width */}
-              <div>
-                <label className="block text-[10px] text-muted mb-1">Модель</label>
-                <select value={model} onChange={(e) => setModel(e.target.value)} className="input-field text-[11px] py-1 w-full">
-                  {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </div>
-
-              {/* Resolution + Format */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-muted mb-1">Разрешение</label>
-                  <div className="flex gap-1">
-                    {RESOLUTIONS.map((r) => (
-                      <button key={r.value} onClick={() => setResolution(r.value)}
-                        className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${resolution === r.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted mb-1">Формат</label>
-                  <div className="flex gap-1">
-                    {OUTPUT_FORMATS.map((f) => (
-                      <button key={f.value} onClick={() => setOutputFormat(f.value)}
-                        className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${outputFormat === f.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Aspect ratio */}
-              <div>
-                <label className="block text-[10px] text-muted mb-1">Соотношение</label>
-                <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
-                  {ASPECT_RATIOS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-              </div>
-
-              {/* Ref images */}
-              <div>
-                <label className="block text-[10px] text-muted mb-1.5">Референсы (img2img)</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {refImageFiles.map((file, i) => (
-                    <div key={i} className="relative group w-10 h-10 rounded-lg overflow-hidden border border-border">
-                      <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt={file.name} />
-                      <button onClick={() => removeRefFile(i)}
-                        className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X size={8} className="text-white" />
-                      </button>
-                    </div>
-                  ))}
-                  {refImageFiles.length < 8 && (
-                    <button onClick={() => fileInputRef.current?.click()}
-                      className="w-10 h-10 rounded-lg border border-dashed border-border hover:border-accent flex items-center justify-center text-muted hover:text-white transition-colors">
-                      <Paperclip size={12} />
-                    </button>
-                  )}
-                </div>
-                <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp"
-                  className="hidden" onChange={(e) => handleFileAdd(e.target.files)} />
-              </div>
-            </div>
-
-            {/* Prompt — right part */}
+            {/* Prompt */}
             <div className="flex-1 px-5 pt-3 pb-4 flex flex-col gap-2">
               {activeProject && (
                 <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/10 border border-accent/30">
