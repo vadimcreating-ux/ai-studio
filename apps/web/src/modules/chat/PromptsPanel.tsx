@@ -18,6 +18,7 @@ export default function PromptsPanel({ onInsert }: Props) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newText, setNewText] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prompts));
@@ -106,6 +107,23 @@ export default function PromptsPanel({ onInsert }: Props) {
         </div>
       )}
 
+      {/* Delete confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-[#161b22] border border-border rounded-xl p-5 w-[300px] flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[14px] font-semibold text-white">Удалить шаблон?</div>
+            <div className="text-[13px] text-muted">Это действие нельзя отменить.</div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteConfirm(null)} className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors">Отмена</button>
+              <button onClick={() => { deletePrompt(deleteConfirm); setDeleteConfirm(null); }}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors">
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Prompts list */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {filtered.length === 0 && (
@@ -126,7 +144,7 @@ export default function PromptsPanel({ onInsert }: Props) {
                 {prompt.title}
               </span>
               <button
-                onClick={() => deletePrompt(prompt.id)}
+                onClick={() => setDeleteConfirm(prompt.id)}
                 className="text-muted hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
               >
                 <Trash2 size={11} />

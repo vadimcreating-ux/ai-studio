@@ -25,6 +25,8 @@ export default function ProjectsPanel({
   const qc = useQueryClient();
   const [newProjectName, setNewProjectName] = useState("");
   const [showNewProject, setShowNewProject] = useState(false);
+  const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null);
+  const [deleteChatConfirm, setDeleteChatConfirm] = useState<string | null>(null);
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects", engine],
@@ -51,6 +53,7 @@ export default function ProjectsPanel({
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["projects", engine] });
       if (selectedProjectId === id) onSelectProject(null);
+      setDeleteProjectConfirm(null);
     },
   });
 
@@ -67,6 +70,7 @@ export default function ProjectsPanel({
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["chats", engine, selectedProjectId] });
       if (selectedChatId === id) onNewChat();
+      setDeleteChatConfirm(null);
     },
   });
 
@@ -137,7 +141,7 @@ export default function ProjectsPanel({
               project={project}
               isActive={selectedProjectId === project.id}
               onClick={() => onSelectProject(selectedProjectId === project.id ? null : project.id)}
-              onDelete={() => deleteProject.mutate(project.id)}
+              onDelete={() => setDeleteProjectConfirm(project.id)}
             />
           ))}
           {projects.length === 0 && !showNewProject && (
@@ -165,7 +169,7 @@ export default function ProjectsPanel({
             chat={chat}
             isActive={selectedChatId === chat.id}
             onClick={() => onSelectChat(chat)}
-            onDelete={() => deleteChat.mutate(chat.id)}
+            onDelete={() => setDeleteChatConfirm(chat.id)}
           />
         ))}
         {chats.length === 0 && (
@@ -174,6 +178,40 @@ export default function ProjectsPanel({
           </p>
         )}
       </div>
+
+      {/* Delete project confirmation */}
+      {deleteProjectConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setDeleteProjectConfirm(null)}>
+          <div className="bg-[#161b22] border border-border rounded-xl p-5 w-[300px] flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[14px] font-semibold text-white">Удалить проект?</div>
+            <div className="text-[13px] text-muted">Это действие нельзя отменить.</div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteProjectConfirm(null)} className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors">Отмена</button>
+              <button onClick={() => deleteProject.mutate(deleteProjectConfirm)} disabled={deleteProject.isPending}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50">
+                {deleteProject.isPending ? "Удаление..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete chat confirmation */}
+      {deleteChatConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setDeleteChatConfirm(null)}>
+          <div className="bg-[#161b22] border border-border rounded-xl p-5 w-[300px] flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[14px] font-semibold text-white">Удалить диалог?</div>
+            <div className="text-[13px] text-muted">История сообщений будет удалена. Это действие нельзя отменить.</div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteChatConfirm(null)} className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors">Отмена</button>
+              <button onClick={() => deleteChat.mutate(deleteChatConfirm)} disabled={deleteChat.isPending}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50">
+                {deleteChat.isPending ? "Удаление..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
