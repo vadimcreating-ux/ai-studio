@@ -2,35 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
-const ANTHROPIC_VERSION = "2023-06-01";
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 export async function chatRoutes(app: FastifyInstance) {
-  // Диагностика Anthropic API ключа
-  app.get("/api/debug/anthropic", async (request, reply) => {
-    const key = process.env.ANTHROPIC_API_KEY;
-    if (!key) return { ok: false, error: "ANTHROPIC_API_KEY не задан" };
-
-    const keyPreview = `${key.slice(0, 10)}...${key.slice(-4)}`;
-
-    const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
-        max_tokens: 10,
-        messages: [{ role: "user", content: "Hi" }],
-      }),
-    });
-
-    const data = await res.json();
-    return { ok: true, keyPreview, status: res.status, body: data };
-  });
-
   // Создать новый чат
   app.post("/api/chat/new", async (request, reply) => {
     const body = request.body as { module?: string; model?: string; title?: string; project_id?: string };
@@ -199,83 +173,46 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     });
 
-    // Роутинг: Claude → Anthropic API, остальные → KIE
+    // Роутинг: Claude → OpenRouter, остальные → KIE
     const isClaudeModel = chat.model?.startsWith("claude-");
 
     try {
       let assistantText: string;
 
       if (isClaudeModel) {
-        // ── Anthropic API ──────────────────────────────────────────
-        const anthropicKey = process.env.ANTHROPIC_API_KEY;
-        if (!anthropicKey) {
-          return reply.status(500).send({ ok: false, error: "Не задан ANTHROPIC_API_KEY" });
+        // ── OpenRouter API (поддерживает Claude, работает из России) ──
+        const openrouterKey = process.env.OPENROUTER_API_KEY;
+        if (!openrouterKey) {
+          return reply.status(500).send({ ok: false, error: "Не задан OPENROUTER_API_KEY. Получите ключ на openrouter.ai" });
         }
 
-        // Anthropic требует system отдельно, убираем system-роль из messages
-        let systemPrompt: string | undefined;
-        const anthropicMessages: Array<{ role: string; content: unknown }> = [];
-
-        for (const msg of messages) {
-          if (msg.role === "system") {
-            // Собираем system в строку
-            if (Array.isArray(msg.content)) {
-              systemPrompt = (msg.content as Array<{ text?: string }>)
-                .map((c) => c.text ?? "").join("\n");
-            } else {
-              systemPrompt = String(msg.content);
-            }
-          } else {
-            // Конвертируем image_url (OpenAI) → image source (Anthropic)
-            if (Array.isArray(msg.content)) {
-              const converted = (msg.content as Array<Record<string, unknown>>).map((c) => {
-                if (c.type === "image_url" && c.image_url) {
-                  const url = (c.image_url as { url: string }).url;
-                  const [meta, data] = url.split(",");
-                  const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
-                  return { type: "image", source: { type: "base64", media_type: mimeType, data } };
-                }
-                return c;
-              });
-              anthropicMessages.push({ role: msg.role, content: converted });
-            } else {
-              anthropicMessages.push(msg);
-            }
-          }
-        }
-
-        const anthropicBody: Record<string, unknown> = {
-          model: chat.model,
-          max_tokens: 8096,
-          messages: anthropicMessages,
-        };
-        if (systemPrompt) anthropicBody.system = systemPrompt;
-
-        const anthropicResponse = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+        const orResponse = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
           method: "POST",
           headers: {
-            "x-api-key": anthropicKey,
-            "anthropic-version": ANTHROPIC_VERSION,
+            Authorization: `Bearer ${openrouterKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(anthropicBody),
+          body: JSON.stringify({
+            model: `anthropic/${chat.model}`,
+            messages,
+          }),
         });
 
-        const anthropicData = await anthropicResponse.json() as {
-          content?: Array<{ type: string; text?: string }>;
+        const orData = await orResponse.json() as {
+          choices?: Array<{ message?: { content?: string } }>;
           error?: { message?: string };
         };
 
-        if (!anthropicResponse.ok || !anthropicData.content?.[0]?.text) {
-          console.error("Anthropic error:", anthropicResponse.status, JSON.stringify(anthropicData));
+        if (!orResponse.ok || !orData?.choices?.[0]?.message?.content) {
+          console.error("OpenRouter error:", orResponse.status, JSON.stringify(orData));
           return reply.status(500).send({
             ok: false,
-            error: anthropicData.error?.message || "Anthropic не вернул ответ",
-            debug: { status: anthropicResponse.status, body: anthropicData },
+            error: orData?.error?.message || "OpenRouter не вернул ответ",
+            debug: { status: orResponse.status, body: orData },
           });
         }
 
-        assistantText = anthropicData.content[0].text;
+        assistantText = orData.choices[0].message.content!;
 
       } else {
         // ── KIE API ────────────────────────────────────────────────
