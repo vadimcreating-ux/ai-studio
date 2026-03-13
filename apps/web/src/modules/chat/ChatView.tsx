@@ -116,12 +116,6 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
               >
                 Настройки проекта
               </button>
-              <button
-                onClick={() => setShowSettings(true)}
-                className="text-[12px] px-3 py-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] transition-colors"
-              >
-                Сохранить память
-              </button>
             </div>
           </div>
         </div>
