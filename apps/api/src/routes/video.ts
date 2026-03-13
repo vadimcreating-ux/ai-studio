@@ -31,6 +31,7 @@ export async function videoRoutes(app: FastifyInstance) {
   // Генерация видео — создание задачи (sora-2-pro-image-to-video)
   app.post("/api/video/generate", async (request, reply) => {
     const body = request.body as {
+      model?: string;
       prompt?: string;
       image_urls?: string[];
       aspect_ratio?: string;
@@ -49,6 +50,8 @@ export async function videoRoutes(app: FastifyInstance) {
       return reply.status(400).send({ ok: false, error: "Введите prompt" });
     }
 
+    const model = (body as any)?.model?.trim() || "sora-2-pro-image-to-video";
+
     const input: Record<string, unknown> = { prompt };
     if (body?.image_urls?.length) input.image_urls = body.image_urls;
     if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
@@ -63,7 +66,7 @@ export async function videoRoutes(app: FastifyInstance) {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ model: "sora-2-pro-image-to-video", input }),
+        body: JSON.stringify({ model, input }),
       });
 
       const createData = await createResponse.json() as {
