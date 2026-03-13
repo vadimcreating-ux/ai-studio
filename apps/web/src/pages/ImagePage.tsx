@@ -44,6 +44,13 @@ const RESOLUTIONS = [
   { value: "4K", label: "4K" },
 ];
 
+// Стоимость генерации в кредитах KIE по разрешению
+const GENERATION_COST: Record<string, number> = {
+  "1K": 18,
+  "2K": 18,
+  "4K": 24,
+};
+
 const OUTPUT_FORMATS = [
   { value: "png", label: "PNG" },
   { value: "jpg", label: "JPG" },
@@ -541,11 +548,16 @@ export default function ImagePage() {
                     </span>
                   )}
                 </div>
-                <button onClick={() => generate.mutate()}
-                  disabled={!prompt.trim() || generate.isPending}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Генерация...</> : <><ImageIcon size={14} />Сгенерировать</>}
-                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted/70 whitespace-nowrap">
+                    <span className="text-[#58a6ff] font-medium">{GENERATION_COST[resolution] ?? 18}</span> кред.
+                  </span>
+                  <button onClick={() => generate.mutate()}
+                    disabled={!prompt.trim() || generate.isPending}
+                    className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Генерация...</> : <><ImageIcon size={14} />Сгенерировать</>}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
