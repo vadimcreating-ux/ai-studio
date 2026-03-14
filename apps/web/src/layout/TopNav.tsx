@@ -79,7 +79,7 @@ function ChatDropdown() {
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+        className={`flex items-center justify-between gap-2 w-[130px] px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
           isActive
             ? "bg-accent text-white text-[16px] px-5 py-2.5 shadow-lg shadow-accent/20"
             : "text-[14px] text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#1c2128]"
