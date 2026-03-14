@@ -227,17 +227,37 @@ export async function chatRoutes(app: FastifyInstance) {
         });
 
         const kieClaudeData = await kieClaudeResponse.json() as {
+          // KIE wrapper format (error: code!=200)
+          code?: number;
+          msg?: string;
+          // KIE wrapper format (success: data contains Anthropic response)
+          data?: { content?: Array<{ type: string; text?: string }> };
+          // Direct Anthropic format (success without wrapper)
           content?: Array<{ type: string; text?: string }>;
-          error?: { message?: string };
           role?: string;
         };
 
-        const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
-        if (!kieClaudeResponse.ok || !claudeText) {
-          console.error("KIE Claude error:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
+        console.log("KIE Claude raw response:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
+
+        // Handle KIE error wrapper: {code: 500, msg: "..."}
+        if (kieClaudeData?.code !== undefined && kieClaudeData.code !== 200) {
           return reply.status(500).send({
             ok: false,
-            error: kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
+            error: kieClaudeData.msg || "KIE Claude вернул ошибку",
+            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
+          });
+        }
+
+        // Extract content from either wrapped (data.content) or direct (content) format
+        const contentBlocks =
+          kieClaudeData?.data?.content ?? kieClaudeData?.content ?? [];
+        const claudeText = contentBlocks.find((b) => b.type === "text")?.text;
+
+        if (!kieClaudeResponse.ok || !claudeText) {
+          console.error("KIE Claude no text:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
+          return reply.status(500).send({
+            ok: false,
+            error: kieClaudeData?.msg || "KIE Claude не вернул ответ",
             debug: { status: kieClaudeResponse.status, body: kieClaudeData },
           });
         }
