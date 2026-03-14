@@ -1,5 +1,5 @@
 import { buildApp } from "./app.js";
-import { ensureFilesTable, ensureChatsTable, ensureProjectsTable, ensureImageTemplatesTable, ensureVideoTemplatesTable } from "./lib/db.js";
+import { ensureFilesTable, ensureChatsTable, ensureProjectsTable, ensureImageTemplatesTable, ensureVideoTemplatesTable, ensureEngineSettingsTable } from "./lib/db.js";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 // Если задан HTTPS_PROXY — все fetch запросы идут через него (нужно для обхода геоблокировки Anthropic)
 if (process.env.HTTPS_PROXY) {
@@ -16,6 +16,7 @@ async function start() {
         await ensureChatsTable();
         await ensureImageTemplatesTable();
         await ensureVideoTemplatesTable();
+        await ensureEngineSettingsTable();
         await app.listen({
             port: PORT,
             host: HOST

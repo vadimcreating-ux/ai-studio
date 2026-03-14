@@ -73,6 +73,17 @@ export async function ensureVideoTemplatesTable() {
     )
   `);
 }
+export async function ensureEngineSettingsTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS engine_settings (
+      engine TEXT PRIMARY KEY,
+      about TEXT DEFAULT '',
+      instructions TEXT DEFAULT '',
+      memory TEXT DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
 export async function ensureFilesTable() {
     await dbQuery(`
     CREATE TABLE IF NOT EXISTS files (

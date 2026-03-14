@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, HelpCircle, Search } from "lucide-react";
+import { Trash2, HelpCircle, Search, Brain } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
+import GlobalMemoryModal from "./GlobalMemoryModal";
+import { engineSettingsApi } from "../../shared/api/engine-settings";
 
 type Props = {
   engine: string;
@@ -10,12 +12,21 @@ type Props = {
   onSelectProject: (id: string | null) => void;
 };
 
+
+
 export default function ProjectsPanel({ engine, engineLabel, selectedProjectId, onSelectProject }: Props) {
   const qc = useQueryClient();
   const [newProjectName, setNewProjectName] = useState("");
   const [showNewProject, setShowNewProject] = useState(false);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [showMemory, setShowMemory] = useState(false);
+
+  const { data: memoryData } = useQuery({
+    queryKey: ["engine-settings", engine],
+    queryFn: () => engineSettingsApi.get(engine),
+  });
+  const hasGlobalMemory = !!(memoryData?.settings?.about?.trim() || memoryData?.settings?.instructions?.trim() || memoryData?.settings?.memory?.trim());
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects", engine],
@@ -131,6 +142,30 @@ export default function ProjectsPanel({ engine, engineLabel, selectedProjectId, 
           )}
         </div>
       </div>
+
+      {/* Global memory button */}
+      <div className="px-3 py-2.5 border-t border-border shrink-0">
+        <button
+          onClick={() => setShowMemory(true)}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] transition-colors ${
+            hasGlobalMemory
+              ? "bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20"
+              : "bg-surface hover:bg-border text-muted hover:text-white border border-transparent"
+          }`}
+        >
+          <Brain size={13} className="shrink-0" />
+          <span className="flex-1 text-left">Глобальная память</span>
+          {hasGlobalMemory && <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
+        </button>
+      </div>
+
+      {showMemory && (
+        <GlobalMemoryModal
+          engine={engine}
+          engineLabel={engineLabel}
+          onClose={() => setShowMemory(false)}
+        />
+      )}
 
       {/* Delete project confirmation */}
       {deleteProjectConfirm && (

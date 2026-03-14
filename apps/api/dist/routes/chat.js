@@ -96,6 +96,18 @@ export async function chatRoutes(app) {
         const historyResult = await dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [params.chatId]);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const messages = [];
+        // Глобальная память движка (поверх всего)
+        const globalSettingsResult = await dbQuery(`SELECT about, instructions, memory FROM engine_settings WHERE engine = $1`, [chat.module]);
+        const globalParts = [];
+        if (globalSettingsResult.rows.length > 0) {
+            const g = globalSettingsResult.rows[0];
+            if (g.about)
+                globalParts.push(`О пользователе:\n${g.about}`);
+            if (g.instructions)
+                globalParts.push(`Инструкции:\n${g.instructions}`);
+            if (g.memory)
+                globalParts.push(`Глобальная память:\n${g.memory}`);
+        }
         // Добавить system prompt из проекта, если есть
         let projectContextFiles = [];
         if (chat.project_id) {
@@ -118,12 +130,17 @@ export async function chatRoutes(app) {
                         parts.push(`[Файл контекста: ${file.name}]\n${decoded}`);
                     }
                 }
-                if (parts.length > 0) {
-                    messages.push({ role: "system", content: parts.join("\n\n") });
+                const allParts = [...globalParts, ...parts];
+                if (allParts.length > 0) {
+                    messages.push({ role: "system", content: allParts.join("\n\n") });
                 }
                 // Изображения — сохраняем для инжекции в виде user/assistant пары
                 projectContextFiles = files.filter((f) => f.mimeType.startsWith("image/"));
             }
+        }
+        else if (globalParts.length > 0) {
+            // Нет проекта, но есть глобальная память
+            messages.push({ role: "system", content: globalParts.join("\n\n") });
         }
         // Если есть контекстные изображения — добавляем их как user/assistant пару до истории
         if (projectContextFiles.length > 0) {
