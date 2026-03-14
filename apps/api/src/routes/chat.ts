@@ -200,86 +200,16 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     });
 
-    // Роутинг: claude-*-v1messages → KIE Claude API, остальные → KIE chat/completions
-    const isKieClaude = chat.model?.endsWith("v1messages");
+    // Strip routing suffix to get real model ID (e.g. "claude-sonnet-4-6-v1messages" → "claude-sonnet-4-6")
+    const modelId = chat.model?.replace(/-v1messages$/, "") ?? chat.model;
 
     try {
       let assistantText: string;
 
-      if (isKieClaude) {
-        // ── KIE Claude API (/claude/v1/messages) ──────────────────
-        // Strip "-v1messages" suffix to get real Anthropic model ID
-        const claudeModelId = chat.model.replace(/-v1messages$/, "");
-
-        // Извлекаем system prompt (если есть) и убираем из messages
-        const systemMsg = messages.find((m) => m.role === "system");
-        // Normalize message content: convert arrays to plain strings for KIE compatibility
-        const claudeMessages = messages
-          .filter((m) => m.role !== "system")
-          .map((m) => ({
-            role: m.role,
-            content: Array.isArray(m.content)
-              ? m.content.map((b: any) => (b.type === "text" ? b.text : "")).join("")
-              : m.content,
-          }));
-
-        const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: claudeModelId,
-            max_tokens: 4096,
-            messages: claudeMessages,
-            ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
-            stream: false,
-          }),
-        });
-
-        const kieClaudeData = await kieClaudeResponse.json() as {
-          // KIE wrapper format (error: code!=200)
-          code?: number;
-          msg?: string;
-          // KIE wrapper format (success: data contains Anthropic response)
-          data?: { content?: Array<{ type: string; text?: string }> };
-          // Direct Anthropic format (success without wrapper)
-          content?: Array<{ type: string; text?: string }>;
-          role?: string;
-        };
-
-        console.log("KIE Claude raw response:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
-
-        // Handle KIE error wrapper: {code: 500, msg: "..."}
-        if (kieClaudeData?.code !== undefined && kieClaudeData.code !== 200) {
-          return reply.status(500).send({
-            ok: false,
-            error: kieClaudeData.msg || "KIE Claude вернул ошибку",
-            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
-          });
-        }
-
-        // Extract content from either wrapped (data.content) or direct (content) format
-        const contentBlocks =
-          kieClaudeData?.data?.content ?? kieClaudeData?.content ?? [];
-        const claudeText = contentBlocks.find((b) => b.type === "text")?.text;
-
-        if (!kieClaudeResponse.ok || !claudeText) {
-          console.error("KIE Claude no text:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
-          return reply.status(500).send({
-            ok: false,
-            error: kieClaudeData?.msg || "KIE Claude не вернул ответ",
-            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
-          });
-        }
-
-        assistantText = claudeText;
-
-      } else {
-        // ── KIE chat/completions (GPT, Gemini и прочие) ───────────
+      {
+        // ── KIE chat/completions ───────────────────────────────────
         const kieResponse = await fetch(
-          `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
+          `${KIE_BASE_URL}/${modelId}/v1/chat/completions`,
           {
             method: "POST",
             headers: {
