@@ -29,6 +29,29 @@ const MODELS = [
   { value: "z-image", label: "Z-Image" },
   { value: "topaz/image-upscale", label: "Topaz Upscale" },
   { value: "recraft/remove-background", label: "Recraft Remove BG" },
+  { value: "ideogram/v3-reframe", label: "Ideogram V3 Reframe" },
+];
+
+const IDEOGRAM_IMAGE_SIZES = [
+  { value: "square", label: "Square" },
+  { value: "square_hd", label: "Square HD" },
+  { value: "portrait_4_3", label: "Portrait 4:3" },
+  { value: "portrait_16_9", label: "Portrait 16:9" },
+  { value: "landscape_4_3", label: "Landscape 4:3" },
+  { value: "landscape_16_9", label: "Landscape 16:9" },
+];
+
+const IDEOGRAM_RENDERING_SPEEDS = [
+  { value: "TURBO", label: "Turbo" },
+  { value: "BALANCED", label: "Balanced" },
+  { value: "QUALITY", label: "Quality" },
+];
+
+const IDEOGRAM_STYLES = [
+  { value: "AUTO", label: "Auto" },
+  { value: "GENERAL", label: "General" },
+  { value: "REALISTIC", label: "Realistic" },
+  { value: "DESIGN", label: "Design" },
 ];
 
 const UPSCALE_FACTORS = [
@@ -172,6 +195,10 @@ export default function ImagePage() {
   const [quality, setQuality] = useState("basic");
   const [upscaleImageUrl, setUpscaleImageUrl] = useState("");
   const [upscaleFactor, setUpscaleFactor] = useState("2");
+  const [ideogramImageSize, setIdeogramImageSize] = useState("square_hd");
+  const [ideogramRenderingSpeed, setIdeogramRenderingSpeed] = useState("BALANCED");
+  const [ideogramStyle, setIdeogramStyle] = useState("AUTO");
+  const [ideogramNumImages, setIdeogramNumImages] = useState("1");
   // refImages не используется — файлы конвертируются в base64 в mutationFn
   const [refImageFiles, setRefImageFiles] = useState<File[]>([]);
   const [results, setResults] = useState<GeneratedImage[]>([]);
@@ -321,12 +348,21 @@ export default function ImagePage() {
       const isZImage = model === "z-image";
       const isTopaz = model === "topaz/image-upscale";
       const isRecraft = model === "recraft/remove-background";
+      const isIdeogram = model === "ideogram/v3-reframe";
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
         model,
         ...(isTopaz
           ? { image_url: upscaleImageUrl, upscale_factor: upscaleFactor }
           : isRecraft
           ? { image_url: upscaleImageUrl }
+          : isIdeogram
+          ? {
+              image_url: upscaleImageUrl,
+              ideogram_image_size: ideogramImageSize,
+              ideogram_rendering_speed: ideogramRenderingSpeed,
+              ideogram_style: ideogramStyle,
+              ideogram_num_images: ideogramNumImages,
+            }
           : {
               prompt: finalPrompt,
               aspect_ratio: aspectRatio || undefined,
@@ -545,8 +581,53 @@ export default function ImagePage() {
                   </div>
                 )}
 
-                {/* Aspect ratio — скрыто для Topaz и Recraft */}
-                {model !== "topaz/image-upscale" && model !== "recraft/remove-background" && (
+                {/* Ideogram V3 Reframe settings */}
+                {model === "ideogram/v3-reframe" && (
+                  <>
+                    <div>
+                      <label className="block text-[10px] text-muted mb-1">Размер</label>
+                      <select value={ideogramImageSize} onChange={(e) => setIdeogramImageSize(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                        {IDEOGRAM_IMAGE_SIZES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-muted mb-1">Скорость</label>
+                      <div className="flex gap-1">
+                        {IDEOGRAM_RENDERING_SPEEDS.map((s) => (
+                          <button key={s.value} onClick={() => setIdeogramRenderingSpeed(s.value)}
+                            className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${ideogramRenderingSpeed === s.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-muted mb-1">Стиль</label>
+                      <div className="flex gap-1">
+                        {IDEOGRAM_STYLES.map((s) => (
+                          <button key={s.value} onClick={() => setIdeogramStyle(s.value)}
+                            className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${ideogramStyle === s.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-muted mb-1">Кол-во изображений</label>
+                      <div className="flex gap-1">
+                        {["1", "2", "3", "4"].map((n) => (
+                          <button key={n} onClick={() => setIdeogramNumImages(n)}
+                            className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${ideogramNumImages === n ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Aspect ratio — скрыто для Topaz, Recraft и Ideogram */}
+                {model !== "topaz/image-upscale" && model !== "recraft/remove-background" && model !== "ideogram/v3-reframe" && (
                   <div>
                     <label className="block text-[10px] text-muted mb-1">Соотношение</label>
                     <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
@@ -638,12 +719,14 @@ export default function ImagePage() {
 
             {/* Prompt / Upscale input */}
             <div className="shrink-0 px-5 pt-3 pb-4 flex flex-col gap-2">
-              {(model === "topaz/image-upscale" || model === "recraft/remove-background") ? (
+              {(model === "topaz/image-upscale" || model === "recraft/remove-background" || model === "ideogram/v3-reframe") ? (
                 <>
                   <label className="text-[11px] text-muted">
                     {model === "topaz/image-upscale"
                       ? "URL изображения для апскейла (JPEG / PNG / WebP, макс. 10 МБ)"
-                      : "URL изображения для удаления фона (PNG / JPG / WebP, макс. 5 МБ)"}
+                      : model === "recraft/remove-background"
+                      ? "URL изображения для удаления фона (PNG / JPG / WebP, макс. 5 МБ)"
+                      : "URL изображения для рефрейма (JPEG / PNG / WebP, макс. 10 МБ)"}
                   </label>
                   <input
                     value={upscaleImageUrl}
@@ -665,7 +748,9 @@ export default function ImagePage() {
                         ? <><Loader2 size={14} className="animate-spin" />Обработка...</>
                         : model === "topaz/image-upscale"
                         ? <><ImageIcon size={14} />Апскейл</>
-                        : <><ImageIcon size={14} />Удалить фон</>}
+                        : model === "recraft/remove-background"
+                        ? <><ImageIcon size={14} />Удалить фон</>
+                        : <><ImageIcon size={14} />Рефрейм</>}
                     </button>
                   </div>
                 </>

@@ -17,12 +17,16 @@ export async function imageRoutes(app: FastifyInstance) {
       prompt?: string;
       image_input?: string[];  // base64 data URLs (Nano Banana / Grok)
       image_urls?: string[];   // URLs (Seedream)
-      image_url?: string;      // single URL (Topaz / Recraft)
+      image_url?: string;      // single URL (Topaz / Recraft / Ideogram)
       aspect_ratio?: string;
       resolution?: string;
       output_format?: string;
       quality?: string;        // Seedream: basic | high
       upscale_factor?: string; // Topaz: 1 | 2 | 4 | 8
+      ideogram_image_size?: string;      // Ideogram: square | square_hd | portrait_4_3 | ...
+      ideogram_rendering_speed?: string; // Ideogram: TURBO | BALANCED | QUALITY
+      ideogram_style?: string;           // Ideogram: AUTO | GENERAL | REALISTIC | DESIGN
+      ideogram_num_images?: string;      // Ideogram: 1 | 2 | 3 | 4
     };
 
     const apiKey = process.env.KIE_API_KEY;
@@ -34,8 +38,9 @@ export async function imageRoutes(app: FastifyInstance) {
     const model = body?.model?.trim() || "nano-banana-pro";
     const isTopaz = model === "topaz/image-upscale";
     const isRecraft = model === "recraft/remove-background";
+    const isIdeogram = model === "ideogram/v3-reframe";
     const isSeedream = model === "seedream/4.5-edit";
-    const isUrlOnly = isTopaz || isRecraft;
+    const isUrlOnly = isTopaz || isRecraft || isIdeogram;
     const prompt = body?.prompt?.trim();
 
     if (!isUrlOnly && !prompt) {
@@ -54,6 +59,14 @@ export async function imageRoutes(app: FastifyInstance) {
       };
     } else if (isRecraft) {
       input = { image: body.image_url };
+    } else if (isIdeogram) {
+      input = {
+        image_url: body.image_url,
+        image_size: body?.ideogram_image_size ?? "square_hd",
+        rendering_speed: body?.ideogram_rendering_speed ?? "BALANCED",
+        style: body?.ideogram_style ?? "AUTO",
+        num_images: body?.ideogram_num_images ?? "1",
+      };
     } else {
       input = { prompt };
       if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;

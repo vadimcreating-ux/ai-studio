@@ -13,8 +13,9 @@ export async function imageRoutes(app) {
         const model = body?.model?.trim() || "nano-banana-pro";
         const isTopaz = model === "topaz/image-upscale";
         const isRecraft = model === "recraft/remove-background";
+        const isIdeogram = model === "ideogram/v3-reframe";
         const isSeedream = model === "seedream/4.5-edit";
-        const isUrlOnly = isTopaz || isRecraft;
+        const isUrlOnly = isTopaz || isRecraft || isIdeogram;
         const prompt = body?.prompt?.trim();
         if (!isUrlOnly && !prompt) {
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
@@ -31,6 +32,15 @@ export async function imageRoutes(app) {
         }
         else if (isRecraft) {
             input = { image: body.image_url };
+        }
+        else if (isIdeogram) {
+            input = {
+                image_url: body.image_url,
+                image_size: body?.ideogram_image_size ?? "square_hd",
+                rendering_speed: body?.ideogram_rendering_speed ?? "BALANCED",
+                style: body?.ideogram_style ?? "AUTO",
+                num_images: body?.ideogram_num_images ?? "1",
+            };
         }
         else {
             input = { prompt };
