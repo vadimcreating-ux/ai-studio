@@ -152,9 +152,19 @@ export async function chatRoutes(app) {
             let assistantText;
             if (isKieClaude) {
                 // ── KIE Claude API (/claude/v1/messages) ──────────────────
+                // Strip "-v1messages" suffix to get real Anthropic model ID
+                const claudeModelId = chat.model.replace(/-v1messages$/, "");
                 // Извлекаем system prompt (если есть) и убираем из messages
                 const systemMsg = messages.find((m) => m.role === "system");
-                const claudeMessages = messages.filter((m) => m.role !== "system");
+                // Normalize message content: convert arrays to plain strings for KIE compatibility
+                const claudeMessages = messages
+                    .filter((m) => m.role !== "system")
+                    .map((m) => ({
+                    role: m.role,
+                    content: Array.isArray(m.content)
+                        ? m.content.map((b) => (b.type === "text" ? b.text : "")).join("")
+                        : m.content,
+                }));
                 const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
                     method: "POST",
                     headers: {
@@ -162,7 +172,7 @@ export async function chatRoutes(app) {
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        model: chat.model,
+                        model: claudeModelId,
                         max_tokens: 4096,
                         messages: claudeMessages,
                         ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
