@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download, X, Paperclip, Loader2, Trash2, Clock, Copy, Check,
   Wand2, Languages, Film, Play, FolderOpen, Plus, Pencil, BookOpen, Search,
+  FileText, ImageIcon,
 } from "lucide-react";
 import { api } from "../shared/api/client";
 
@@ -51,9 +52,12 @@ type VideoHistoryItem = {
   source: "kie"; prompt: string | null;
 };
 
+type ProjectFile = { name: string; mimeType: string; dataUrl: string };
+
 type Project = {
   id: string; name: string; description: string;
   system_prompt: string; style: string; memory: string; module: string;
+  context_files?: ProjectFile[];
 };
 
 // ─── RotateCcw micro icon ────────────────────────────────────────────────────
@@ -145,10 +149,13 @@ function VideoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
 
 // ─── FormField helper ────────────────────────────────────────────────────────
 
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+function FormField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-[12px] font-medium text-white/80">{label}</label>
+      <div className="flex items-baseline gap-2">
+        <label className="text-[12px] font-medium text-white/80">{label}</label>
+        {hint && <span className="text-[11px] text-muted">{hint}</span>}
+      </div>
       {children}
     </div>
   );
@@ -180,6 +187,7 @@ export default function VideoPage() {
   const [klingVideoFiles, setKlingVideoFiles] = useState<File[]>([]);
   const [klingVideoUrls, setKlingVideoUrls] = useState<string[]>([]);
   const klingVideoRef = useRef<HTMLInputElement>(null);
+  const contextFilesRef = useRef<HTMLInputElement>(null);
 
   // Kling settings
   const [klingOrientation, setKlingOrientation] = useState<"image" | "video">("video");
@@ -203,8 +211,21 @@ export default function VideoPage() {
 
   const [projectForm, setProjectForm] = useState<{
     mode: "create" | "edit"; id?: string;
-    name: string; system_prompt: string; style: string; memory: string;
+    name: string; style: string; memory: string; context_files: ProjectFile[];
   } | null>(null);
+
+  const addContextFiles = async (fileList: FileList | null) => {
+    if (!fileList) return;
+    const results = await Promise.all(Array.from(fileList).map((file) =>
+      new Promise<ProjectFile>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, mimeType: file.type, dataUrl: reader.result as string });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      })
+    ));
+    setProjectForm((f) => f ? { ...f, context_files: [...f.context_files, ...results] } : f);
+  };
 
   // When switching models reset files that don't apply
   const handleModelChange = (v: string) => {
@@ -277,11 +298,11 @@ export default function VideoPage() {
     },
   });
 
-  const openCreateForm = () => setProjectForm({ mode: "create", name: "", system_prompt: "", style: "", memory: "" });
-  const openEditForm = (p: Project) => setProjectForm({ mode: "edit", id: p.id, name: p.name, system_prompt: p.system_prompt, style: p.style, memory: p.memory });
+  const openCreateForm = () => setProjectForm({ mode: "create", name: "", style: "", memory: "", context_files: [] });
+  const openEditForm = (p: Project) => setProjectForm({ mode: "edit", id: p.id, name: p.name, style: p.style, memory: p.memory, context_files: p.context_files ?? [] });
   const submitProjectForm = () => {
     if (!projectForm) return;
-    const d = { name: projectForm.name, description: "", system_prompt: projectForm.system_prompt, style: projectForm.style, memory: projectForm.memory, context_files: [] };
+    const d = { name: projectForm.name, description: "", system_prompt: "", style: projectForm.style, memory: projectForm.memory, context_files: projectForm.context_files };
     if (projectForm.mode === "create") createProject.mutate(d);
     else if (projectForm.id) updateProject.mutate({ id: projectForm.id, ...d });
   };
@@ -871,20 +892,38 @@ export default function VideoPage() {
                   onChange={(e) => setProjectForm((f) => f && { ...f, name: e.target.value })}
                   placeholder="Например: Рекламные ролики" className="input-field" />
               </FormField>
-              <FormField label="Стиль (добавляется к промпту)">
+              <FormField label="Стиль" hint="Автоматически добавляется к промпту при генерации">
                 <input type="text" value={projectForm.style}
                   onChange={(e) => setProjectForm((f) => f && { ...f, style: e.target.value })}
                   placeholder="cinematic, 4k, slow motion..." className="input-field" />
               </FormField>
-              <FormField label="Системный промпт (placeholder)">
-                <textarea value={projectForm.system_prompt} rows={3}
-                  onChange={(e) => setProjectForm((f) => f && { ...f, system_prompt: e.target.value })}
-                  placeholder="Описание для подсказки в поле промпта..." className="input-field resize-none" />
-              </FormField>
-              <FormField label="Память / контекст">
-                <textarea value={projectForm.memory} rows={3}
+              <FormField label="Контекст проекта">
+                <textarea value={projectForm.memory}
                   onChange={(e) => setProjectForm((f) => f && { ...f, memory: e.target.value })}
-                  placeholder="Дополнительный контекст..." className="input-field resize-none" />
+                  placeholder="Бренд-гайдлайны, предпочтения, дополнительный контекст..." rows={3}
+                  className="input-field resize-none scrollbar-thin" />
+                <div className="mt-2">
+                  {projectForm.context_files.length > 0 && (
+                    <div className="flex flex-col gap-1 mb-2">
+                      {projectForm.context_files.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 px-2 py-1 rounded bg-[#1c2128] border border-border">
+                          {f.mimeType.startsWith("image/") ? <ImageIcon size={11} className="text-muted shrink-0" /> : <FileText size={11} className="text-muted shrink-0" />}
+                          <span className="text-[11px] text-[#c9d1d9] truncate flex-1">{f.name}</span>
+                          <button onClick={() => setProjectForm((pf) => pf ? { ...pf, context_files: pf.context_files.filter((_, idx) => idx !== i) } : pf)}
+                            className="text-muted hover:text-red-400 transition-colors shrink-0">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => contextFilesRef.current?.click()}
+                    className="flex items-center gap-1.5 text-[11px] text-muted hover:text-white transition-colors">
+                    <Paperclip size={11} />Прикрепить файл
+                  </button>
+                  <input ref={contextFilesRef} type="file" multiple accept="image/*,.txt,.md"
+                    className="hidden" onChange={(e) => addContextFiles(e.target.files)} />
+                </div>
               </FormField>
             </div>
             <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
