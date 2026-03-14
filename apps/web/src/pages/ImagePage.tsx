@@ -22,7 +22,10 @@ import {
 } from "lucide-react";
 import { api } from "../shared/api/client";
 
-const MODELS = [{ value: "nano-banana-pro", label: "Nano Banana Pro" }];
+const MODELS = [
+  { value: "nano-banana-pro", label: "Nano Banana Pro" },
+  { value: "grok-imagine/text-to-image", label: "Grok Imagine" },
+];
 
 const ASPECT_RATIOS = [
   { value: "", label: "Auto" },
@@ -37,6 +40,17 @@ const ASPECT_RATIOS = [
   { value: "16:9", label: "16:9" },
   { value: "21:9", label: "21:9" },
 ];
+
+// Grok поддерживает только эти соотношения
+const GROK_ASPECT_RATIOS = [
+  { value: "1:1", label: "1:1" },
+  { value: "2:3", label: "2:3" },
+  { value: "3:2", label: "3:2" },
+  { value: "16:9", label: "16:9" },
+  { value: "9:16", label: "9:16" },
+];
+
+const GROK_VALID_RATIOS = new Set(GROK_ASPECT_RATIOS.map((r) => r.value));
 
 const RESOLUTIONS = [
   { value: "1K", label: "1K" },
@@ -260,11 +274,12 @@ export default function ImagePage() {
         );
       }
 
+      const isGrok = model === "grok-imagine/text-to-image";
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
         model, prompt: finalPrompt,
         image_input,
         aspect_ratio: aspectRatio || undefined,
-        resolution, output_format: outputFormat,
+        ...(isGrok ? {} : { resolution, output_format: outputFormat }),
       });
       setStatusText("Генерация... (обычно 10–30 секунд)");
       const imageUrl = await pollStatus(data.taskId);
@@ -401,42 +416,52 @@ export default function ImagePage() {
                 {/* Model — full width */}
                 <div>
                   <label className="block text-[10px] text-muted mb-1">Модель</label>
-                  <select value={model} onChange={(e) => setModel(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                  <select value={model} onChange={(e) => {
+                    const next = e.target.value;
+                    setModel(next);
+                    if (next === "grok-imagine/text-to-image" && !GROK_VALID_RATIOS.has(aspectRatio)) {
+                      setAspectRatio("1:1");
+                    }
+                  }} className="input-field text-[11px] py-1 w-full">
                     {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </div>
 
-                {/* Resolution + Format */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-muted mb-1">Разрешение</label>
-                    <div className="flex gap-1">
-                      {RESOLUTIONS.map((r) => (
-                        <button key={r.value} onClick={() => setResolution(r.value)}
-                          className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${resolution === r.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
-                          {r.label}
-                        </button>
-                      ))}
+                {/* Resolution + Format — скрыто для Grok */}
+                {model !== "grok-imagine/text-to-image" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-muted mb-1">Разрешение</label>
+                      <div className="flex gap-1">
+                        {RESOLUTIONS.map((r) => (
+                          <button key={r.value} onClick={() => setResolution(r.value)}
+                            className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${resolution === r.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-muted mb-1">Формат</label>
+                      <div className="flex gap-1">
+                        {OUTPUT_FORMATS.map((f) => (
+                          <button key={f.value} onClick={() => setOutputFormat(f.value)}
+                            className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${outputFormat === f.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] text-muted mb-1">Формат</label>
-                    <div className="flex gap-1">
-                      {OUTPUT_FORMATS.map((f) => (
-                        <button key={f.value} onClick={() => setOutputFormat(f.value)}
-                          className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${outputFormat === f.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Aspect ratio */}
                 <div>
                   <label className="block text-[10px] text-muted mb-1">Соотношение</label>
                   <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
-                    {ASPECT_RATIOS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    {(model === "grok-imagine/text-to-image" ? GROK_ASPECT_RATIOS : ASPECT_RATIOS).map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
                   </select>
                 </div>
 
