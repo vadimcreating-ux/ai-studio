@@ -223,7 +223,7 @@ export async function chatRoutes(app: FastifyInstance) {
               : m.content,
           }));
 
-        const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/${claudeModelId}/v1/messages`, {
+        const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
