@@ -6,24 +6,46 @@ export async function imageRoutes(app) {
     // Генерация изображения — создание задачи
     app.post("/api/image/generate", async (request, reply) => {
         const body = request.body;
-        const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
         if (!apiKey) {
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
         }
-        if (!prompt) {
+        const model = body?.model?.trim() || "nano-banana-pro";
+        const isTopaz = model === "topaz/image-upscale";
+        const isSeedream = model === "seedream/4.5-edit";
+        const prompt = body?.prompt?.trim();
+        if (!isTopaz && !prompt) {
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
         }
-        const model = body?.model?.trim() || "nano-banana-pro";
-        const input = { prompt };
-        if (body?.image_input?.length)
-            input.image_input = body.image_input;
-        if (body?.aspect_ratio)
-            input.aspect_ratio = body.aspect_ratio;
-        if (body?.resolution)
-            input.resolution = body.resolution;
-        if (body?.output_format)
-            input.output_format = body.output_format;
+        if (isTopaz && !body?.image_url?.trim()) {
+            return reply.status(400).send({ ok: false, error: "Укажите image_url" });
+        }
+        let input;
+        if (isTopaz) {
+            input = {
+                image_url: body.image_url,
+                upscale_factor: body?.upscale_factor ?? "2",
+            };
+        }
+        else {
+            input = { prompt };
+            if (body?.aspect_ratio)
+                input.aspect_ratio = body.aspect_ratio;
+            if (isSeedream) {
+                if (body?.image_urls?.length)
+                    input.image_urls = body.image_urls;
+                if (body?.quality)
+                    input.quality = body.quality;
+            }
+            else {
+                if (body?.image_input?.length)
+                    input.image_input = body.image_input;
+                if (body?.resolution)
+                    input.resolution = body.resolution;
+                if (body?.output_format)
+                    input.output_format = body.output_format;
+            }
+        }
         try {
             const createResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/createTask`, {
                 method: "POST",
@@ -43,7 +65,8 @@ export async function imageRoutes(app) {
                 });
             }
             const taskId = createData.data.taskId;
-            imagePromptStore.set(taskId, prompt);
+            if (prompt)
+                imagePromptStore.set(taskId, prompt);
             return { ok: true, taskId };
         }
         catch {

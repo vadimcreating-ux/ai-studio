@@ -15,14 +15,19 @@ export function buildApp() {
     // Из apps/api/dist/server.js → ../../web/dist
     const webDistPath = path.join(__dirname, "../../web/dist");
     if (fs.existsSync(webDistPath)) {
-        // Раздаём статические файлы (JS, CSS, картинки)
+        // Раздаём статические файлы (JS, CSS, картинки) — с долгим кешем (content-hashed имена)
         app.register(fastifyStatic, {
             root: webDistPath,
             prefix: "/",
         });
         // Все маршруты которые не нашли файл → отдаём index.html (React Router)
+        // index.html не кешируем, чтобы браузер сразу видел новый бандл
         app.setNotFoundHandler((_req, reply) => {
-            reply.sendFile("index.html");
+            reply
+                .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                .header("Pragma", "no-cache")
+                .header("Expires", "0")
+                .sendFile("index.html");
         });
     }
     else {

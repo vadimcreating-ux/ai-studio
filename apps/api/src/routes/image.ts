@@ -25,7 +25,6 @@ export async function imageRoutes(app: FastifyInstance) {
       upscale_factor?: string; // Topaz: 1 | 2 | 4 | 8
     };
 
-    const prompt = body?.prompt?.trim();
     const apiKey = process.env.KIE_API_KEY;
 
     if (!apiKey) {
