@@ -1,47 +1,74 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, BookOpen, Plus, Search, Trash2, X } from "lucide-react";
 import { chatApi, type Chat, type Message } from "../../shared/api/chat";
 import { type Project } from "../../shared/api/projects";
 import ChatMessage from "./ChatMessage";
 import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
-
 const CLAUDE_MODELS = [
   { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
   { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
   { value: "claude-3-7-sonnet-20250219", label: "Claude 3.7 Sonnet" },
   { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { value: "claude-opus-4-6", label: "Claude Opus 4.6" },
+  { value: "claude-sonnet-4-6-v1messages", label: "Claude Sonnet 4.6" },
+  { value: "claude-opus-4-6-v1messages", label: "Claude Opus 4.6" },
 ];
+
+const TEMPLATES_KEY = "ai_studio_prompt_templates";
+
+type Template = { id: string; title: string; text: string };
+
+function loadTemplates(): Template[] {
+  try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) ?? "[]"); }
+  catch { return []; }
+}
 
 type Props = {
   chat: Chat | null;
   project: Project | null;
   engineLabel: string;
   engineDescription: string;
-  insertText: string | null;
-  onInsertConsumed: () => void;
   onProjectUpdated: () => void;
 };
 
-export default function ChatView({ chat, project, engineLabel, engineDescription, insertText, onInsertConsumed, onProjectUpdated }: Props) {
+export default function ChatView({ chat, project, engineLabel, engineDescription, onProjectUpdated }: Props) {
   const qc = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
-
-  const isClaudeEngine = engineLabel === "Claude";
   const [inputText, setInputText] = useState("");
 
+  // Templates
+  const [templates, setTemplates] = useState<Template[]>(loadTemplates);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [addingTemplate, setAddingTemplate] = useState(false);
+  const [newTplTitle, setNewTplTitle] = useState("");
+  const [newTplText, setNewTplText] = useState("");
+  const [deleteTplConfirm, setDeleteTplConfirm] = useState<string | null>(null);
+
   useEffect(() => {
-    if (insertText !== null) {
-      setInputText(insertText);
-      onInsertConsumed();
-    }
-  }, [insertText]);
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
+  }, [templates]);
+
+  const filteredTemplates = templateSearch.trim()
+    ? templates.filter((t) =>
+        t.title.toLowerCase().includes(templateSearch.toLowerCase()) ||
+        t.text.toLowerCase().includes(templateSearch.toLowerCase())
+      )
+    : templates;
+
+  function addTemplate() {
+    if (!newTplTitle.trim() || !newTplText.trim()) return;
+    setTemplates((prev) => [...prev, { id: Date.now().toString(), title: newTplTitle.trim(), text: newTplText.trim() }]);
+    setNewTplTitle("");
+    setNewTplText("");
+    setAddingTemplate(false);
+  }
+
+  const isClaudeEngine = engineLabel === "Claude";
 
   const updateModel = useMutation({
     mutationFn: (model: string) => chatApi.updateModel(chat!.id, model),
@@ -112,11 +139,9 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
     <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
       {/* Header bar */}
       <div className="px-6 py-3 border-b border-[#21262d] shrink-0 relative flex items-center justify-center">
-        {/* Centered title */}
         <div className="text-[14px] font-semibold text-white truncate max-w-[50%] text-center">
           {project ? `Проект — ${project.name}` : engineLabel}
         </div>
-        {/* Right actions */}
         <div className="absolute right-6 flex items-center gap-2">
           {chat && isClaudeEngine && (
             <select
@@ -154,11 +179,6 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
             <div className="text-[13px] text-muted">
               {chat ? "Начните диалог — отправьте первое сообщение." : "Выберите чат или создайте новый"}
             </div>
-            {!chat && (
-              <div className="text-[12px] text-muted/60 mt-1">
-                Создать первый чат
-              </div>
-            )}
           </div>
         )}
 
@@ -187,6 +207,17 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         <div ref={bottomRef} />
       </div>
 
+      {/* Templates button row */}
+      <div className="px-5 pt-2 pb-0 shrink-0 flex items-center gap-2">
+        <button
+          onClick={() => setShowTemplates(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] border-border text-muted hover:text-white hover:border-[#484f58] transition-all"
+        >
+          <BookOpen size={11} />
+          Шаблоны
+        </button>
+      </div>
+
       {/* Input */}
       <MessageInput
         value={inputText}
@@ -196,12 +227,138 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         disabled={!chat}
       />
 
+      {/* Project settings modal */}
       {showSettings && project && (
         <ProjectSettingsModal
           project={project}
           onClose={() => setShowSettings(false)}
           onSaved={() => { setShowSettings(false); onProjectUpdated(); }}
         />
+      )}
+
+      {/* Templates modal */}
+      {showTemplates && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowTemplates(false)}>
+          <div className="bg-[#161b22] border border-border rounded-xl w-[540px] flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <BookOpen size={16} className="text-accent" />
+                <h3 className="text-[15px] font-semibold text-white">Шаблоны промптов</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAddingTemplate((v) => !v)}
+                  className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
+                >
+                  <Plus size={12} />Добавить
+                </button>
+                <button onClick={() => setShowTemplates(false)} className="p-1 rounded hover:bg-white/10 text-muted hover:text-white transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 py-3 border-b border-border shrink-0">
+              <div className="relative">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                <input
+                  value={templateSearch}
+                  onChange={(e) => setTemplateSearch(e.target.value)}
+                  placeholder="Поиск шаблонов..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded-lg text-[12px] text-white placeholder:text-muted outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+
+            {/* Add form */}
+            {addingTemplate && (
+              <div className="px-5 py-3 border-b border-border bg-[#1c2128] shrink-0 flex flex-col gap-2">
+                <input
+                  autoFocus
+                  value={newTplTitle}
+                  onChange={(e) => setNewTplTitle(e.target.value)}
+                  placeholder="Название шаблона"
+                  className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-[12px] text-white placeholder:text-muted outline-none focus:border-accent"
+                />
+                <textarea
+                  value={newTplText}
+                  onChange={(e) => setNewTplText(e.target.value)}
+                  placeholder="Текст промпта..." rows={3}
+                  className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-[12px] text-white placeholder:text-muted outline-none focus:border-accent resize-none scrollbar-thin"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={addTemplate}
+                    disabled={!newTplTitle.trim() || !newTplText.trim()}
+                    className="flex-1 text-[12px] py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-40 transition-colors"
+                  >
+                    Сохранить
+                  </button>
+                  <button
+                    onClick={() => { setAddingTemplate(false); setNewTplTitle(""); setNewTplText(""); }}
+                    className="flex-1 text-[12px] py-1.5 rounded-lg bg-surface hover:bg-border text-muted transition-colors"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Templates list */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
+              {filteredTemplates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-2 text-center px-6">
+                  <BookOpen size={24} className="text-muted/40" />
+                  <p className="text-[13px] text-muted">{templateSearch ? "Ничего не найдено" : "Нет шаблонов. Нажмите «Добавить»."}</p>
+                </div>
+              ) : (
+                filteredTemplates.map((tpl) => (
+                  <div key={tpl.id} className="group px-5 py-3 border-b border-border hover:bg-surface transition-colors">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-[13px] font-semibold text-white truncate flex-1">{tpl.title}</span>
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => { setInputText(tpl.text); setShowTemplates(false); }}
+                          className="text-[11px] px-2 py-0.5 rounded bg-accent/20 hover:bg-accent/30 text-accent transition-colors"
+                        >
+                          Вставить
+                        </button>
+                        <button
+                          onClick={() => setDeleteTplConfirm(tpl.id)}
+                          className="p-1 rounded hover:bg-white/10 text-muted hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted leading-snug line-clamp-2">{tpl.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete template confirmation */}
+      {deleteTplConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={() => setDeleteTplConfirm(null)}>
+          <div className="bg-[#161b22] border border-border rounded-xl p-5 w-[300px] flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[14px] font-semibold text-white">Удалить шаблон?</div>
+            <div className="text-[13px] text-muted">Это действие нельзя отменить.</div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteTplConfirm(null)} className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors">Отмена</button>
+              <button
+                onClick={() => { setTemplates((prev) => prev.filter((t) => t.id !== deleteTplConfirm)); setDeleteTplConfirm(null); }}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-[13px] text-red-400 hover:bg-red-500/30 transition-colors"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
