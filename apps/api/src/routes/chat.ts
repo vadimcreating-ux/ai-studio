@@ -219,6 +219,15 @@ export async function chatRoutes(app: FastifyInstance) {
               : m.content,
           }));
 
+        const requestBody = {
+          model: chat.model,
+          max_tokens: 4096,
+          messages: claudeMessages,
+          ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
+          stream: false,
+        };
+        console.log("KIE Claude REQUEST:", JSON.stringify(requestBody, null, 2));
+
         const kieClaudeResponse = await fetch(
           `${KIE_BASE_URL}/claude/v1/messages`,
           {
@@ -227,13 +236,7 @@ export async function chatRoutes(app: FastifyInstance) {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              model: chat.model,
-              max_tokens: 4096,
-              messages: claudeMessages,
-              ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
-              stream: false,
-            }),
+            body: JSON.stringify(requestBody),
           }
         );
 
