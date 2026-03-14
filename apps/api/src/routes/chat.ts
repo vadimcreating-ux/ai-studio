@@ -200,16 +200,68 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     });
 
-    // Strip routing suffix to get real model ID (e.g. "claude-sonnet-4-6-v1messages" → "claude-sonnet-4-6")
-    const modelId = chat.model?.replace(/-v1messages$/, "") ?? chat.model;
+    // claude-*-v1messages → KIE Anthropic Messages API, остальные → KIE chat/completions
+    const isKieClaude = chat.model?.endsWith("v1messages");
 
     try {
       let assistantText: string;
 
-      {
-        // ── KIE chat/completions ───────────────────────────────────
+      if (isKieClaude) {
+        // ── KIE Anthropic Messages API (/{model}/v1/messages) ──────
+        // Model name "claude-sonnet-4-6-v1messages" is used AS-IS in KIE
+        const systemMsg = messages.find((m) => m.role === "system");
+        const claudeMessages = messages
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role,
+            content: Array.isArray(m.content)
+              ? m.content.map((b: any) => (b.type === "text" ? b.text : "")).join("")
+              : m.content,
+          }));
+
+        const kieClaudeResponse = await fetch(
+          `${KIE_BASE_URL}/${chat.model}/v1/messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: chat.model,
+              max_tokens: 4096,
+              messages: claudeMessages,
+              ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
+              stream: false,
+            }),
+          }
+        );
+
+        const kieClaudeData = await kieClaudeResponse.json() as {
+          content?: Array<{ type: string; text?: string }>;
+          error?: { message?: string };
+          // KIE error wrapper
+          code?: number;
+          msg?: string;
+        };
+
+        console.log("KIE Claude response:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
+
+        const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
+        if (!kieClaudeResponse.ok || !claudeText) {
+          return reply.status(500).send({
+            ok: false,
+            error: kieClaudeData?.msg || kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
+            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
+          });
+        }
+
+        assistantText = claudeText;
+
+      } else {
+        // ── KIE chat/completions (GPT, Gemini и прочие) ───────────
         const kieResponse = await fetch(
-          `${KIE_BASE_URL}/${modelId}/v1/chat/completions`,
+          `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
           {
             method: "POST",
             headers: {
