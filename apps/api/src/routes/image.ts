@@ -15,10 +15,12 @@ export async function imageRoutes(app: FastifyInstance) {
     const body = request.body as {
       model?: string;
       prompt?: string;
-      image_input?: string[]; // URLs для image-to-image
+      image_input?: string[];  // base64 data URLs (Nano Banana / Grok)
+      image_urls?: string[];   // URLs (Seedream)
       aspect_ratio?: string;
       resolution?: string;
       output_format?: string;
+      quality?: string;        // Seedream: basic | high
     };
 
     const prompt = body?.prompt?.trim();
@@ -34,11 +36,19 @@ export async function imageRoutes(app: FastifyInstance) {
 
     const model = body?.model?.trim() || "nano-banana-pro";
 
+    const isSeedream = model === "seedream/4.5-edit";
+
     const input: Record<string, unknown> = { prompt };
-    if (body?.image_input?.length) input.image_input = body.image_input;
     if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
-    if (body?.resolution) input.resolution = body.resolution;
-    if (body?.output_format) input.output_format = body.output_format;
+
+    if (isSeedream) {
+      if (body?.image_urls?.length) input.image_urls = body.image_urls;
+      if (body?.quality) input.quality = body.quality;
+    } else {
+      if (body?.image_input?.length) input.image_input = body.image_input;
+      if (body?.resolution) input.resolution = body.resolution;
+      if (body?.output_format) input.output_format = body.output_format;
+    }
 
     try {
       const createResponse = await fetch(

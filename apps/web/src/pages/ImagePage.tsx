@@ -25,6 +25,7 @@ import { api } from "../shared/api/client";
 const MODELS = [
   { value: "nano-banana-pro", label: "Nano Banana Pro" },
   { value: "grok-imagine/text-to-image", label: "Grok Imagine" },
+  { value: "seedream/4.5-edit", label: "Seedream 4.5 Edit" },
 ];
 
 const ASPECT_RATIOS = [
@@ -51,6 +52,24 @@ const GROK_ASPECT_RATIOS = [
 ];
 
 const GROK_VALID_RATIOS = new Set(GROK_ASPECT_RATIOS.map((r) => r.value));
+
+// Seedream 4.5 Edit — поддерживаемые соотношения
+const SEEDREAM_ASPECT_RATIOS = [
+  { value: "1:1", label: "1:1" },
+  { value: "4:3", label: "4:3" },
+  { value: "3:4", label: "3:4" },
+  { value: "16:9", label: "16:9" },
+  { value: "9:16", label: "9:16" },
+  { value: "2:3", label: "2:3" },
+  { value: "3:2", label: "3:2" },
+  { value: "21:9", label: "21:9" },
+];
+const SEEDREAM_VALID_RATIOS = new Set(SEEDREAM_ASPECT_RATIOS.map((r) => r.value));
+
+const SEEDREAM_QUALITY = [
+  { value: "basic", label: "2K" },
+  { value: "high", label: "4K" },
+];
 
 const RESOLUTIONS = [
   { value: "1K", label: "1K" },
@@ -130,6 +149,7 @@ export default function ImagePage() {
   const [aspectRatio, setAspectRatio] = useState("");
   const [resolution, setResolution] = useState("1K");
   const [outputFormat, setOutputFormat] = useState("png");
+  const [quality, setQuality] = useState("basic");
   // refImages не используется — файлы конвертируются в base64 в mutationFn
   const [refImageFiles, setRefImageFiles] = useState<File[]>([]);
   const [results, setResults] = useState<GeneratedImage[]>([]);
@@ -275,11 +295,15 @@ export default function ImagePage() {
       }
 
       const isGrok = model === "grok-imagine/text-to-image";
+      const isSeedream = model === "seedream/4.5-edit";
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
         model, prompt: finalPrompt,
-        image_input,
         aspect_ratio: aspectRatio || undefined,
-        ...(isGrok ? {} : { resolution, output_format: outputFormat }),
+        ...(isSeedream
+          ? { image_urls: image_input, quality }
+          : isGrok
+          ? { image_input }
+          : { image_input, resolution, output_format: outputFormat }),
       });
       setStatusText("Генерация... (обычно 10–30 секунд)");
       const imageUrl = await pollStatus(data.taskId);
@@ -421,14 +445,16 @@ export default function ImagePage() {
                     setModel(next);
                     if (next === "grok-imagine/text-to-image" && !GROK_VALID_RATIOS.has(aspectRatio)) {
                       setAspectRatio("1:1");
+                    } else if (next === "seedream/4.5-edit" && !SEEDREAM_VALID_RATIOS.has(aspectRatio)) {
+                      setAspectRatio("1:1");
                     }
                   }} className="input-field text-[11px] py-1 w-full">
                     {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </div>
 
-                {/* Resolution + Format — скрыто для Grok */}
-                {model !== "grok-imagine/text-to-image" && (
+                {/* Resolution + Format — только для Nano Banana */}
+                {model === "nano-banana-pro" && (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] text-muted mb-1">Разрешение</label>
@@ -455,11 +481,31 @@ export default function ImagePage() {
                   </div>
                 )}
 
+                {/* Качество — только для Seedream */}
+                {model === "seedream/4.5-edit" && (
+                  <div>
+                    <label className="block text-[10px] text-muted mb-1">Качество</label>
+                    <div className="flex gap-1">
+                      {SEEDREAM_QUALITY.map((q) => (
+                        <button key={q.value} onClick={() => setQuality(q.value)}
+                          className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${quality === q.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                          {q.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Aspect ratio */}
                 <div>
                   <label className="block text-[10px] text-muted mb-1">Соотношение</label>
                   <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
-                    {(model === "grok-imagine/text-to-image" ? GROK_ASPECT_RATIOS : ASPECT_RATIOS).map((r) => (
+                    {(model === "grok-imagine/text-to-image"
+                      ? GROK_ASPECT_RATIOS
+                      : model === "seedream/4.5-edit"
+                      ? SEEDREAM_ASPECT_RATIOS
+                      : ASPECT_RATIOS
+                    ).map((r) => (
                       <option key={r.value} value={r.value}>{r.label}</option>
                     ))}
                   </select>
