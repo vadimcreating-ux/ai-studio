@@ -116,7 +116,7 @@ export default function ImagePage() {
   const [aspectRatio, setAspectRatio] = useState("");
   const [resolution, setResolution] = useState("1K");
   const [outputFormat, setOutputFormat] = useState("png");
-  const [refImages] = useState<string[]>([]);
+  // refImages не используется — файлы конвертируются в base64 в mutationFn
   const [refImageFiles, setRefImageFiles] = useState<File[]>([]);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   const [statusText, setStatusText] = useState("");
@@ -243,9 +243,26 @@ export default function ImagePage() {
     mutationFn: async () => {
       setStatusText("Создаём задачу...");
       const finalPrompt = activeProject?.style ? `${prompt}, ${activeProject.style}` : prompt;
+
+      // Конвертируем прикреплённые файлы в base64 data URL
+      let image_input: string[] | undefined;
+      if (refImageFiles.length > 0) {
+        image_input = await Promise.all(
+          refImageFiles.map(
+            (file) =>
+              new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+              })
+          )
+        );
+      }
+
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
         model, prompt: finalPrompt,
-        image_input: refImages.length > 0 ? refImages : undefined,
+        image_input,
         aspect_ratio: aspectRatio || undefined,
         resolution, output_format: outputFormat,
       });
