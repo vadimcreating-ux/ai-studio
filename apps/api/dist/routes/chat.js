@@ -163,6 +163,7 @@ export async function chatRoutes(app) {
                     },
                     body: JSON.stringify({
                         model: chat.model,
+                        max_tokens: 4096,
                         messages: claudeMessages,
                         ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
                         stream: false,
