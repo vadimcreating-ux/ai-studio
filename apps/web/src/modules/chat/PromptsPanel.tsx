@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { MoreHorizontal, Plus, Search } from "lucide-react";
 import { chatApi, type Chat } from "../../shared/api/chat";
 import { projectsApi, type Project } from "../../shared/api/projects";
 import { formatDate } from "../../shared/utils/date";
@@ -19,6 +19,7 @@ export default function PromptsPanel({
 }: Props) {
   const qc = useQueryClient();
   const [deleteChatConfirm, setDeleteChatConfirm] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [renameChatId, setRenameChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [moveChatId, setMoveChatId] = useState<string | null>(null);
@@ -70,7 +71,10 @@ export default function PromptsPanel({
     },
   });
 
-  const chats = chatsData?.chats ?? [];
+  const allChats = chatsData?.chats ?? [];
+  const chats = search.trim()
+    ? allChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
+    : allChats;
 
   return (
     <div className="flex flex-col w-[240px] min-w-[240px] h-full bg-panel border-l border-border overflow-hidden">
@@ -85,6 +89,19 @@ export default function PromptsPanel({
           <Plus size={11} />
           Новый чат
         </button>
+      </div>
+
+      {/* Search */}
+      <div className="px-3 py-2 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#1c2128] border border-border focus-within:border-accent transition-colors">
+          <Search size={11} className="text-muted shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск чатов..."
+            className="flex-1 bg-transparent text-[12px] text-white placeholder:text-muted outline-none"
+          />
+        </div>
       </div>
 
       {/* Chats list */}

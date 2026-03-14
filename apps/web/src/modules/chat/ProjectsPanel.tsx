@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, HelpCircle } from "lucide-react";
+import { Trash2, HelpCircle, Search } from "lucide-react";
 import { projectsApi, type Project } from "../../shared/api/projects";
 
 type Props = {
@@ -15,6 +15,7 @@ export default function ProjectsPanel({ engine, engineLabel, selectedProjectId, 
   const [newProjectName, setNewProjectName] = useState("");
   const [showNewProject, setShowNewProject] = useState(false);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects", engine],
@@ -40,7 +41,10 @@ export default function ProjectsPanel({ engine, engineLabel, selectedProjectId, 
     },
   });
 
-  const projects = projectsData?.projects ?? [];
+  const allProjects = projectsData?.projects ?? [];
+  const projects = search.trim()
+    ? allProjects.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    : allProjects;
 
   return (
     <div className="flex flex-col w-[240px] min-w-[240px] h-full bg-panel border-r border-border overflow-hidden">
@@ -63,6 +67,19 @@ export default function ProjectsPanel({ engine, engineLabel, selectedProjectId, 
           >
             Новый
           </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 py-2 border-b border-border shrink-0">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#1c2128] border border-border focus-within:border-accent transition-colors">
+            <Search size={11} className="text-muted shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск проектов..."
+              className="flex-1 bg-transparent text-[12px] text-white placeholder:text-muted outline-none"
+            />
+          </div>
         </div>
 
         {/* New project input */}
