@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, BookOpen, Plus, Search, Trash2, X } from "lucide-react";
+// BookOpen used in templates modal below
 import { chatApi, type Chat, type Message } from "../../shared/api/chat";
 import { type Project } from "../../shared/api/projects";
 import ChatMessage from "./ChatMessage";
@@ -207,22 +208,12 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         <div ref={bottomRef} />
       </div>
 
-      {/* Templates button row */}
-      <div className="px-5 pt-2 pb-0 shrink-0 flex items-center gap-2">
-        <button
-          onClick={() => setShowTemplates(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] border-border text-muted hover:text-white hover:border-[#484f58] transition-all"
-        >
-          <BookOpen size={11} />
-          Шаблоны
-        </button>
-      </div>
-
       {/* Input */}
       <MessageInput
         value={inputText}
         onChange={setInputText}
         onSend={(text, files) => { chat && sendMessage.mutate({ chatId: chat.id, message: text, files }); setInputText(""); }}
+        onShowTemplates={() => setShowTemplates(true)}
         isLoading={sendMessage.isPending}
         disabled={!chat}
       />

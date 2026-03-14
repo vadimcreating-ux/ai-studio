@@ -1,21 +1,21 @@
 import { useState, useRef, useCallback } from "react";
-import { Paperclip, X } from "lucide-react";
+import { BookOpen, Paperclip, X } from "lucide-react";
 
 type Props = {
   onSend: (message: string, files: File[]) => void;
+  onShowTemplates?: () => void;
   isLoading: boolean;
   disabled?: boolean;
   value?: string;
   onChange?: (val: string) => void;
 };
 
-export default function MessageInput({ onSend, isLoading, disabled, value, onChange }: Props) {
+export default function MessageInput({ onSend, onShowTemplates, isLoading, disabled, value, onChange }: Props) {
   const [internalText, setInternalText] = useState("");
   const text = value !== undefined ? value : internalText;
   const setText = (val: string) => { onChange ? onChange(val) : setInternalText(val); };
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (newFiles: File[]) => {
@@ -28,7 +28,6 @@ export default function MessageInput({ onSend, isLoading, disabled, value, onCha
     onSend(trimmed, files);
     setText("");
     setFiles([]);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [text, files, isLoading, disabled, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -36,13 +35,6 @@ export default function MessageInput({ onSend, isLoading, disabled, value, onCha
       e.preventDefault();
       handleSend();
     }
-  };
-
-  const handleInput = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 140) + "px";
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,10 +52,7 @@ export default function MessageInput({ onSend, isLoading, disabled, value, onCha
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    // только если уходим за пределы всего контейнера
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsDragging(false);
-    }
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -98,10 +87,7 @@ export default function MessageInput({ onSend, isLoading, disabled, value, onCha
             >
               <Paperclip size={11} className="text-muted shrink-0" />
               <span className="max-w-[160px] truncate">{file.name}</span>
-              <button
-                onClick={() => removeFile(i)}
-                className="text-muted hover:text-white transition-colors ml-0.5"
-              >
+              <button onClick={() => removeFile(i)} className="text-muted hover:text-white transition-colors ml-0.5">
                 <X size={11} />
               </button>
             </div>
@@ -109,15 +95,16 @@ export default function MessageInput({ onSend, isLoading, disabled, value, onCha
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      {/* Textarea row */}
+      <div className="flex items-start gap-2">
         {/* File attach button */}
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || isLoading}
           title="Прикрепить файл"
-          className="flex items-center justify-center w-[46px] h-[46px] rounded-lg border border-[#30363d] text-muted hover:text-[#c9d1d9] hover:bg-[#1c2128] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          className="flex items-center justify-center w-[36px] h-[36px] mt-1 rounded-lg border border-[#30363d] text-muted hover:text-[#c9d1d9] hover:bg-[#1c2128] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
-          <Paperclip size={16} />
+          <Paperclip size={15} />
         </button>
         <input
           ref={fileInputRef}
@@ -129,21 +116,34 @@ export default function MessageInput({ onSend, isLoading, disabled, value, onCha
         />
 
         <textarea
-          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          onInput={handleInput}
           disabled={disabled || isLoading}
-          placeholder="Поле ввода сообщения появится здесь"
-          rows={1}
+          placeholder="Напишите сообщение... (Enter — отправить, Shift+Enter — новая строка)"
+          rows={6}
           className="flex-1 resize-none bg-transparent border border-[#30363d] rounded-lg px-4 py-3 text-[13px] text-white placeholder:text-[#484f58] outline-none focus:border-[#388bfd] transition-colors scrollbar-thin disabled:opacity-50"
-          style={{ minHeight: "46px", maxHeight: "140px" }}
         />
+      </div>
+
+      {/* Bottom row: templates + send */}
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center gap-1.5">
+          {onShowTemplates && (
+            <button
+              onClick={onShowTemplates}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] border-[#30363d] text-muted hover:text-white hover:border-[#484f58] transition-all disabled:opacity-40"
+            >
+              <BookOpen size={11} />
+              Шаблоны
+            </button>
+          )}
+        </div>
         <button
           onClick={handleSend}
           disabled={(!text.trim() && files.length === 0) || isLoading || disabled}
-          className="flex items-center justify-center px-6 h-[46px] rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          className="flex items-center justify-center px-6 h-[36px] rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
           {isLoading ? (
             <span className="flex gap-1 items-center">
