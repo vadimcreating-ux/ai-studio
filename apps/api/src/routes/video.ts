@@ -101,8 +101,8 @@ export async function videoRoutes(app: FastifyInstance) {
         });
       }
 
-      const taskId = createData.data.taskId;
-      videoPromptStore.set(taskId, prompt);
+      const taskId = createData.data.taskId!;
+      if (taskId) videoPromptStore.set(taskId, prompt ?? "");
 
       return { ok: true, taskId };
     } catch {

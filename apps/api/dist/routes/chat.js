@@ -1,7 +1,6 @@
 import { dbQuery } from "../lib/db.js";
 const KIE_BASE_URL = "https://api.kie.ai";
-const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
-const ANTHROPIC_VERSION = "2023-06-01";
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export async function chatRoutes(app) {
     // Создать новый чат
     app.post("/api/chat/new", async (request, reply) => {
@@ -32,6 +31,16 @@ export async function chatRoutes(app) {
         const params = request.params;
         const result = await dbQuery(`SELECT * FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [params.chatId]);
         return { ok: true, messages: result.rows };
+    });
+    // Обновить модель чата
+    app.patch("/api/chat/:chatId", async (request, reply) => {
+        const params = request.params;
+        const body = request.body;
+        const model = body?.model?.trim();
+        if (!model)
+            return reply.status(400).send({ ok: false, error: "model required" });
+        const result = await dbQuery(`UPDATE chats SET model = $1 WHERE id = $2 RETURNING *`, [model, params.chatId]);
+        return { ok: true, chat: result.rows[0] };
     });
     // Удалить чат
     app.delete("/api/chat/:chatId", async (request, reply) => {
@@ -74,8 +83,9 @@ export async function chatRoutes(app) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const messages = [];
         // Добавить system prompt из проекта, если есть
+        let projectContextFiles = [];
         if (chat.project_id) {
-            const projectResult = await dbQuery(`SELECT system_prompt, style, memory FROM projects WHERE id = $1`, [chat.project_id]);
+            const projectResult = await dbQuery(`SELECT system_prompt, style, memory, context_files FROM projects WHERE id = $1`, [chat.project_id]);
             if (projectResult.rows.length > 0) {
                 const proj = projectResult.rows[0];
                 const parts = [];
@@ -84,11 +94,33 @@ export async function chatRoutes(app) {
                 if (proj.style)
                     parts.push(`Стиль общения: ${proj.style}`);
                 if (proj.memory)
-                    parts.push(`Память проекта:\n${proj.memory}`);
+                    parts.push(`Контекст проекта:\n${proj.memory}`);
+                // Текстовые файлы — добавляем содержимое прямо в system prompt
+                const files = Array.isArray(proj.context_files) ? proj.context_files : [];
+                for (const file of files) {
+                    if (!file.mimeType.startsWith("image/")) {
+                        const base64 = file.dataUrl.split(",")[1] ?? "";
+                        const decoded = Buffer.from(base64, "base64").toString("utf-8");
+                        parts.push(`[Файл контекста: ${file.name}]\n${decoded}`);
+                    }
+                }
                 if (parts.length > 0) {
                     messages.push({ role: "system", content: parts.join("\n\n") });
                 }
+                // Изображения — сохраняем для инжекции в виде user/assistant пары
+                projectContextFiles = files.filter((f) => f.mimeType.startsWith("image/"));
             }
+        }
+        // Если есть контекстные изображения — добавляем их как user/assistant пару до истории
+        if (projectContextFiles.length > 0) {
+            const imageItems = [
+                { type: "text", text: "Вот файлы контекста проекта, учитывай их во всех ответах:" },
+            ];
+            for (const file of projectContextFiles) {
+                imageItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
+            }
+            messages.push({ role: "user", content: imageItems });
+            messages.push({ role: "assistant", content: [{ type: "text", text: "Понял, учту эти материалы как контекст проекта." }] });
         }
         const historyRows = historyResult.rows;
         historyRows.forEach((row, index) => {
@@ -115,75 +147,37 @@ export async function chatRoutes(app) {
                 messages.push({ role: row.role, content: [{ type: "text", text: row.content }] });
             }
         });
-        // Роутинг: Claude → Anthropic API, остальные → KIE
+        // Роутинг: Claude → OpenRouter, остальные → KIE
         const isClaudeModel = chat.model?.startsWith("claude-");
         try {
             let assistantText;
             if (isClaudeModel) {
-                // ── Anthropic API ──────────────────────────────────────────
-                const anthropicKey = process.env.ANTHROPIC_API_KEY;
-                if (!anthropicKey) {
-                    return reply.status(500).send({ ok: false, error: "Не задан ANTHROPIC_API_KEY" });
+                // ── OpenRouter API (поддерживает Claude, работает из России) ──
+                const openrouterKey = process.env.OPENROUTER_API_KEY;
+                if (!openrouterKey) {
+                    return reply.status(500).send({ ok: false, error: "Не задан OPENROUTER_API_KEY. Получите ключ на openrouter.ai" });
                 }
-                // Anthropic требует system отдельно, убираем system-роль из messages
-                let systemPrompt;
-                const anthropicMessages = [];
-                for (const msg of messages) {
-                    if (msg.role === "system") {
-                        // Собираем system в строку
-                        if (Array.isArray(msg.content)) {
-                            systemPrompt = msg.content
-                                .map((c) => c.text ?? "").join("\n");
-                        }
-                        else {
-                            systemPrompt = String(msg.content);
-                        }
-                    }
-                    else {
-                        // Конвертируем image_url (OpenAI) → image source (Anthropic)
-                        if (Array.isArray(msg.content)) {
-                            const converted = msg.content.map((c) => {
-                                if (c.type === "image_url" && c.image_url) {
-                                    const url = c.image_url.url;
-                                    const [meta, data] = url.split(",");
-                                    const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
-                                    return { type: "image", source: { type: "base64", media_type: mimeType, data } };
-                                }
-                                return c;
-                            });
-                            anthropicMessages.push({ role: msg.role, content: converted });
-                        }
-                        else {
-                            anthropicMessages.push(msg);
-                        }
-                    }
-                }
-                const anthropicBody = {
-                    model: chat.model,
-                    max_tokens: 8096,
-                    messages: anthropicMessages,
-                };
-                if (systemPrompt)
-                    anthropicBody.system = systemPrompt;
-                const anthropicResponse = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+                const orResponse = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
                     method: "POST",
                     headers: {
-                        "x-api-key": anthropicKey,
-                        "anthropic-version": ANTHROPIC_VERSION,
+                        Authorization: `Bearer ${openrouterKey}`,
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify(anthropicBody),
+                    body: JSON.stringify({
+                        model: `anthropic/${chat.model}`,
+                        messages,
+                    }),
                 });
-                const anthropicData = await anthropicResponse.json();
-                if (!anthropicResponse.ok || !anthropicData.content?.[0]?.text) {
-                    console.error("Anthropic error:", anthropicResponse.status, JSON.stringify(anthropicData));
+                const orData = await orResponse.json();
+                if (!orResponse.ok || !orData?.choices?.[0]?.message?.content) {
+                    console.error("OpenRouter error:", orResponse.status, JSON.stringify(orData));
                     return reply.status(500).send({
                         ok: false,
-                        error: anthropicData.error?.message || "Anthropic не вернул ответ",
-                        debug: { status: anthropicResponse.status, body: anthropicData },
+                        error: orData?.error?.message || "OpenRouter не вернул ответ",
+                        debug: { status: orResponse.status, body: orData },
                     });
                 }
-                assistantText = anthropicData.content[0].text;
+                assistantText = orData.choices[0].message.content;
             }
             else {
                 // ── KIE API ────────────────────────────────────────────────

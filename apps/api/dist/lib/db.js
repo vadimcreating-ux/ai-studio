@@ -49,6 +49,29 @@ export async function ensureProjectsTable() {
     await dbQuery(`
     ALTER TABLE chats ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE SET NULL
   `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE projects ADD COLUMN context_files JSONB DEFAULT '[]'
+  `).catch(() => { });
+}
+export async function ensureImageTemplatesTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS image_prompt_templates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+export async function ensureVideoTemplatesTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS video_prompt_templates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 }
 export async function ensureFilesTable() {
     await dbQuery(`

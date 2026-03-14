@@ -1,29 +1,58 @@
-import { saveImageToFiles, getFiles, deleteFileById, } from "../lib/files-store.js";
+import { randomUUID } from "node:crypto";
 import { dbQuery } from "../lib/db.js";
+const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 const KIE_BASE_URL = "https://api.kie.ai";
-const imagePromptStore = new Map();
-export async function imageRoutes(app) {
-    // Генерация изображения — создание задачи
-    app.post("/api/image/generate", async (request, reply) => {
+const videoPromptStore = new Map();
+async function saveVideoToFiles(data) {
+    const existing = await dbQuery(`SELECT id FROM files WHERE task_id = $1 LIMIT 1`, [data.taskId]);
+    if (existing.rows[0])
+        return;
+    const id = randomUUID();
+    const name = `video-${Date.now()}.mp4`;
+    await dbQuery(`INSERT INTO files (id, task_id, type, name, url, created_at, source, prompt)
+     VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)
+     ON CONFLICT (task_id) DO NOTHING`, [id, data.taskId, "video", name, data.url, "kie", data.prompt || null]);
+}
+export async function videoRoutes(app) {
+    // Генерация видео — создание задачи (sora-2-pro-image-to-video)
+    app.post("/api/video/generate", async (request, reply) => {
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
+        const model = body?.model?.trim() || "sora-2-pro-image-to-video";
+        const isKling = KLING_MODELS.has(model);
         if (!apiKey) {
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
         }
-        if (!prompt) {
+        // Kling: prompt is optional; Sora: required
+        if (!isKling && !prompt) {
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
         }
-        const model = body?.model?.trim() || "nano-banana-pro";
-        const input = { prompt };
-        if (body?.image_input?.length)
-            input.image_input = body.image_input;
-        if (body?.aspect_ratio)
-            input.aspect_ratio = body.aspect_ratio;
-        if (body?.resolution)
-            input.resolution = body.resolution;
-        if (body?.output_format)
-            input.output_format = body.output_format;
+        const input = {};
+        if (prompt)
+            input.prompt = prompt;
+        if (isKling) {
+            if (body?.input_urls?.length)
+                input.input_urls = body.input_urls;
+            if (body?.video_urls?.length)
+                input.video_urls = body.video_urls;
+            if (body?.character_orientation)
+                input.character_orientation = body.character_orientation;
+            if (body?.mode)
+                input.mode = body.mode;
+        }
+        else {
+            if (body?.image_urls?.length)
+                input.image_urls = body.image_urls;
+            if (body?.aspect_ratio)
+                input.aspect_ratio = body.aspect_ratio;
+            if (body?.n_frames)
+                input.n_frames = body.n_frames;
+            if (body?.size)
+                input.size = body.size;
+            if (body?.remove_watermark !== undefined)
+                input.remove_watermark = body.remove_watermark;
+        }
         try {
             const createResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/createTask`, {
                 method: "POST",
@@ -35,15 +64,15 @@ export async function imageRoutes(app) {
             });
             const createData = await createResponse.json();
             if (!createResponse.ok || createData?.code !== 200 || !createData?.data?.taskId) {
-                console.error("KIE image create error:", createResponse.status, JSON.stringify(createData));
+                console.error("KIE video create error:", createResponse.status, JSON.stringify(createData));
                 return reply.status(500).send({
                     ok: false,
                     error: createData?.message || "KIE не вернул taskId",
-                    debug: { status: createResponse.status, body: createData },
                 });
             }
             const taskId = createData.data.taskId;
-            imagePromptStore.set(taskId, prompt);
+            if (taskId)
+                videoPromptStore.set(taskId, prompt ?? "");
             return { ok: true, taskId };
         }
         catch {
@@ -51,7 +80,7 @@ export async function imageRoutes(app) {
         }
     });
     // Проверка статуса задачи
-    app.get("/api/image/status", async (request, reply) => {
+    app.get("/api/video/status", async (request, reply) => {
         const query = request.query;
         const taskId = query?.taskId?.trim();
         const apiKey = process.env.KIE_API_KEY;
@@ -62,12 +91,9 @@ export async function imageRoutes(app) {
             return reply.status(400).send({ ok: false, error: "Не передан taskId" });
         }
         try {
-            const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
-                headers: { Authorization: `Bearer ${apiKey}` },
-            });
+            const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, { headers: { Authorization: `Bearer ${apiKey}` } });
             const statusData = await statusResponse.json();
             if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
-                console.error("KIE image status error:", statusResponse.status, JSON.stringify(statusData));
                 return reply.status(500).send({
                     ok: false,
                     error: statusData?.message || "Не удалось получить статус задачи",
@@ -75,24 +101,23 @@ export async function imageRoutes(app) {
             }
             const data = statusData.data;
             const state = data.state ?? "waiting";
-            // Parse resultJson string to get image URLs
-            let resultImageUrl = "";
+            let videoUrl = "";
             if (data.resultJson) {
                 try {
                     const parsed = JSON.parse(data.resultJson);
-                    resultImageUrl = parsed.resultUrls?.[0] ?? "";
+                    videoUrl = parsed.resultUrls?.[0] ?? parsed.videoUrl ?? "";
                 }
                 catch {
-                    // ignore parse error
+                    // ignore
                 }
             }
-            if (state === "success" && resultImageUrl) {
-                await saveImageToFiles({
+            if (state === "success" && videoUrl) {
+                await saveVideoToFiles({
                     taskId: data.taskId ?? taskId,
-                    url: resultImageUrl,
-                    prompt: imagePromptStore.get(taskId) || undefined,
+                    url: videoUrl,
+                    prompt: videoPromptStore.get(taskId),
                 });
-                imagePromptStore.delete(taskId);
+                videoPromptStore.delete(taskId);
             }
             const statusMap = {
                 waiting: "GENERATING",
@@ -106,7 +131,8 @@ export async function imageRoutes(app) {
                 taskId: data.taskId ?? taskId,
                 state,
                 status: statusMap[state] ?? "GENERATING",
-                imageUrl: resultImageUrl,
+                videoUrl,
+                progress: data.progress ?? 0,
                 errorMessage: data.failMsg || "",
             };
         }
@@ -114,11 +140,11 @@ export async function imageRoutes(app) {
             return reply.status(500).send({ ok: false, error: "Не удалось проверить статус в KIE" });
         }
     });
-    // Скачивание изображения через прокси (обход CORS)
-    app.get("/api/image/download", async (request, reply) => {
+    // Скачивание видео через прокси
+    app.get("/api/video/download", async (request, reply) => {
         const query = request.query;
         const fileUrl = query?.url?.trim();
-        const fileName = (query?.name?.trim() || "generated-image.png").replace(/[^a-zA-Z0-9._-]/g, "_");
+        const fileName = (query?.name?.trim() || "generated-video.mp4").replace(/[^a-zA-Z0-9._-]/g, "_");
         if (!fileUrl) {
             return reply.status(400).send({ ok: false, error: "Не передан url файла" });
         }
@@ -127,7 +153,7 @@ export async function imageRoutes(app) {
             if (!fileResponse.ok) {
                 return reply.status(500).send({ ok: false, error: "Не удалось скачать файл" });
             }
-            const contentType = fileResponse.headers.get("content-type") || "application/octet-stream";
+            const contentType = fileResponse.headers.get("content-type") || "video/mp4";
             const buffer = Buffer.from(await fileResponse.arrayBuffer());
             reply
                 .header("Content-Type", contentType)
@@ -138,36 +164,55 @@ export async function imageRoutes(app) {
             return reply.status(500).send({ ok: false, error: "Ошибка при скачивании файла" });
         }
     });
-    // Список файлов
-    app.get("/api/files", async () => {
-        return { ok: true, files: await getFiles() };
+    // История видео
+    app.get("/api/video/history", async () => {
+        const result = await dbQuery(`SELECT id, task_id, type, name, url, created_at, source, prompt
+       FROM files WHERE type = 'video' ORDER BY created_at DESC`);
+        return {
+            ok: true,
+            files: result.rows.map((row) => ({
+                id: row.id,
+                taskId: row.task_id,
+                type: row.type,
+                name: row.name,
+                url: row.url,
+                createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+                source: row.source,
+                prompt: row.prompt ?? null,
+            })),
+        };
     });
-    // Улучшение промпта через GPT
-    app.post("/api/image/improve-prompt", async (request, reply) => {
+    // Удаление видео из истории
+    app.delete("/api/video/history/:id", async (request, reply) => {
+        const params = request.params;
+        const result = await dbQuery(`DELETE FROM files WHERE id = $1 AND type = 'video'`, [params.id]);
+        if ((result.rowCount ?? 0) === 0) {
+            return reply.status(404).send({ ok: false, error: "Файл не найден" });
+        }
+        return { ok: true };
+    });
+    // Улучшение промпта для видео
+    app.post("/api/video/improve-prompt", async (request, reply) => {
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
-        if (!apiKey) {
+        if (!apiKey)
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-        }
-        if (!prompt) {
+        if (!prompt)
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
-        }
-        const systemMessage = `Ты — эксперт по составлению промптов для генерации изображений с помощью ИИ.
-Твоя задача: взять описание пользователя и превратить его в детальный, профессиональный промпт.
+        const systemMessage = `Ты — эксперт по составлению промптов для генерации видео с помощью ИИ (Sora).
+Твоя задача: взять описание пользователя и превратить его в детальный, кинематографический промпт для видео.
 Правила:
 - Пиши улучшенный промпт ТОЛЬКО на русском языке
-- Добавляй конкретные детали: освещение, стиль, ракурс камеры, настроение, цвета, текстуры, художественный стиль
-- Добавляй технические параметры: "фотореализм", "кинематографическое освещение", "высокая детализация" и т.п.
+- Добавляй конкретные детали: движение камеры, освещение, динамика, стиль, настроение, скорость
+- Добавляй кинематографические термины: "плавный дрон-шот", "крупный план", "медленное движение", "кинематографическое освещение"
+- Описывай движение в кадре: что и как двигается, как меняется сцена
 - Объём: 2–4 предложения, ёмко и описательно
 - Верни ТОЛЬКО текст улучшенного промпта — без пояснений, без заголовков`;
         try {
             const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
+                headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
                     messages: [
                         { role: "system", content: [{ type: "text", text: systemMessage }] },
@@ -179,7 +224,6 @@ export async function imageRoutes(app) {
             const kieData = await kieResponse.json();
             const improved = kieData.choices?.[0]?.message?.content?.trim();
             if (!improved) {
-                console.error("KIE improve-prompt error:", JSON.stringify(kieData));
                 return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
             }
             return { ok: true, improvedPrompt: improved };
@@ -188,30 +232,25 @@ export async function imageRoutes(app) {
             return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
         }
     });
-    // Перевод промпта на английский через GPT
-    app.post("/api/image/translate-prompt", async (request, reply) => {
+    // Перевод промпта для видео
+    app.post("/api/video/translate-prompt", async (request, reply) => {
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
-        if (!apiKey) {
+        if (!apiKey)
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-        }
-        if (!prompt) {
+        if (!prompt)
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
-        }
-        const systemMessage = `You are a professional translator specializing in AI image generation prompts.
+        const systemMessage = `You are a professional translator specializing in AI video generation prompts.
 Translate the given text to English accurately and naturally.
 Rules:
 - Translate to English only
-- Preserve all technical image generation terms, artistic styles, and descriptive details
+- Preserve all cinematic and motion-related terms
 - Return ONLY the translated text — no explanations, no labels`;
         try {
             const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
+                headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
                     messages: [
                         { role: "system", content: [{ type: "text", text: systemMessage }] },
@@ -223,7 +262,6 @@ Rules:
             const kieData = await kieResponse.json();
             const translated = kieData.choices?.[0]?.message?.content?.trim();
             if (!translated) {
-                console.error("KIE translate-prompt error:", JSON.stringify(kieData));
                 return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось перевести промпт" });
             }
             return { ok: true, translatedPrompt: translated };
@@ -232,37 +270,24 @@ Rules:
             return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
         }
     });
-    // Удаление файла
-    app.delete("/api/files/:id", async (request, reply) => {
-        const params = request.params;
-        const id = params?.id?.trim();
-        if (!id) {
-            return reply.status(400).send({ ok: false, error: "Не передан id файла" });
-        }
-        const deleted = await deleteFileById(id);
-        if (!deleted) {
-            return reply.status(404).send({ ok: false, error: "Файл не найден" });
-        }
-        return { ok: true, id };
-    });
-    // Шаблоны промптов для изображений
-    app.get("/api/image-templates", async () => {
-        const result = await dbQuery(`SELECT id, title, text, created_at FROM image_prompt_templates ORDER BY created_at DESC`);
+    // ─── Шаблоны промптов ────────────────────────────────────────────────────
+    app.get("/api/video-templates", async () => {
+        const result = await dbQuery(`SELECT id, title, text, created_at FROM video_prompt_templates ORDER BY created_at DESC`);
         return { ok: true, templates: result.rows };
     });
-    app.post("/api/image-templates", async (request, reply) => {
+    app.post("/api/video-templates", async (request, reply) => {
         const body = request.body;
         const title = body?.title?.trim();
         const text = body?.text?.trim();
         if (!title || !text) {
             return reply.status(400).send({ ok: false, error: "title и text обязательны" });
         }
-        const result = await dbQuery(`INSERT INTO image_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`, [title, text]);
+        const result = await dbQuery(`INSERT INTO video_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`, [title, text]);
         return { ok: true, template: result.rows[0] };
     });
-    app.delete("/api/image-templates/:id", async (request, reply) => {
+    app.delete("/api/video-templates/:id", async (request, reply) => {
         const params = request.params;
-        const result = await dbQuery(`DELETE FROM image_prompt_templates WHERE id = $1`, [params.id]);
+        const result = await dbQuery(`DELETE FROM video_prompt_templates WHERE id = $1`, [params.id]);
         if ((result.rowCount ?? 0) === 0) {
             return reply.status(404).send({ ok: false, error: "Шаблон не найден" });
         }

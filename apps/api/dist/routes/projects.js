@@ -13,8 +13,8 @@ export async function projectRoutes(app) {
         if (!name) {
             return reply.status(400).send({ ok: false, error: "Не указано имя проекта" });
         }
-        const result = await dbQuery(`INSERT INTO projects (module, name, description, model, system_prompt, style, memory)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`, [
+        const result = await dbQuery(`INSERT INTO projects (module, name, description, model, system_prompt, style, memory, context_files)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`, [
             module,
             name,
             body?.description || "",
@@ -22,6 +22,7 @@ export async function projectRoutes(app) {
             body?.system_prompt || "",
             body?.style || "",
             body?.memory || "",
+            JSON.stringify(body?.context_files ?? []),
         ]);
         return { ok: true, project: result.rows[0] };
     });
@@ -35,14 +36,16 @@ export async function projectRoutes(app) {
          model = COALESCE($3, model),
          system_prompt = COALESCE($4, system_prompt),
          style = COALESCE($5, style),
-         memory = COALESCE($6, memory)
-       WHERE id = $7 RETURNING *`, [
+         memory = COALESCE($6, memory),
+         context_files = COALESCE($7, context_files)
+       WHERE id = $8 RETURNING *`, [
             body?.name ?? null,
             body?.description ?? null,
             body?.model ?? null,
             body?.system_prompt ?? null,
             body?.style ?? null,
             body?.memory ?? null,
+            body?.context_files !== undefined ? JSON.stringify(body.context_files) : null,
             params.id,
         ]);
         if (result.rows.length === 0) {
