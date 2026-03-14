@@ -26,6 +26,7 @@ const MODELS = [
   { value: "nano-banana-pro", label: "Nano Banana Pro" },
   { value: "grok-imagine/text-to-image", label: "Grok Imagine" },
   { value: "seedream/4.5-edit", label: "Seedream 4.5 Edit" },
+  { value: "z-image", label: "Z-Image" },
 ];
 
 const ASPECT_RATIOS = [
@@ -70,6 +71,16 @@ const SEEDREAM_QUALITY = [
   { value: "basic", label: "2K" },
   { value: "high", label: "4K" },
 ];
+
+// Z-Image — поддерживаемые соотношения
+const Z_IMAGE_ASPECT_RATIOS = [
+  { value: "1:1", label: "1:1" },
+  { value: "4:3", label: "4:3" },
+  { value: "3:4", label: "3:4" },
+  { value: "16:9", label: "16:9" },
+  { value: "9:16", label: "9:16" },
+];
+const Z_IMAGE_VALID_RATIOS = new Set(Z_IMAGE_ASPECT_RATIOS.map((r) => r.value));
 
 const RESOLUTIONS = [
   { value: "1K", label: "1K" },
@@ -296,12 +307,13 @@ export default function ImagePage() {
 
       const isGrok = model === "grok-imagine/text-to-image";
       const isSeedream = model === "seedream/4.5-edit";
+      const isZImage = model === "z-image";
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
         model, prompt: finalPrompt,
         aspect_ratio: aspectRatio || undefined,
         ...(isSeedream
           ? { image_urls: image_input, quality }
-          : isGrok
+          : isGrok || isZImage
           ? { image_input }
           : { image_input, resolution, output_format: outputFormat }),
       });
@@ -447,6 +459,8 @@ export default function ImagePage() {
                       setAspectRatio("1:1");
                     } else if (next === "seedream/4.5-edit" && !SEEDREAM_VALID_RATIOS.has(aspectRatio)) {
                       setAspectRatio("1:1");
+                    } else if (next === "z-image" && !Z_IMAGE_VALID_RATIOS.has(aspectRatio)) {
+                      setAspectRatio("1:1");
                     }
                   }} className="input-field text-[11px] py-1 w-full">
                     {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -504,6 +518,8 @@ export default function ImagePage() {
                       ? GROK_ASPECT_RATIOS
                       : model === "seedream/4.5-edit"
                       ? SEEDREAM_ASPECT_RATIOS
+                      : model === "z-image"
+                      ? Z_IMAGE_ASPECT_RATIOS
                       : ASPECT_RATIOS
                     ).map((r) => (
                       <option key={r.value} value={r.value}>{r.label}</option>
