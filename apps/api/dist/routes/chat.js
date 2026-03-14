@@ -165,7 +165,7 @@ export async function chatRoutes(app) {
                         ? m.content.map((b) => (b.type === "text" ? b.text : "")).join("")
                         : m.content,
                 }));
-                const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
+                const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/${claudeModelId}/v1/messages`, {
                     method: "POST",
                     headers: {
                         Authorization: `Bearer ${apiKey}`,
