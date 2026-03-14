@@ -54,7 +54,7 @@ export default function GlobalMemoryModal({ engine, engineLabel, onClose }: Prop
           <div className="flex items-center gap-2.5">
             <Brain size={16} className="text-accent" />
             <div>
-              <h3 className="text-[15px] font-semibold text-white">Глобальная память</h3>
+              <h3 className="text-[15px] font-semibold text-white">Персонализация</h3>
               <p className="text-[11px] text-muted mt-0.5">
                 Подключается к каждому чату {engineLabel} — с проектом и без
               </p>
@@ -106,7 +106,7 @@ export default function GlobalMemoryModal({ engine, engineLabel, onClose }: Prop
               />
             </div>
 
-            {/* Глобальная память */}
+            {/* Память */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-baseline gap-2">
                 <label className="text-[12px] font-medium text-white/80">Память</label>
@@ -126,7 +126,7 @@ export default function GlobalMemoryModal({ engine, engineLabel, onClose }: Prop
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent/10 border border-accent/20">
                 <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
                 <span className="text-[11px] text-accent/80">
-                  Память активна — применяется ко всем чатам {engineLabel}
+                  Персонализация активна — применяется ко всем чатам {engineLabel}
                 </span>
               </div>
             )}

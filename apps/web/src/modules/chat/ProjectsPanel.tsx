@@ -154,7 +154,7 @@ export default function ProjectsPanel({ engine, engineLabel, selectedProjectId, 
           }`}
         >
           <Brain size={13} className="shrink-0" />
-          <span className="flex-1 text-left">Глобальная память</span>
+          <span className="flex-1 text-left">Персонализация</span>
           {hasGlobalMemory && <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
         </button>
       </div>
