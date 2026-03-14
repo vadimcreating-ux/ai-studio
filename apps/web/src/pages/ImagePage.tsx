@@ -28,6 +28,7 @@ const MODELS = [
   { value: "seedream/4.5-edit", label: "Seedream 4.5 Edit" },
   { value: "z-image", label: "Z-Image" },
   { value: "topaz/image-upscale", label: "Topaz Upscale" },
+  { value: "recraft/remove-background", label: "Recraft Remove BG" },
 ];
 
 const UPSCALE_FACTORS = [
@@ -319,10 +320,13 @@ export default function ImagePage() {
       const isSeedream = model === "seedream/4.5-edit";
       const isZImage = model === "z-image";
       const isTopaz = model === "topaz/image-upscale";
+      const isRecraft = model === "recraft/remove-background";
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
         model,
         ...(isTopaz
           ? { image_url: upscaleImageUrl, upscale_factor: upscaleFactor }
+          : isRecraft
+          ? { image_url: upscaleImageUrl }
           : {
               prompt: finalPrompt,
               aspect_ratio: aspectRatio || undefined,
@@ -541,8 +545,8 @@ export default function ImagePage() {
                   </div>
                 )}
 
-                {/* Aspect ratio — скрыто для Topaz */}
-                {model !== "topaz/image-upscale" && (
+                {/* Aspect ratio — скрыто для Topaz и Recraft */}
+                {model !== "topaz/image-upscale" && model !== "recraft/remove-background" && (
                   <div>
                     <label className="block text-[10px] text-muted mb-1">Соотношение</label>
                     <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
@@ -634,9 +638,13 @@ export default function ImagePage() {
 
             {/* Prompt / Upscale input */}
             <div className="shrink-0 px-5 pt-3 pb-4 flex flex-col gap-2">
-              {model === "topaz/image-upscale" ? (
+              {(model === "topaz/image-upscale" || model === "recraft/remove-background") ? (
                 <>
-                  <label className="text-[11px] text-muted">URL изображения для апскейла (JPEG / PNG / WebP, макс. 10 МБ)</label>
+                  <label className="text-[11px] text-muted">
+                    {model === "topaz/image-upscale"
+                      ? "URL изображения для апскейла (JPEG / PNG / WebP, макс. 10 МБ)"
+                      : "URL изображения для удаления фона (PNG / JPG / WebP, макс. 5 МБ)"}
+                  </label>
                   <input
                     value={upscaleImageUrl}
                     onChange={(e) => setUpscaleImageUrl(e.target.value)}
@@ -653,7 +661,11 @@ export default function ImagePage() {
                     <button onClick={() => generate.mutate()}
                       disabled={!upscaleImageUrl.trim() || generate.isPending}
                       className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                      {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Обработка...</> : <><ImageIcon size={14} />Апскейл</>}
+                      {generate.isPending
+                        ? <><Loader2 size={14} className="animate-spin" />Обработка...</>
+                        : model === "topaz/image-upscale"
+                        ? <><ImageIcon size={14} />Апскейл</>
+                        : <><ImageIcon size={14} />Удалить фон</>}
                     </button>
                   </div>
                 </>

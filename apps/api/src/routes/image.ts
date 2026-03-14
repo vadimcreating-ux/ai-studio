@@ -17,7 +17,7 @@ export async function imageRoutes(app: FastifyInstance) {
       prompt?: string;
       image_input?: string[];  // base64 data URLs (Nano Banana / Grok)
       image_urls?: string[];   // URLs (Seedream)
-      image_url?: string;      // single URL (Topaz)
+      image_url?: string;      // single URL (Topaz / Recraft)
       aspect_ratio?: string;
       resolution?: string;
       output_format?: string;
@@ -33,13 +33,15 @@ export async function imageRoutes(app: FastifyInstance) {
 
     const model = body?.model?.trim() || "nano-banana-pro";
     const isTopaz = model === "topaz/image-upscale";
+    const isRecraft = model === "recraft/remove-background";
     const isSeedream = model === "seedream/4.5-edit";
+    const isUrlOnly = isTopaz || isRecraft;
     const prompt = body?.prompt?.trim();
 
-    if (!isTopaz && !prompt) {
+    if (!isUrlOnly && !prompt) {
       return reply.status(400).send({ ok: false, error: "Введите prompt" });
     }
-    if (isTopaz && !body?.image_url?.trim()) {
+    if (isUrlOnly && !body?.image_url?.trim()) {
       return reply.status(400).send({ ok: false, error: "Укажите image_url" });
     }
 
@@ -50,6 +52,8 @@ export async function imageRoutes(app: FastifyInstance) {
         image_url: body.image_url,
         upscale_factor: body?.upscale_factor ?? "2",
       };
+    } else if (isRecraft) {
+      input = { image: body.image_url };
     } else {
       input = { prompt };
       if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
