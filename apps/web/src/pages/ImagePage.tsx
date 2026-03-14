@@ -27,6 +27,14 @@ const MODELS = [
   { value: "grok-imagine/text-to-image", label: "Grok Imagine" },
   { value: "seedream/4.5-edit", label: "Seedream 4.5 Edit" },
   { value: "z-image", label: "Z-Image" },
+  { value: "topaz/image-upscale", label: "Topaz Upscale" },
+];
+
+const UPSCALE_FACTORS = [
+  { value: "1", label: "1×" },
+  { value: "2", label: "2×" },
+  { value: "4", label: "4×" },
+  { value: "8", label: "8×" },
 ];
 
 const ASPECT_RATIOS = [
@@ -161,6 +169,8 @@ export default function ImagePage() {
   const [resolution, setResolution] = useState("1K");
   const [outputFormat, setOutputFormat] = useState("png");
   const [quality, setQuality] = useState("basic");
+  const [upscaleImageUrl, setUpscaleImageUrl] = useState("");
+  const [upscaleFactor, setUpscaleFactor] = useState("2");
   // refImages не используется — файлы конвертируются в base64 в mutationFn
   const [refImageFiles, setRefImageFiles] = useState<File[]>([]);
   const [results, setResults] = useState<GeneratedImage[]>([]);
@@ -308,14 +318,20 @@ export default function ImagePage() {
       const isGrok = model === "grok-imagine/text-to-image";
       const isSeedream = model === "seedream/4.5-edit";
       const isZImage = model === "z-image";
+      const isTopaz = model === "topaz/image-upscale";
       const data = await api.post<{ ok: boolean; taskId: string }>("/api/image/generate", {
-        model, prompt: finalPrompt,
-        aspect_ratio: aspectRatio || undefined,
-        ...(isSeedream
-          ? { image_urls: image_input, quality }
-          : isGrok || isZImage
-          ? { image_input }
-          : { image_input, resolution, output_format: outputFormat }),
+        model,
+        ...(isTopaz
+          ? { image_url: upscaleImageUrl, upscale_factor: upscaleFactor }
+          : {
+              prompt: finalPrompt,
+              aspect_ratio: aspectRatio || undefined,
+              ...(isSeedream
+                ? { image_urls: image_input, quality }
+                : isGrok || isZImage
+                ? { image_input }
+                : { image_input, resolution, output_format: outputFormat }),
+            }),
       });
       setStatusText("Генерация... (обычно 10–30 секунд)");
       const imageUrl = await pollStatus(data.taskId);
@@ -510,22 +526,39 @@ export default function ImagePage() {
                   </div>
                 )}
 
-                {/* Aspect ratio */}
-                <div>
-                  <label className="block text-[10px] text-muted mb-1">Соотношение</label>
-                  <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
-                    {(model === "grok-imagine/text-to-image"
-                      ? GROK_ASPECT_RATIOS
-                      : model === "seedream/4.5-edit"
-                      ? SEEDREAM_ASPECT_RATIOS
-                      : model === "z-image"
-                      ? Z_IMAGE_ASPECT_RATIOS
-                      : ASPECT_RATIOS
-                    ).map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Масштаб — только для Topaz */}
+                {model === "topaz/image-upscale" && (
+                  <div>
+                    <label className="block text-[10px] text-muted mb-1">Масштаб</label>
+                    <div className="flex gap-1">
+                      {UPSCALE_FACTORS.map((f) => (
+                        <button key={f.value} onClick={() => setUpscaleFactor(f.value)}
+                          className={`flex-1 py-0.5 rounded text-[11px] border transition-colors ${upscaleFactor === f.value ? "bg-accent border-accent text-white" : "border-border text-muted hover:text-white hover:border-[#484f58]"}`}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Aspect ratio — скрыто для Topaz */}
+                {model !== "topaz/image-upscale" && (
+                  <div>
+                    <label className="block text-[10px] text-muted mb-1">Соотношение</label>
+                    <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="input-field text-[11px] py-1 w-full">
+                      {(model === "grok-imagine/text-to-image"
+                        ? GROK_ASPECT_RATIOS
+                        : model === "seedream/4.5-edit"
+                        ? SEEDREAM_ASPECT_RATIOS
+                        : model === "z-image"
+                        ? Z_IMAGE_ASPECT_RATIOS
+                        : ASPECT_RATIOS
+                      ).map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Ref images */}
                 <div>
@@ -599,67 +632,94 @@ export default function ImagePage() {
               )}
             </div>
 
-            {/* Prompt */}
+            {/* Prompt / Upscale input */}
             <div className="shrink-0 px-5 pt-3 pb-4 flex flex-col gap-2">
-              {activeProject && (
-                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/10 border border-accent/30">
-                  <FolderOpen size={16} className="text-accent shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] text-accent/70 uppercase tracking-wider font-medium">Сейчас работаем в проекте</div>
-                    <div className="text-[15px] text-accent font-semibold truncate leading-tight">{activeProject.name}</div>
-                    {activeProject.style && (
-                      <div className="text-[11px] text-muted truncate mt-0.5">
-                        {activeProject.style.length > 60 ? activeProject.style.slice(0, 60) + "…" : activeProject.style}
-                      </div>
-                    )}
+              {model === "topaz/image-upscale" ? (
+                <>
+                  <label className="text-[11px] text-muted">URL изображения для апскейла (JPEG / PNG / WebP, макс. 10 МБ)</label>
+                  <input
+                    value={upscaleImageUrl}
+                    onChange={(e) => setUpscaleImageUrl(e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    className="input-field text-[13px] py-2 w-full"
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      {statusText && <span className="text-[11px] text-muted animate-pulse">{statusText}</span>}
+                      {generate.isError && (
+                        <span className="text-[11px] text-red-400">{generate.error?.message ?? "Ошибка"}</span>
+                      )}
+                    </div>
+                    <button onClick={() => generate.mutate()}
+                      disabled={!upscaleImageUrl.trim() || generate.isPending}
+                      className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                      {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Обработка...</> : <><ImageIcon size={14} />Апскейл</>}
+                    </button>
                   </div>
-                </div>
-              )}
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={activeProject?.system_prompt || "Описание изображения..."}
-                rows={11}
-                className="input-field resize-none scrollbar-thin w-full flex-1"
-              />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => setShowTemplates(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] border-border text-muted hover:text-white hover:border-[#484f58] transition-all">
-                    <BookOpen size={11} />
-                    Шаблоны
-                  </button>
-                  <button onClick={() => improvePrompt.mutate()}
-                    disabled={!prompt.trim() || improvePrompt.isPending || translatePrompt.isPending}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${improvePrompt.isPending ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"}`}>
-                    {improvePrompt.isPending ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
-                    {improvePrompt.isPending ? "Улучшаем..." : "Улучшить"}
-                  </button>
-                  <button onClick={() => translatePrompt.mutate()}
-                    disabled={!prompt.trim() || translatePrompt.isPending || improvePrompt.isPending}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${translatePrompt.isPending ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"}`}>
-                    {translatePrompt.isPending ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
-                    {translatePrompt.isPending ? "Переводим..." : "Перевести"}
-                  </button>
-                  <span className="text-[11px] text-muted ml-1">{prompt.length} / 20000</span>
-                  {statusText && <span className="text-[11px] text-muted animate-pulse ml-2">{statusText}</span>}
-                  {(generate.isError || improvePrompt.isError || translatePrompt.isError) && (
-                    <span className="text-[11px] text-red-400 ml-2">
-                      {generate.error?.message ?? improvePrompt.error?.message ?? translatePrompt.error?.message ?? "Ошибка"}
-                    </span>
+                </>
+              ) : (
+                <>
+                  {activeProject && (
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/10 border border-accent/30">
+                      <FolderOpen size={16} className="text-accent shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-accent/70 uppercase tracking-wider font-medium">Сейчас работаем в проекте</div>
+                        <div className="text-[15px] text-accent font-semibold truncate leading-tight">{activeProject.name}</div>
+                        {activeProject.style && (
+                          <div className="text-[11px] text-muted truncate mt-0.5">
+                            {activeProject.style.length > 60 ? activeProject.style.slice(0, 60) + "…" : activeProject.style}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted/70 whitespace-nowrap">
-                    <span className="text-[#58a6ff] font-medium">{GENERATION_COST[resolution] ?? 18}</span> кред.
-                  </span>
-                  <button onClick={() => generate.mutate()}
-                    disabled={!prompt.trim() || generate.isPending}
-                    className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                    {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Генерация...</> : <><ImageIcon size={14} />Сгенерировать</>}
-                  </button>
-                </div>
-              </div>
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder={activeProject?.system_prompt || "Описание изображения..."}
+                    rows={11}
+                    className="input-field resize-none scrollbar-thin w-full flex-1"
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => setShowTemplates(true)}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] border-border text-muted hover:text-white hover:border-[#484f58] transition-all">
+                        <BookOpen size={11} />
+                        Шаблоны
+                      </button>
+                      <button onClick={() => improvePrompt.mutate()}
+                        disabled={!prompt.trim() || improvePrompt.isPending || translatePrompt.isPending}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${improvePrompt.isPending ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"}`}>
+                        {improvePrompt.isPending ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                        {improvePrompt.isPending ? "Улучшаем..." : "Улучшить"}
+                      </button>
+                      <button onClick={() => translatePrompt.mutate()}
+                        disabled={!prompt.trim() || translatePrompt.isPending || improvePrompt.isPending}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:cursor-not-allowed ${translatePrompt.isPending ? "border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "border-border text-muted hover:text-white hover:border-[#484f58] disabled:opacity-40"}`}>
+                        {translatePrompt.isPending ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
+                        {translatePrompt.isPending ? "Переводим..." : "Перевести"}
+                      </button>
+                      <span className="text-[11px] text-muted ml-1">{prompt.length} / 20000</span>
+                      {statusText && <span className="text-[11px] text-muted animate-pulse ml-2">{statusText}</span>}
+                      {(generate.isError || improvePrompt.isError || translatePrompt.isError) && (
+                        <span className="text-[11px] text-red-400 ml-2">
+                          {generate.error?.message ?? improvePrompt.error?.message ?? translatePrompt.error?.message ?? "Ошибка"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-muted/70 whitespace-nowrap">
+                        <span className="text-[#58a6ff] font-medium">{GENERATION_COST[resolution] ?? 18}</span> кред.
+                      </span>
+                      <button onClick={() => generate.mutate()}
+                        disabled={!prompt.trim() || generate.isPending}
+                        className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                        {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Генерация...</> : <><ImageIcon size={14} />Сгенерировать</>}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -17,10 +17,12 @@ export async function imageRoutes(app: FastifyInstance) {
       prompt?: string;
       image_input?: string[];  // base64 data URLs (Nano Banana / Grok)
       image_urls?: string[];   // URLs (Seedream)
+      image_url?: string;      // single URL (Topaz)
       aspect_ratio?: string;
       resolution?: string;
       output_format?: string;
       quality?: string;        // Seedream: basic | high
+      upscale_factor?: string; // Topaz: 1 | 2 | 4 | 8
     };
 
     const prompt = body?.prompt?.trim();
@@ -30,24 +32,36 @@ export async function imageRoutes(app: FastifyInstance) {
       return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
     }
 
-    if (!prompt) {
+    const model = body?.model?.trim() || "nano-banana-pro";
+    const isTopaz = model === "topaz/image-upscale";
+    const isSeedream = model === "seedream/4.5-edit";
+    const prompt = body?.prompt?.trim();
+
+    if (!isTopaz && !prompt) {
       return reply.status(400).send({ ok: false, error: "Введите prompt" });
     }
+    if (isTopaz && !body?.image_url?.trim()) {
+      return reply.status(400).send({ ok: false, error: "Укажите image_url" });
+    }
 
-    const model = body?.model?.trim() || "nano-banana-pro";
+    let input: Record<string, unknown>;
 
-    const isSeedream = model === "seedream/4.5-edit";
-
-    const input: Record<string, unknown> = { prompt };
-    if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
-
-    if (isSeedream) {
-      if (body?.image_urls?.length) input.image_urls = body.image_urls;
-      if (body?.quality) input.quality = body.quality;
+    if (isTopaz) {
+      input = {
+        image_url: body.image_url,
+        upscale_factor: body?.upscale_factor ?? "2",
+      };
     } else {
-      if (body?.image_input?.length) input.image_input = body.image_input;
-      if (body?.resolution) input.resolution = body.resolution;
-      if (body?.output_format) input.output_format = body.output_format;
+      input = { prompt };
+      if (body?.aspect_ratio) input.aspect_ratio = body.aspect_ratio;
+      if (isSeedream) {
+        if (body?.image_urls?.length) input.image_urls = body.image_urls;
+        if (body?.quality) input.quality = body.quality;
+      } else {
+        if (body?.image_input?.length) input.image_input = body.image_input;
+        if (body?.resolution) input.resolution = body.resolution;
+        if (body?.output_format) input.output_format = body.output_format;
+      }
     }
 
     try {
@@ -79,7 +93,7 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       const taskId = createData.data.taskId;
-      imagePromptStore.set(taskId, prompt);
+      if (prompt) imagePromptStore.set(taskId, prompt);
 
       return { ok: true, taskId };
     } catch {
