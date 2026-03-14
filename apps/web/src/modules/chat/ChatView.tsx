@@ -9,13 +9,7 @@ import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
 const CLAUDE_MODELS = [
-  { value: "claude-opus-4-5", label: "Claude Sonnet 4.5" },
-  { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
-  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
-  { value: "claude-3-7-sonnet-20250219", label: "Claude 3.7 Sonnet" },
-  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
   { value: "claude-sonnet-4-6-v1messages", label: "Claude Sonnet 4.6" },
-  { value: "claude-opus-4-6-v1messages", label: "Claude Opus 4.6" },
 ];
 
 const TEMPLATES_KEY = "ai_studio_prompt_templates";
@@ -146,16 +140,9 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         </div>
         <div className="absolute right-6 flex items-center gap-2">
           {chat && isClaudeEngine && (
-            <select
-              value={chat.model}
-              onChange={(e) => updateModel.mutate(e.target.value)}
-              disabled={updateModel.isPending}
-              className="text-[12px] bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md px-2 py-1 cursor-pointer hover:bg-[#30363d] transition-colors"
-            >
-              {CLAUDE_MODELS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+            <span className="text-[11px] bg-[#21262d] border border-[#30363d] text-[#8b949e] rounded-md px-2.5 py-1">
+              Claude Sonnet 4.6
+            </span>
           )}
           {project && (
             <button
@@ -210,6 +197,12 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       </div>
 
       {/* Input */}
+      {chat && isClaudeEngine && (
+        <div className="px-5 pt-2 pb-0 flex items-center gap-1.5">
+          <span className="text-[10px] text-[#8b949e]">Модель:</span>
+          <span className="text-[10px] font-medium text-accent">Claude Sonnet 4.6</span>
+        </div>
+      )}
       <MessageInput
         value={inputText}
         onChange={setInputText}
