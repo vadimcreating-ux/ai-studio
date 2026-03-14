@@ -220,7 +220,7 @@ export async function chatRoutes(app: FastifyInstance) {
           }));
 
         const kieClaudeResponse = await fetch(
-          `${KIE_BASE_URL}/${chat.model}/v1/messages`,
+          `${KIE_BASE_URL}/claude/v1/messages`,
           {
             method: "POST",
             headers: {
