@@ -54,16 +54,25 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, messages: result.rows };
   });
 
-  // Обновить модель чата
+  // Обновить чат (model / title / project_id)
   app.patch("/api/chat/:chatId", async (request, reply) => {
     const params = request.params as { chatId: string };
-    const body = request.body as { model?: string };
-    const model = body?.model?.trim();
-    if (!model) return reply.status(400).send({ ok: false, error: "model required" });
+    const body = request.body as { model?: string; title?: string; project_id?: string | null };
 
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (body.model !== undefined) { updates.push(`model = $${idx++}`); values.push(body.model.trim()); }
+    if (body.title !== undefined) { updates.push(`title = $${idx++}`); values.push(body.title.trim()); }
+    if ("project_id" in body) { updates.push(`project_id = $${idx++}`); values.push(body.project_id ?? null); }
+
+    if (updates.length === 0) return reply.status(400).send({ ok: false, error: "Нечего обновлять" });
+
+    values.push(params.chatId);
     const result = await dbQuery(
-      `UPDATE chats SET model = $1 WHERE id = $2 RETURNING *`,
-      [model, params.chatId]
+      `UPDATE chats SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`,
+      values
     );
     return { ok: true, chat: result.rows[0] };
   });

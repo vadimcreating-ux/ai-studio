@@ -36,6 +36,12 @@ export const chatApi = {
   updateModel: (chatId: string, model: string) =>
     api.patch<{ ok: true; chat: Chat }>(`/api/chat/${chatId}`, { model }),
 
+  rename: (chatId: string, title: string) =>
+    api.patch<{ ok: true; chat: Chat }>(`/api/chat/${chatId}`, { title }),
+
+  moveToProject: (chatId: string, projectId: string | null) =>
+    api.patch<{ ok: true; chat: Chat }>(`/api/chat/${chatId}`, { project_id: projectId }),
+
   delete: (chatId: string) =>
     api.delete<{ ok: true }>(`/api/chat/${chatId}`),
 };
