@@ -1,6 +1,5 @@
 import { dbQuery } from "../lib/db.js";
 const KIE_BASE_URL = "https://api.kie.ai";
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export async function chatRoutes(app) {
     // Создать новый чат
     app.post("/api/chat/new", async (request, reply) => {
@@ -147,40 +146,42 @@ export async function chatRoutes(app) {
                 messages.push({ role: row.role, content: [{ type: "text", text: row.content }] });
             }
         });
-        // Роутинг: Claude → OpenRouter, остальные → KIE
-        const isClaudeModel = chat.model?.startsWith("claude-");
+        // Роутинг: claude-*-v1messages → KIE Claude API, остальные → KIE chat/completions
+        const isKieClaude = chat.model?.endsWith("v1messages");
         try {
             let assistantText;
-            if (isClaudeModel) {
-                // ── OpenRouter API (поддерживает Claude, работает из России) ──
-                const openrouterKey = process.env.OPENROUTER_API_KEY;
-                if (!openrouterKey) {
-                    return reply.status(500).send({ ok: false, error: "Не задан OPENROUTER_API_KEY. Получите ключ на openrouter.ai" });
-                }
-                const orResponse = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+            if (isKieClaude) {
+                // ── KIE Claude API (/claude/v1/messages) ──────────────────
+                // Извлекаем system prompt (если есть) и убираем из messages
+                const systemMsg = messages.find((m) => m.role === "system");
+                const claudeMessages = messages.filter((m) => m.role !== "system");
+                const kieClaudeResponse = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
                     method: "POST",
                     headers: {
-                        Authorization: `Bearer ${openrouterKey}`,
+                        Authorization: `Bearer ${apiKey}`,
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        model: `anthropic/${chat.model}`,
-                        messages,
+                        model: chat.model,
+                        messages: claudeMessages,
+                        ...(systemMsg ? { system: typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content) } : {}),
+                        stream: false,
                     }),
                 });
-                const orData = await orResponse.json();
-                if (!orResponse.ok || !orData?.choices?.[0]?.message?.content) {
-                    console.error("OpenRouter error:", orResponse.status, JSON.stringify(orData));
+                const kieClaudeData = await kieClaudeResponse.json();
+                const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
+                if (!kieClaudeResponse.ok || !claudeText) {
+                    console.error("KIE Claude error:", kieClaudeResponse.status, JSON.stringify(kieClaudeData));
                     return reply.status(500).send({
                         ok: false,
-                        error: orData?.error?.message || "OpenRouter не вернул ответ",
-                        debug: { status: orResponse.status, body: orData },
+                        error: kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
+                        debug: { status: kieClaudeResponse.status, body: kieClaudeData },
                     });
                 }
-                assistantText = orData.choices[0].message.content;
+                assistantText = claudeText;
             }
             else {
-                // ── KIE API ────────────────────────────────────────────────
+                // ── KIE chat/completions (GPT, Gemini и прочие) ───────────
                 const kieResponse = await fetch(`${KIE_BASE_URL}/${chat.model}/v1/chat/completions`, {
                     method: "POST",
                     headers: {
