@@ -149,87 +149,40 @@ export async function chatRoutes(app: FastifyInstance) {
       [chatId, userText]
     );
 
-    // Determine which kie.ai API format to use based on model name
+    // All models use completions API; strip -v1messages suffix for URL path
     const chatModel = chatRes.rows[0].model as string;
-    const useMessagesApi = chatModel.endsWith("-v1messages");
+    const modelPath = chatModel.replace(/-v1messages$/, "");
 
-    let assistantReply: string;
+    const kieRes = await fetch(`${KIE_BASE_URL}/${modelPath}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ messages, stream: false, include_thoughts: false }),
+    });
 
-    if (useMessagesApi) {
-      // Anthropic /v1/messages format
-      const systemContent = systemParts.join("\n\n");
-      const anthropicMessages = messages
-        .filter((m) => m.role !== "system")
-        .map((m) => ({ role: m.role, content: m.content }));
-
-      const modelPath = chatModel.replace(/-v1messages$/, "");
-      const kieRes = await fetch(`${KIE_BASE_URL}/${modelPath}/v1/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: chatModel,
-          messages: anthropicMessages,
-          max_tokens: 8096,
-          ...(systemContent ? { system: systemContent } : {}),
-        }),
-      });
-
-      if (!kieRes.ok) {
-        const errText = await kieRes.text();
-        app.log.error(`kie.ai messages error ${kieRes.status}: ${errText}`);
-        return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
-      }
-
-      const rawBody = await kieRes.text();
-      app.log.info(`kie.ai messages raw response: ${rawBody}`);
-      const data = JSON.parse(rawBody) as {
-        content?: Array<{ type: string; text?: string }>;
-      };
-      assistantReply = (data.content ?? [])
-        .filter((b) => b.text != null)
-        .map((b) => b.text ?? "")
-        .join("")
-        .trim();
-
-    } else {
-      // OpenAI /v1/chat/completions format
-      const kieRes = await fetch(`${KIE_BASE_URL}/${chatModel}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({ messages, stream: false, include_thoughts: false }),
-      });
-
-      if (!kieRes.ok) {
-        const errText = await kieRes.text();
-        app.log.error(`kie.ai completions error ${kieRes.status}: ${errText}`);
-        return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
-      }
-
-      const rawBody2 = await kieRes.text();
-      app.log.info(`kie.ai completions raw response: ${rawBody2}`);
-      const data = JSON.parse(rawBody2) as {
-        choices?: Array<{
-          message?: {
-            content?: string | Array<{ type: string; text?: string; thinking?: string }>;
-            reasoning_content?: string;
-          };
-        }>;
-      };
-      const msg = data.choices?.[0]?.message;
-      const rawContent = msg?.content ?? "";
-      assistantReply = (
-        Array.isArray(rawContent)
-          ? rawContent.filter((b) => b.text != null).map((b) => b.text ?? "").join("")
-          : rawContent
-      ).trim();
+    if (!kieRes.ok) {
+      const errText = await kieRes.text();
+      app.log.error(`kie.ai error ${kieRes.status}: ${errText}`);
+      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
     }
+
+    const rawBody = await kieRes.text();
+    app.log.info(`kie.ai raw response: ${rawBody}`);
+    const data = JSON.parse(rawBody) as {
+      choices?: Array<{
+        message?: {
+          content?: string | Array<{ type: string; text?: string }>;
+        };
+      }>;
+    };
+    const rawContent = data.choices?.[0]?.message?.content ?? "";
+    const assistantReply = (
+      Array.isArray(rawContent)
+        ? rawContent.filter((b) => b.text != null).map((b) => b.text ?? "").join("")
+        : rawContent
+    ).trim();
 
     // Save assistant reply to DB
     await dbQuery(
