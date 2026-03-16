@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const CLAUDE_MODEL = "claude-sonnet-4-5";
+const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5";
 
 export async function chatRoutes(app: FastifyInstance) {
 
@@ -14,7 +14,7 @@ export async function chatRoutes(app: FastifyInstance) {
       `INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`,
       [
         body?.module?.trim() || "claude",
-        body?.model?.trim() || CLAUDE_MODEL,
+        body?.model?.trim() || DEFAULT_CLAUDE_MODEL,
         body?.title?.trim() || "Новый чат",
         body?.project_id?.trim() || null,
       ]
@@ -149,32 +149,76 @@ export async function chatRoutes(app: FastifyInstance) {
       [chatId, userText]
     );
 
-    // Call kie.ai Claude Sonnet 4.5
-    const kieRes = await fetch(`${KIE_BASE_URL}/${CLAUDE_MODEL}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ messages, stream: false, include_thoughts: false }),
-    });
+    // Determine which kie.ai API format to use based on model name
+    const chatModel = chatRes.rows[0].model as string;
+    const useMessagesApi = chatModel.endsWith("-v1messages");
 
-    if (!kieRes.ok) {
-      const errText = await kieRes.text();
-      app.log.error(`kie.ai error ${kieRes.status}: ${errText}`);
-      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
+    let assistantReply: string;
+
+    if (useMessagesApi) {
+      // Anthropic /v1/messages format
+      const systemContent = systemParts.join("\n\n");
+      const anthropicMessages = messages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: chatModel,
+          messages: anthropicMessages,
+          max_tokens: 8096,
+          ...(systemContent ? { system: systemContent } : {}),
+        }),
+      });
+
+      if (!kieRes.ok) {
+        const errText = await kieRes.text();
+        app.log.error(`kie.ai messages error ${kieRes.status}: ${errText}`);
+        return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
+      }
+
+      const data = await kieRes.json() as {
+        content?: Array<{ type: string; text?: string }>;
+      };
+      assistantReply = (data.content ?? [])
+        .filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("")
+        .trim();
+
+    } else {
+      // OpenAI /v1/chat/completions format
+      const kieRes = await fetch(`${KIE_BASE_URL}/${chatModel}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ messages, stream: false, include_thoughts: false }),
+      });
+
+      if (!kieRes.ok) {
+        const errText = await kieRes.text();
+        app.log.error(`kie.ai completions error ${kieRes.status}: ${errText}`);
+        return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
+      }
+
+      const data = await kieRes.json() as {
+        choices?: Array<{ message?: { content?: string | Array<{ type: string; text?: string }> } }>;
+      };
+      const rawContent = data.choices?.[0]?.message?.content ?? "";
+      assistantReply = (
+        Array.isArray(rawContent)
+          ? rawContent.filter((b) => b.type === "text").map((b) => b.text ?? "").join("")
+          : rawContent
+      ).trim();
     }
-
-    const data = await kieRes.json() as {
-      choices?: Array<{ message?: { content?: string | Array<{ type: string; text?: string }> } }>;
-    };
-
-    const rawContent = data.choices?.[0]?.message?.content ?? "";
-    const assistantReply = (
-      Array.isArray(rawContent)
-        ? rawContent.filter((b) => b.type === "text").map((b) => b.text ?? "").join("")
-        : rawContent
-    ).trim();
 
     // Save assistant reply to DB
     await dbQuery(
