@@ -5,6 +5,25 @@ import { chatApi, type Chat } from "../../shared/api/chat";
 import { projectsApi, type Project } from "../../shared/api/projects";
 import { formatDate } from "../../shared/utils/date";
 
+const ENGINE_MODELS: Record<string, Array<{ value: string; label: string }>> = {
+  claude: [
+    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+    { value: "claude-haiku-4-5-v1messages", label: "Claude Haiku 4.5" },
+    { value: "claude-opus-4-5-v1messages", label: "Claude Opus 4.5" },
+    { value: "claude-sonnet-4-5-v1messages", label: "Claude Sonnet 4.5 (Messages)" },
+    { value: "claude-opus-4-6-v1messages", label: "Claude Opus 4.6" },
+    { value: "claude-sonnet-4-6-v1messages", label: "Claude Sonnet 4.6" },
+  ],
+  chatgpt: [
+    { value: "gpt-5-2", label: "GPT-5" },
+    { value: "gpt-4o", label: "GPT-4o" },
+  ],
+  gemini: [
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+  ],
+};
+
 type Props = {
   engine: string;
   selectedProjectId: string | null;
@@ -23,6 +42,19 @@ export default function PromptsPanel({
   const [renameChatId, setRenameChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [moveChatId, setMoveChatId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState(defaultModel);
+
+  const modelOptions = ENGINE_MODELS[engine] ?? [];
+
+  const updateModel = useMutation({
+    mutationFn: ({ id, model }: { id: string; model: string }) => chatApi.updateModel(id, model),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chats", engine, selectedProjectId] }),
+  });
+
+  function handleModelChange(model: string) {
+    setSelectedModel(model);
+    if (selectedChatId) updateModel.mutate({ id: selectedChatId, model });
+  }
 
   const { data: chatsData } = useQuery({
     queryKey: ["chats", engine, selectedProjectId],
@@ -37,7 +69,7 @@ export default function PromptsPanel({
   const projects = projectsData?.projects ?? [];
 
   const createChat = useMutation({
-    mutationFn: () => chatApi.create({ module: engine, model: defaultModel, project_id: selectedProjectId ?? undefined }),
+    mutationFn: () => chatApi.create({ module: engine, model: selectedModel, project_id: selectedProjectId ?? undefined }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["chats", engine, selectedProjectId] });
       onSelectChat(data.chat);
@@ -72,6 +104,14 @@ export default function PromptsPanel({
   });
 
   const allChats = chatsData?.chats ?? [];
+
+  // Sync model selector to selected chat's model
+  useEffect(() => {
+    if (!selectedChatId) return;
+    const chat = allChats.find((c) => c.id === selectedChatId);
+    if (chat?.model) setSelectedModel(chat.model);
+  }, [selectedChatId, allChats]);
+
   const chats = search.trim()
     ? allChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
     : allChats;
@@ -90,6 +130,21 @@ export default function PromptsPanel({
           Новый чат
         </button>
       </div>
+
+      {/* Model selector */}
+      {modelOptions.length > 0 && (
+        <div className="px-3 py-2 border-b border-border shrink-0">
+          <select
+            value={selectedModel}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="w-full bg-[#1c2128] border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-[#c9d1d9] outline-none focus:border-accent transition-colors cursor-pointer"
+          >
+            {modelOptions.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Search */}
       <div className="px-3 py-2 border-b border-border shrink-0">
