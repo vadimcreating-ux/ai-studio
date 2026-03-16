@@ -9,7 +9,11 @@ import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
 const CLAUDE_MODELS = [
-  { value: "claude-sonnet-4-5-v1messages", label: "Claude Sonnet 4.5" },
+  // Anthropic-native /v1/messages endpoint
+  { value: "claude-sonnet-4-5-v1messages", label: "Sonnet 4.5 · v1/messages" },
+  // OpenAI-compatible /v1/chat/completions endpoints
+  { value: "claude-opus-4-5",             label: "Opus 4.5 · chat/completions" },
+  { value: "claude-sonnet-4-5",           label: "Sonnet 4.5 · chat/completions" },
 ];
 
 const TEMPLATES_KEY = "ai_studio_prompt_templates";

@@ -1,19 +1,30 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
-// ── KIE API ───────────────────────────────────────────────────────────────────
-// Docs: https://docs.kie.ai/30749672e0
-// Endpoint: POST https://api.kie.ai/claude/v1/messages
-// Model:    claude-sonnet-4-5-v1messages
+// ── KIE Claude endpoints ───────────────────────────────────────────────────────
+//
+// Format A — Anthropic-native  (models ending in "v1messages")
+//   POST https://api.kie.ai/claude/v1/messages
+//   body: { model, messages, system?, tools?, stream }
+//   tools schema: input_schema (Anthropic format)
+//
+// Format B — OpenAI-compatible  (all other models)
+//   POST https://api.kie.ai/{model}/v1/chat/completions
+//   body: { messages, tools?, stream }
+//   system goes as { role:"system", content } first message
+//   image: { type:"image_url", image_url:{ url:"data:..." } }
 
-const KIE_URL = "https://api.kie.ai/claude/v1/messages";
+const KIE_BASE = "https://api.kie.ai";
+
+function isAnthropicFormat(model: string) {
+  return model.endsWith("v1messages");
+}
 
 // ── Tavily web search ─────────────────────────────────────────────────────────
 
 async function webSearch(query: string): Promise<string> {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return "[Поиск недоступен: не задан TAVILY_API_KEY]";
-
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
@@ -26,21 +37,17 @@ async function webSearch(query: string): Promise<string> {
         include_raw_content: false,
       }),
     });
-
-    if (!res.ok) return `[Ошибка поиска: ${res.status} ${await res.text()}]`;
-
+    if (!res.ok) return `[Ошибка поиска: ${res.status}]`;
     const data = await res.json() as {
       answer?: string;
       results?: Array<{ title: string; url: string; content: string }>;
     };
-
     const parts: string[] = [];
     if (data.answer) parts.push(`Краткий ответ: ${data.answer}`);
     if (data.results?.length) {
       parts.push("Источники:");
-      for (const r of data.results) {
+      for (const r of data.results)
         parts.push(`• ${r.title}\n  URL: ${r.url}\n  ${r.content}`);
-      }
     }
     return parts.join("\n\n") || "[Поиск не дал результатов]";
   } catch (e) {
@@ -48,49 +55,70 @@ async function webSearch(query: string): Promise<string> {
   }
 }
 
-// ── Tool definition (Anthropic/KIE format) ───────────────────────────────────
+// ── Tool definitions ──────────────────────────────────────────────────────────
 
-const WEB_SEARCH_TOOL = {
+// Anthropic format (input_schema)
+const TOOL_ANTHROPIC = {
   name: "web_search",
   description:
-    "Поиск актуальной информации в интернете. Используй, когда нужны свежие данные, новости, текущие события или информация, которая могла измениться после твоего обучения.",
+    "Поиск актуальной информации в интернете. Используй для свежих данных, новостей, текущих событий.",
   input_schema: {
     type: "object",
-    properties: {
-      query: { type: "string", description: "Поисковый запрос" },
-    },
+    properties: { query: { type: "string", description: "Поисковый запрос" } },
     required: ["query"],
   },
 };
 
-// ── KIE request/response types ────────────────────────────────────────────────
+// OpenAI format (function wrapper)
+const TOOL_OPENAI = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description: TOOL_ANTHROPIC.description,
+    parameters: TOOL_ANTHROPIC.input_schema,
+  },
+};
 
-type KieContentBlock =
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type AnthropicContentBlock =
   | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; caller?: unknown };
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
 
-type KieResponse = {
-  type?: string;
-  id?: string;
-  role?: string;
-  model?: string;
-  content?: KieContentBlock[];
+type KieAnthropicResponse = {
+  content?: AnthropicContentBlock[];
   stop_reason?: string;
-  usage?: unknown;
-  credits_consumed?: number;
-  // KIE error wrapper (HTTP 200 but error inside)
   code?: number;
   msg?: string;
   error?: { message?: string };
 };
 
-// ── Send one request to KIE Claude ───────────────────────────────────────────
+type KieOpenAIResponse = {
+  choices?: Array<{
+    message?: {
+      role?: string;
+      content?: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type: string;
+        function: { name: string; arguments: string };
+      }>;
+    };
+    finish_reason?: string;
+  }>;
+  code?: number;
+  msg?: string;
+  error?: { message?: string };
+};
 
-async function kieRequest(
+// ── KIE request helpers ───────────────────────────────────────────────────────
+
+async function kiePost<T>(
+  url: string,
   apiKey: string,
   body: Record<string, unknown>
-): Promise<{ ok: boolean; data: KieResponse; status: number }> {
-  const res = await fetch(KIE_URL, {
+): Promise<{ ok: boolean; data: T; status: number }> {
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -98,17 +126,155 @@ async function kieRequest(
     },
     body: JSON.stringify(body),
   });
-  const data = await res.json() as KieResponse;
+  const data = await res.json() as T & { code?: number };
+  console.log("[KIE] POST", url);
   console.log("[KIE] →", JSON.stringify(body, null, 2));
   console.log("[KIE] ←", res.status, JSON.stringify(data));
   return { ok: res.ok && data.code !== 500, data, status: res.status };
+}
+
+// ── Format A: Anthropic /v1/messages with tool_use loop ───────────────────────
+
+async function sendAnthropic(
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: "user" | "assistant"; content: unknown }>,
+  systemText: string | undefined,
+  hasSearch: boolean
+): Promise<{ ok: boolean; text?: string; error?: string; debug?: unknown }> {
+  const url = `${KIE_BASE}/claude/v1/messages`;
+  const MAX_LOOPS = 5;
+
+  for (let loop = 0; loop < MAX_LOOPS; loop++) {
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      stream: false,
+      ...(systemText ? { system: systemText } : {}),
+      ...(hasSearch ? { tools: [TOOL_ANTHROPIC] } : {}),
+    };
+
+    const { ok, data, status } = await kiePost<KieAnthropicResponse>(url, apiKey, body);
+
+    if (!ok) {
+      return {
+        ok: false,
+        error: data.msg || data.error?.message || "KIE вернул ошибку",
+        debug: { status, body: data },
+      };
+    }
+
+    const toolUseBlocks = (data.content ?? []).filter(
+      (b): b is Extract<AnthropicContentBlock, { type: "tool_use" }> => b.type === "tool_use"
+    );
+
+    if (data.stop_reason !== "tool_use" || toolUseBlocks.length === 0 || !hasSearch) {
+      const textBlock = (data.content ?? []).find(
+        (b): b is Extract<AnthropicContentBlock, { type: "text" }> => b.type === "text"
+      );
+      if (!textBlock?.text) {
+        return {
+          ok: false,
+          error: "KIE не вернул текстовый ответ",
+          debug: { status, body: data },
+        };
+      }
+      return { ok: true, text: textBlock.text };
+    }
+
+    messages.push({ role: "assistant", content: data.content });
+
+    const toolResults: Array<Record<string, unknown>> = [];
+    for (const block of toolUseBlocks) {
+      if (block.name === "web_search") {
+        const query = (block.input?.query as string) || "";
+        console.log(`[web_search] "${query}"`);
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: await webSearch(query),
+        });
+      }
+    }
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  return { ok: false, error: "Превышено число итераций инструментов" };
+}
+
+// ── Format B: OpenAI-compatible /v1/chat/completions ─────────────────────────
+
+type OaiMessage = { role: string; content: unknown; tool_call_id?: string; name?: string };
+
+async function sendOpenAI(
+  apiKey: string,
+  model: string,
+  messages: OaiMessage[],
+  hasSearch: boolean
+): Promise<{ ok: boolean; text?: string; error?: string; debug?: unknown }> {
+  const url = `${KIE_BASE}/${model}/v1/chat/completions`;
+  const MAX_LOOPS = 5;
+
+  for (let loop = 0; loop < MAX_LOOPS; loop++) {
+    const body: Record<string, unknown> = {
+      messages,
+      stream: false,
+      ...(hasSearch ? { tools: [TOOL_OPENAI] } : {}),
+    };
+
+    const { ok, data, status } = await kiePost<KieOpenAIResponse>(url, apiKey, body);
+
+    if (!ok) {
+      return {
+        ok: false,
+        error: data.msg || data.error?.message || "KIE вернул ошибку",
+        debug: { status, body: data },
+      };
+    }
+
+    const choice = data.choices?.[0];
+    const msg = choice?.message;
+
+    if (!msg) {
+      return { ok: false, error: "KIE не вернул choices[0].message", debug: { status, body: data } };
+    }
+
+    const toolCalls = msg.tool_calls ?? [];
+
+    if (choice?.finish_reason !== "tool_calls" || toolCalls.length === 0 || !hasSearch) {
+      const text = msg.content ?? "";
+      if (!text) {
+        return { ok: false, error: "KIE не вернул текстовый ответ", debug: { status, body: data } };
+      }
+      return { ok: true, text };
+    }
+
+    // Добавляем ответ ассистента с tool_calls
+    messages.push({ role: "assistant", content: msg.content ?? null, ...msg });
+
+    // Выполняем инструменты
+    for (const call of toolCalls) {
+      if (call.function.name === "web_search") {
+        let query = "";
+        try { query = JSON.parse(call.function.arguments).query ?? ""; } catch {}
+        console.log(`[web_search] "${query}"`);
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          name: call.function.name,
+          content: await webSearch(query),
+        });
+      }
+    }
+  }
+
+  return { ok: false, error: "Превышено число итераций инструментов" };
 }
 
 // ── Chat Routes ───────────────────────────────────────────────────────────────
 
 export async function chatRoutes(app: FastifyInstance) {
 
-  // Создать новый чат
   app.post("/api/chat/new", async (request) => {
     const body = request.body as {
       module?: string; model?: string; title?: string; project_id?: string;
@@ -125,7 +291,6 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, chat: result.rows[0] };
   });
 
-  // Список чатов
   app.get("/api/chat/list", async (request) => {
     const q = request.query as { module?: string; project_id?: string };
     const module = q?.module?.trim() || "claude";
@@ -142,7 +307,6 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, chats: result.rows };
   });
 
-  // История сообщений
   app.get("/api/chat/:chatId/messages", async (request) => {
     const { chatId } = request.params as { chatId: string };
     const result = await dbQuery(
@@ -152,7 +316,6 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, messages: result.rows };
   });
 
-  // Обновить чат
   app.patch("/api/chat/:chatId", async (request, reply) => {
     const { chatId } = request.params as { chatId: string };
     const body = request.body as { model?: string; title?: string; project_id?: string | null };
@@ -176,7 +339,6 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, chat: result.rows[0] };
   });
 
-  // Удалить чат
   app.delete("/api/chat/:chatId", async (request) => {
     const { chatId } = request.params as { chatId: string };
     await dbQuery(`DELETE FROM chats WHERE id = $1`, [chatId]);
@@ -199,7 +361,6 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!userText && files.length === 0)
       return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
 
-    // Получить чат
     const chatResult = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]);
     if (chatResult.rows.length === 0)
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
@@ -214,7 +375,6 @@ export async function chatRoutes(app: FastifyInstance) {
       [chatId, "user", savedContent]
     );
 
-    // Обновить заголовок при первом сообщении
     const countResult = await dbQuery(
       `SELECT COUNT(*) FROM chat_messages WHERE chat_id = $1`, [chatId]
     );
@@ -225,22 +385,21 @@ export async function chatRoutes(app: FastifyInstance) {
       );
     }
 
-    // Загрузить историю
     const historyResult = await dbQuery(
       `SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`,
       [chatId]
     );
     const historyRows: Array<{ role: string; content: string }> = historyResult.rows;
 
-    // ── Собрать system prompt ─────────────────────────────────────────────
+    // ── System prompt ─────────────────────────────────────────────────────
 
-    const globalSettingsResult = await dbQuery(
+    const gsResult = await dbQuery(
       `SELECT about, instructions, memory FROM engine_settings WHERE engine = $1`,
       [chat.module]
     );
     const globalParts: string[] = [];
-    if (globalSettingsResult.rows.length > 0) {
-      const g = globalSettingsResult.rows[0];
+    if (gsResult.rows.length > 0) {
+      const g = gsResult.rows[0];
       if (g.about) globalParts.push(`О пользователе:\n${g.about}`);
       if (g.instructions) globalParts.push(`Инструкции:\n${g.instructions}`);
       if (g.memory) globalParts.push(`Глобальная память:\n${g.memory}`);
@@ -263,7 +422,6 @@ export async function chatRoutes(app: FastifyInstance) {
 
         const projFiles: Array<{ name: string; mimeType: string; dataUrl: string }> =
           Array.isArray(proj.context_files) ? proj.context_files : [];
-
         for (const f of projFiles) {
           if (!f.mimeType.startsWith("image/")) {
             const decoded = Buffer.from(f.dataUrl.split(",")[1] ?? "", "base64").toString("utf-8");
@@ -277,143 +435,119 @@ export async function chatRoutes(app: FastifyInstance) {
       systemText = globalParts.join("\n\n");
     }
 
-    // ── Собрать messages в Anthropic-формате ─────────────────────────────
-    // Согласно KIE docs: role "user"/"assistant", content — строка или массив блоков
+    const hasSearch = !!process.env.TAVILY_API_KEY;
+    const anthropic = isAnthropicFormat(chat.model);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messages: Array<{ role: "user" | "assistant"; content: any }> = [];
+    try {
+      let result: { ok: boolean; text?: string; error?: string; debug?: unknown };
 
-    // Контекстные изображения как первая user/assistant пара
-    if (contextImages.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imgContent: Array<Record<string, any>> = [
-        { type: "text", text: "Вот файлы контекста проекта, учитывай их во всех ответах:" },
-      ];
-      for (const img of contextImages) {
-        imgContent.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: img.mimeType,
-            data: img.dataUrl.split(",")[1] ?? img.dataUrl,
-          },
-        });
-      }
-      messages.push({ role: "user", content: imgContent });
-      messages.push({ role: "assistant", content: "Понял, учту эти материалы как контекст проекта." });
-    }
+      if (anthropic) {
+        // ── Format A: Anthropic /v1/messages ─────────────────────────────
 
-    // История
-    historyRows.forEach((row, idx) => {
-      const isLastUser = idx === historyRows.length - 1 && row.role === "user";
-
-      if (isLastUser && files.length > 0) {
-        // Последнее сообщение пользователя с файлами — массив блоков
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const items: Array<Record<string, any>> = [];
-        if (userText) items.push({ type: "text", text: userText });
-        for (const f of files) {
-          if (f.mimeType.startsWith("image/")) {
-            items.push({
+        const messages: Array<{ role: "user" | "assistant"; content: any }> = [];
+
+        // Контекстные изображения (Anthropic base64 source)
+        if (contextImages.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const imgContent: Array<Record<string, any>> = [
+            { type: "text", text: "Вот файлы контекста проекта:" },
+          ];
+          for (const img of contextImages) {
+            imgContent.push({
               type: "image",
               source: {
                 type: "base64",
-                media_type: f.mimeType,
-                data: f.dataUrl.split(",")[1] ?? f.dataUrl,
+                media_type: img.mimeType,
+                data: img.dataUrl.split(",")[1] ?? img.dataUrl,
               },
             });
+          }
+          messages.push({ role: "user", content: imgContent });
+          messages.push({ role: "assistant", content: "Понял, учту эти материалы." });
+        }
+
+        historyRows.forEach((row, idx) => {
+          const isLastUser = idx === historyRows.length - 1 && row.role === "user";
+          if (isLastUser && files.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const items: Array<Record<string, any>> = [];
+            if (userText) items.push({ type: "text", text: userText });
+            for (const f of files) {
+              if (f.mimeType.startsWith("image/")) {
+                items.push({
+                  type: "image",
+                  source: { type: "base64", media_type: f.mimeType, data: f.dataUrl.split(",")[1] ?? f.dataUrl },
+                });
+              } else {
+                const decoded = Buffer.from(f.dataUrl.split(",")[1] ?? "", "base64").toString("utf-8");
+                items.push({ type: "text", text: `[Файл: ${f.name}]\n${decoded}` });
+              }
+            }
+            messages.push({ role: "user", content: items });
           } else {
-            const decoded = Buffer.from(f.dataUrl.split(",")[1] ?? "", "base64").toString("utf-8");
-            items.push({ type: "text", text: `[Файл: ${f.name}]\n${decoded}` });
+            messages.push({ role: row.role as "user" | "assistant", content: row.content });
           }
-        }
-        messages.push({ role: "user", content: items });
+        });
+
+        result = await sendAnthropic(apiKey, chat.model, messages, systemText, hasSearch);
       } else {
-        // Строка — как показано в KIE docs
-        messages.push({ role: row.role as "user" | "assistant", content: row.content });
-      }
-    });
+        // ── Format B: OpenAI /v1/chat/completions ────────────────────────
 
-    const hasSearch = !!process.env.TAVILY_API_KEY;
+        const messages: OaiMessage[] = [];
 
-    try {
-      let assistantText: string | undefined;
+        // system prompt
+        if (systemText) messages.push({ role: "system", content: systemText });
 
-      // ── Tool_use цикл (Anthropic spec + KIE docs) ─────────────────────────
-      // 1. Отправляем запрос с tools
-      // 2. Если stop_reason = "tool_use" → выполняем инструменты → повторяем
-      // 3. Если stop_reason = "end_turn" (или нет tool_use) → финальный ответ
-
-      const MAX_LOOPS = 5;
-      for (let loop = 0; loop < MAX_LOOPS; loop++) {
-        const reqBody: Record<string, unknown> = {
-          model: chat.model,
-          messages,
-          stream: false,
-          ...(systemText ? { system: systemText } : {}),
-          ...(hasSearch ? { tools: [WEB_SEARCH_TOOL] } : {}),
-        };
-
-        const { ok, data, status } = await kieRequest(apiKey, reqBody);
-
-        if (!ok) {
-          return reply.status(500).send({
-            ok: false,
-            error: data.msg || data.error?.message || "KIE вернул ошибку",
-            debug: { status, body: data },
-          });
-        }
-
-        const toolUseBlocks = (data.content ?? []).filter(
-          (b): b is Extract<KieContentBlock, { type: "tool_use" }> => b.type === "tool_use"
-        );
-
-        // Финальный ответ
-        if (data.stop_reason !== "tool_use" || toolUseBlocks.length === 0 || !hasSearch) {
-          const textBlock = (data.content ?? []).find(
-            (b): b is Extract<KieContentBlock, { type: "text" }> => b.type === "text"
-          );
-          if (!textBlock?.text) {
-            return reply.status(500).send({
-              ok: false,
-              error: "KIE не вернул текстовый ответ",
-              debug: { status, body: data },
+        // Контекстные изображения (image_url format)
+        if (contextImages.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const imgContent: Array<Record<string, any>> = [
+            { type: "text", text: "Вот файлы контекста проекта:" },
+          ];
+          for (const img of contextImages) {
+            imgContent.push({
+              type: "image_url",
+              image_url: { url: img.dataUrl },
             });
           }
-          assistantText = textBlock.text;
-          break;
+          messages.push({ role: "user", content: imgContent });
+          messages.push({ role: "assistant", content: "Понял, учту эти материалы." });
         }
 
-        // Добавляем ответ ассистента с tool_use блоками
-        messages.push({ role: "assistant", content: data.content });
-
-        // Выполняем инструменты и собираем tool_result
-        const toolResults: Array<Record<string, unknown>> = [];
-        for (const block of toolUseBlocks) {
-          if (block.name === "web_search") {
-            const query = (block.input?.query as string) || "";
-            console.log(`[web_search] query: "${query}"`);
-            toolResults.push({
-              type: "tool_result",
-              tool_use_id: block.id,
-              content: await webSearch(query),
-            });
+        historyRows.forEach((row, idx) => {
+          const isLastUser = idx === historyRows.length - 1 && row.role === "user";
+          if (isLastUser && files.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const items: Array<Record<string, any>> = [];
+            if (userText) items.push({ type: "text", text: userText });
+            for (const f of files) {
+              if (f.mimeType.startsWith("image/")) {
+                items.push({ type: "image_url", image_url: { url: f.dataUrl } });
+              } else {
+                const decoded = Buffer.from(f.dataUrl.split(",")[1] ?? "", "base64").toString("utf-8");
+                items.push({ type: "text", text: `[Файл: ${f.name}]\n${decoded}` });
+              }
+            }
+            messages.push({ role: "user", content: items });
+          } else {
+            messages.push({ role: row.role, content: row.content });
           }
-        }
+        });
 
-        // Возвращаем tool_result пользователем (Anthropic spec)
-        messages.push({ role: "user", content: toolResults });
+        result = await sendOpenAI(apiKey, chat.model, messages, hasSearch);
       }
 
-      assistantText ??= "[Не удалось получить ответ]";
+      if (!result.ok) {
+        return reply.status(500).send({ ok: false, error: result.error, debug: result.debug });
+      }
 
-      // Сохранить ответ ассистента
       await dbQuery(
         `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`,
-        [chatId, "assistant", assistantText]
+        [chatId, "assistant", result.text]
       );
 
-      return { ok: true, reply: assistantText };
+      return { ok: true, reply: result.text };
     } catch (e) {
       console.error("[chat send error]", e);
       return reply.status(500).send({ ok: false, error: "Ошибка при обращении к API" });
