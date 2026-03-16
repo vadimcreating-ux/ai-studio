@@ -162,7 +162,8 @@ export async function chatRoutes(app: FastifyInstance) {
         .filter((m) => m.role !== "system")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const kieRes = await fetch(`${KIE_BASE_URL}/${chatModel}/v1/messages`, {
+      const modelPath = chatModel.replace(/-v1messages$/, "");
+      const kieRes = await fetch(`${KIE_BASE_URL}/${modelPath}/v1/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
