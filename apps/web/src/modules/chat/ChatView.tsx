@@ -144,9 +144,15 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         </div>
         <div className="absolute right-6 flex items-center gap-2">
           {chat && isClaudeEngine && (
-            <span className="text-[11px] bg-[#21262d] border border-[#30363d] text-[#8b949e] rounded-md px-2.5 py-1">
-              Claude Sonnet 4.6
-            </span>
+            <select
+              value={chat.model}
+              onChange={(e) => updateModel.mutate(e.target.value)}
+              className="text-[11px] bg-[#21262d] border border-[#30363d] text-[#8b949e] rounded-md px-2.5 py-1 cursor-pointer hover:border-[#58a6ff] focus:outline-none focus:border-[#58a6ff] transition-colors"
+            >
+              {CLAUDE_MODELS.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
           )}
           {project && (
             <button
@@ -204,7 +210,15 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       {chat && isClaudeEngine && (
         <div className="px-5 pt-2 pb-0 flex items-center gap-1.5">
           <span className="text-[10px] text-[#8b949e]">Модель:</span>
-          <span className="text-[10px] font-medium text-accent">Claude Sonnet 4.6</span>
+          <select
+            value={chat.model}
+            onChange={(e) => updateModel.mutate(e.target.value)}
+            className="text-[10px] font-medium text-accent bg-transparent border-none cursor-pointer hover:underline focus:outline-none"
+          >
+            {CLAUDE_MODELS.map(m => (
+              <option key={m.value} value={m.value} className="bg-[#161b22] text-[#c9d1d9]">{m.label}</option>
+            ))}
+          </select>
         </div>
       )}
       <MessageInput
