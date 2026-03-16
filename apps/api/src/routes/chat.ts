@@ -157,7 +157,7 @@ export async function chatRoutes(app: FastifyInstance) {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ messages, stream: false, include_thoughts: false }),
+      body: JSON.stringify({ messages, stream: false }),
     });
 
     if (!kieRes.ok) {
@@ -166,19 +166,25 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
     }
 
-    const data = await kieRes.json() as {
-      choices?: Array<{
-        message?: {
-          content?: string | Array<{ type: string; text?: string }>;
-        };
-      }>;
-    };
-    const rawContent = data.choices?.[0]?.message?.content ?? "";
-    const assistantReply = (
-      Array.isArray(rawContent)
-        ? rawContent.filter((b) => b.text != null).map((b) => b.text ?? "").join("")
-        : rawContent
-    ).trim();
+    const rawBody = await kieRes.text();
+    app.log.info(`kie.ai response: ${rawBody.slice(0, 500)}`);
+    const data = JSON.parse(rawBody) as Record<string, unknown>;
+
+    // Extract text from any known response shape
+    const choiceContent = (data as {
+      choices?: Array<{ message?: { content?: unknown } }>;
+    }).choices?.[0]?.message?.content;
+
+    let assistantReply = "";
+    if (typeof choiceContent === "string") {
+      assistantReply = choiceContent.trim();
+    } else if (Array.isArray(choiceContent)) {
+      assistantReply = (choiceContent as Array<{ type?: string; text?: string }>)
+        .filter((b) => b.text)
+        .map((b) => b.text ?? "")
+        .join("")
+        .trim();
+    }
 
     // Save assistant reply to DB
     await dbQuery(
