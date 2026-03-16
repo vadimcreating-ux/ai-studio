@@ -308,11 +308,31 @@ export async function chatRoutes(app: FastifyInstance) {
     const isKieClaude = chat.model?.endsWith("v1messages");
     const hasSearchKey = !!process.env.TAVILY_API_KEY;
 
+    // Эвристика: нужен ли поиск для этого сообщения
+    const SEARCH_PATTERN = /\b(сегодня|вчера|сейчас|последн|новост|актуальн|текущ|2024|2025|2026|цена|курс|погода|событи|недавн|only|today|now|latest|current|news|recent|price|weather)\b/i;
+    const needsSearch = hasSearchKey && SEARCH_PATTERN.test(userMessage);
+
+    // Если поиск нужен — делаем его заранее и инжектируем в контекст
+    if (needsSearch) {
+      console.log(`[web_search] pre-search for: "${userMessage.slice(0, 100)}"`);
+      const searchResult = await webSearch(userMessage.slice(0, 200));
+      if (searchResult && !searchResult.startsWith("[")) {
+        // Добавляем результаты поиска в системный промпт
+        const existingSystem = messages.find((m) => m.role === "system");
+        const searchNote = `Актуальные данные из интернета (используй их в ответе):\n${searchResult}`;
+        if (existingSystem) {
+          existingSystem.content = `${existingSystem.content}\n\n${searchNote}`;
+        } else {
+          messages.unshift({ role: "system", content: searchNote });
+        }
+      }
+    }
+
     try {
       let assistantText: string;
 
       if (isKieClaude) {
-        // ── KIE Anthropic Messages API с поддержкой web_search ─────
+        // ── KIE Anthropic Messages API ─────────────────────────────────────────
 
         const systemMsg = messages.find((m) => m.role === "system");
 
@@ -331,185 +351,100 @@ export async function chatRoutes(app: FastifyInstance) {
           ? (typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content))
           : undefined;
 
-        // Цикл: отправляем запрос, обрабатываем tool_use, повторяем при необходимости
-        let loopMessages = [...claudeMessages];
-        const MAX_TOOL_LOOPS = 5;
+        // Согласно docs.kie.ai: model, messages, stream — без tools (KIE не поддерживает)
+        const requestBody: Record<string, unknown> = {
+          model: chat.model,
+          messages: claudeMessages,
+          stream: false,
+          ...(systemText ? { system: systemText } : {}),
+        };
 
-        for (let loop = 0; loop < MAX_TOOL_LOOPS; loop++) {
-          // Согласно docs.kie.ai: model, messages, tools, stream — без max_tokens
-          const requestBody: Record<string, unknown> = {
-            model: chat.model,
-            messages: loopMessages,
-            stream: false,
-            ...(systemText ? { system: systemText } : {}),
-            ...(hasSearchKey ? { tools: [WEB_SEARCH_TOOL_CLAUDE] } : {}),
-          };
+        console.log(`KIE Claude REQUEST:`, JSON.stringify(requestBody, null, 2));
 
-          console.log(`KIE Claude REQUEST (loop ${loop}):`, JSON.stringify(requestBody, null, 2));
-
-          const kieClaudeResponse = await fetch(
-            `${KIE_BASE_URL}/claude/v1/messages`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(requestBody),
-            }
-          );
-
-          const kieClaudeData = await kieClaudeResponse.json() as {
-            stop_reason?: string;
-            content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
-            error?: { message?: string };
-            code?: number;
-            msg?: string;
-          };
-
-          console.log(`KIE Claude response (loop ${loop}):`, kieClaudeResponse.status, JSON.stringify(kieClaudeData));
-
-          // KIE может вернуть HTTP 200, но с {code: 500, msg: "..."} внутри
-          if (!kieClaudeResponse.ok || kieClaudeData.code === 500) {
-            return reply.status(500).send({
-              ok: false,
-              error: kieClaudeData?.msg || kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
-              debug: { status: kieClaudeResponse.status, body: kieClaudeData },
-            });
+        const kieClaudeResponse = await fetch(
+          `${KIE_BASE_URL}/claude/v1/messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
           }
+        );
 
-          // Проверяем есть ли tool_use
-          const toolUseBlocks = kieClaudeData.content?.filter((b) => b.type === "tool_use") ?? [];
+        const kieClaudeData = await kieClaudeResponse.json() as {
+          stop_reason?: string;
+          content?: Array<{ type: string; text?: string }>;
+          error?: { message?: string };
+          code?: number;
+          msg?: string;
+        };
 
-          if (toolUseBlocks.length === 0 || !hasSearchKey || kieClaudeData.stop_reason !== "tool_use") {
-            // Финальный ответ
-            const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
-            if (!claudeText) {
-              return reply.status(500).send({
-                ok: false,
-                error: "KIE Claude не вернул текстовый ответ",
-                debug: { status: kieClaudeResponse.status, body: kieClaudeData },
-              });
-            }
-            assistantText = claudeText;
-            break;
-          }
+        console.log(`KIE Claude response:`, kieClaudeResponse.status, JSON.stringify(kieClaudeData));
 
-          // Добавляем ответ ассистента с полным content (включая tool_use блоки)
-          loopMessages.push({ role: "assistant", content: kieClaudeData.content });
-
-          // Выполняем поиск и возвращаем tool_result в правильном Anthropic-формате
-          const toolResults: Array<Record<string, unknown>> = [];
-          for (const toolBlock of toolUseBlocks) {
-            if (toolBlock.name === "web_search") {
-              const query = (toolBlock.input?.query as string) || "";
-              console.log(`[web_search] query: "${query}"`);
-              const searchResult = await webSearch(query);
-              toolResults.push({
-                type: "tool_result",
-                tool_use_id: toolBlock.id,
-                content: searchResult,
-              });
-            }
-          }
-
-          // tool_result передаётся как массив в content пользователя (Anthropic spec)
-          loopMessages.push({ role: "user", content: toolResults });
+        // KIE может вернуть HTTP 200, но с {code: 500, msg: "..."} внутри
+        if (!kieClaudeResponse.ok || kieClaudeData.code === 500) {
+          return reply.status(500).send({
+            ok: false,
+            error: kieClaudeData?.msg || kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
+            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
+          });
         }
 
-        // Fallback если цикл завершился без результата
-        assistantText ??= "[Не удалось получить ответ после поиска]";
+        const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
+        if (!claudeText) {
+          return reply.status(500).send({
+            ok: false,
+            error: "KIE Claude не вернул текстовый ответ",
+            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
+          });
+        }
+        assistantText = claudeText;
 
       } else {
-        // ── KIE chat/completions (GPT, Gemini) с поддержкой function calling ──
+        // ── KIE chat/completions (GPT, Gemini) ────────────────────────────────
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let loopMessages: Array<{ role: string; content: any; tool_calls?: any; tool_call_id?: string; name?: string }> = [...messages];
-        const MAX_TOOL_LOOPS = 5;
+        const requestBody: Record<string, unknown> = {
+          messages,
+          stream: false,
+        };
 
-        for (let loop = 0; loop < MAX_TOOL_LOOPS; loop++) {
-          const requestBody: Record<string, unknown> = {
-            messages: loopMessages,
-            stream: false,
-            ...(hasSearchKey ? { tools: [WEB_SEARCH_TOOL_OPENAI], tool_choice: "auto" } : {}),
-          };
-
-          const kieResponse = await fetch(
-            `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(requestBody),
-            }
-          );
-
-          const kieData = await kieResponse.json() as {
-            choices?: Array<{
-              message?: {
-                content?: string;
-                tool_calls?: Array<{
-                  id: string;
-                  type: string;
-                  function: { name: string; arguments: string };
-                }>;
-              };
-              finish_reason?: string;
-            }>;
-            error?: { message?: string };
-          };
-
-          if (!kieResponse.ok) {
-            console.error("KIE error:", kieResponse.status, JSON.stringify(kieData));
-            return reply.status(500).send({
-              ok: false,
-              error: kieData?.error?.message || "KIE не вернул ответ",
-              debug: { status: kieResponse.status, body: kieData },
-            });
+        const kieResponse = await fetch(
+          `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
           }
+        );
 
-          const choice = kieData.choices?.[0];
-          const toolCalls = choice?.message?.tool_calls ?? [];
+        const kieData = await kieResponse.json() as {
+          choices?: Array<{ message?: { content?: string } }>;
+          error?: { message?: string };
+        };
 
-          if (toolCalls.length === 0 || choice?.finish_reason !== "tool_calls") {
-            // Финальный ответ
-            const content = choice?.message?.content;
-            if (!content) {
-              return reply.status(500).send({
-                ok: false,
-                error: "KIE не вернул ответ",
-                debug: { status: kieResponse.status, body: kieData },
-              });
-            }
-            assistantText = content;
-            break;
-          }
-
-          // Добавляем ответ ассистента с tool_calls в историю
-          loopMessages.push({ role: "assistant", content: choice.message?.content ?? null, tool_calls: toolCalls });
-
-          // Выполняем все вызовы инструментов
-          for (const toolCall of toolCalls) {
-            if (toolCall.function.name === "web_search") {
-              let args: { query?: string } = {};
-              try { args = JSON.parse(toolCall.function.arguments); } catch { /* ignore */ }
-              const query = args.query || "";
-              console.log(`[web_search] query: "${query}"`);
-              const searchResult = await webSearch(query);
-              loopMessages.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: "web_search",
-                content: searchResult,
-              });
-            }
-          }
+        if (!kieResponse.ok) {
+          console.error("KIE error:", kieResponse.status, JSON.stringify(kieData));
+          return reply.status(500).send({
+            ok: false,
+            error: kieData?.error?.message || "KIE не вернул ответ",
+            debug: { status: kieResponse.status, body: kieData },
+          });
         }
 
-        // Fallback если цикл завершился без результата
-        assistantText ??= "[Не удалось получить ответ после поиска]";
+        const content = kieData.choices?.[0]?.message?.content;
+        if (!content) {
+          return reply.status(500).send({
+            ok: false,
+            error: "KIE не вернул ответ",
+            debug: { status: kieResponse.status, body: kieData },
+          });
+        }
+        assistantText = content;
       }
 
       // Сохранить ответ ассистента
