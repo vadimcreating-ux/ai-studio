@@ -8,13 +8,6 @@ import ChatMessage from "./ChatMessage";
 import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
-const CLAUDE_MODELS = [
-  // Anthropic-native /v1/messages endpoint
-  { value: "claude-sonnet-4-5-v1messages", label: "Sonnet 4.5 · v1/messages" },
-  // OpenAI-compatible /v1/chat/completions endpoints
-  { value: "claude-opus-4-5",             label: "Opus 4.5 · chat/completions" },
-  { value: "claude-sonnet-4-5",           label: "Sonnet 4.5 · chat/completions" },
-];
 
 const TEMPLATES_KEY = "ai_studio_prompt_templates";
 
@@ -70,10 +63,6 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
 
   const isClaudeEngine = engineLabel === "Claude";
 
-  const updateModel = useMutation({
-    mutationFn: (model: string) => chatApi.updateModel(chat!.id, model),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["chats"] }),
-  });
 
   const { data: messagesData, isLoading: loadingMessages } = useQuery({
     queryKey: ["messages", chat?.id],
@@ -143,17 +132,6 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
           {project ? `Проект — ${project.name}` : engineLabel}
         </div>
         <div className="absolute right-6 flex items-center gap-2">
-          {chat && isClaudeEngine && (
-            <select
-              value={chat.model}
-              onChange={(e) => updateModel.mutate(e.target.value)}
-              className="text-[11px] bg-[#21262d] border border-[#30363d] text-[#8b949e] rounded-md px-2.5 py-1 cursor-pointer hover:border-[#58a6ff] focus:outline-none focus:border-[#58a6ff] transition-colors"
-            >
-              {CLAUDE_MODELS.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          )}
           {project && (
             <button
               onClick={() => setShowSettings(true)}
@@ -207,20 +185,6 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       </div>
 
       {/* Input */}
-      {chat && isClaudeEngine && (
-        <div className="px-5 pt-2 pb-0 flex items-center gap-1.5">
-          <span className="text-[10px] text-[#8b949e]">Модель:</span>
-          <select
-            value={chat.model}
-            onChange={(e) => updateModel.mutate(e.target.value)}
-            className="text-[10px] font-medium text-accent bg-transparent border-none cursor-pointer hover:underline focus:outline-none"
-          >
-            {CLAUDE_MODELS.map(m => (
-              <option key={m.value} value={m.value} className="bg-[#161b22] text-[#c9d1d9]">{m.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
       <MessageInput
         value={inputText}
         onChange={setInputText}
