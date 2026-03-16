@@ -183,11 +183,13 @@ export async function chatRoutes(app: FastifyInstance) {
         return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
       }
 
-      const data = await kieRes.json() as {
+      const rawBody = await kieRes.text();
+      app.log.info(`kie.ai messages raw response: ${rawBody}`);
+      const data = JSON.parse(rawBody) as {
         content?: Array<{ type: string; text?: string }>;
       };
       assistantReply = (data.content ?? [])
-        .filter((b) => b.type === "text")
+        .filter((b) => b.text != null)
         .map((b) => b.text ?? "")
         .join("")
         .trim();
@@ -209,13 +211,21 @@ export async function chatRoutes(app: FastifyInstance) {
         return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
       }
 
-      const data = await kieRes.json() as {
-        choices?: Array<{ message?: { content?: string | Array<{ type: string; text?: string }> } }>;
+      const rawBody2 = await kieRes.text();
+      app.log.info(`kie.ai completions raw response: ${rawBody2}`);
+      const data = JSON.parse(rawBody2) as {
+        choices?: Array<{
+          message?: {
+            content?: string | Array<{ type: string; text?: string; thinking?: string }>;
+            reasoning_content?: string;
+          };
+        }>;
       };
-      const rawContent = data.choices?.[0]?.message?.content ?? "";
+      const msg = data.choices?.[0]?.message;
+      const rawContent = msg?.content ?? "";
       assistantReply = (
         Array.isArray(rawContent)
-          ? rawContent.filter((b) => b.type === "text").map((b) => b.text ?? "").join("")
+          ? rawContent.filter((b) => b.text != null).map((b) => b.text ?? "").join("")
           : rawContent
       ).trim();
     }
