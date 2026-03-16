@@ -344,6 +344,7 @@ export async function chatRoutes(app: FastifyInstance) {
         for (let loop = 0; loop < MAX_LOOPS; loop++) {
           const requestBody: Record<string, unknown> = {
             model: chat.model,
+            max_tokens: 4096,
             messages: claudeMessages,
             stream: false,
             ...(systemText ? { system: systemText } : {}),
