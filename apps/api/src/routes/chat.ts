@@ -149,11 +149,9 @@ export async function chatRoutes(app: FastifyInstance) {
       [chatId, userText]
     );
 
-    // All models use completions API; strip -v1messages suffix for URL path
     const chatModel = chatRes.rows[0].model as string;
-    const modelPath = chatModel.replace(/-v1messages$/, "");
 
-    const kieRes = await fetch(`${KIE_BASE_URL}/${modelPath}/v1/chat/completions`, {
+    const kieRes = await fetch(`${KIE_BASE_URL}/${chatModel}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -168,9 +166,7 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
     }
 
-    const rawBody = await kieRes.text();
-    app.log.info(`kie.ai raw response: ${rawBody}`);
-    const data = JSON.parse(rawBody) as {
+    const data = await kieRes.json() as {
       choices?: Array<{
         message?: {
           content?: string | Array<{ type: string; text?: string }>;

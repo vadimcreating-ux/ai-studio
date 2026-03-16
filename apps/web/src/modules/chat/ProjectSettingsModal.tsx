@@ -5,11 +5,6 @@ import { projectsApi, type Project, type ProjectFile } from "../../shared/api/pr
 
 const CLAUDE_MODELS = [
   { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-  { value: "claude-haiku-4-5-v1messages", label: "Claude Haiku 4.5" },
-  { value: "claude-opus-4-5-v1messages", label: "Claude Opus 4.5" },
-  { value: "claude-sonnet-4-5-v1messages", label: "Claude Sonnet 4.5 (Messages)" },
-  { value: "claude-opus-4-6-v1messages", label: "Claude Opus 4.6" },
-  { value: "claude-sonnet-4-6-v1messages", label: "Claude Sonnet 4.6" },
 ];
 
 const CHATGPT_MODELS = [
