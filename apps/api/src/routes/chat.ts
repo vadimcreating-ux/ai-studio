@@ -156,7 +156,7 @@ export async function chatRoutes(app: FastifyInstance) {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ messages, stream: false }),
+      body: JSON.stringify({ messages, stream: false, include_thoughts: false }),
     });
 
     if (!kieRes.ok) {
@@ -166,10 +166,15 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const data = await kieRes.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string | Array<{ type: string; text?: string }> } }>;
     };
 
-    const assistantReply = data.choices?.[0]?.message?.content?.trim() ?? "";
+    const rawContent = data.choices?.[0]?.message?.content ?? "";
+    const assistantReply = (
+      Array.isArray(rawContent)
+        ? rawContent.filter((b) => b.type === "text").map((b) => b.text ?? "").join("")
+        : rawContent
+    ).trim();
 
     // Save assistant reply to DB
     await dbQuery(
