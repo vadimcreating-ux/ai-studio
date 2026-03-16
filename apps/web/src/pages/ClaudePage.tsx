@@ -6,7 +6,7 @@ export default function ClaudePage() {
       engine="claude"
       engineLabel="Claude"
       engineDescription="Чат с Claude Sonnet — мощный ИИ-ассистент от Anthropic."
-      defaultModel=""
+      defaultModel="claude-sonnet-4-5"
     />
   );
 }
