@@ -260,8 +260,9 @@ export async function chatRoutes(app) {
                     .filter((m) => m.role !== "system")
                     .map((m) => ({
                     role: m.role,
+                    // KIE Claude принимает только строки в content — склеиваем текстовые блоки
                     content: Array.isArray(m.content)
-                        ? m.content.map((b) => (b.type === "text" ? { type: "text", text: b.text } : b))
+                        ? m.content.map((b) => (b.type === "text" ? b.text : "")).join("")
                         : m.content,
                 }));
                 const systemText = systemMsg
@@ -299,7 +300,7 @@ export async function chatRoutes(app) {
                     }
                     // Проверяем есть ли tool_use
                     const toolUseBlocks = kieClaudeData.content?.filter((b) => b.type === "tool_use") ?? [];
-                    if (toolUseBlocks.length === 0 || kieClaudeData.stop_reason !== "tool_use") {
+                    if (toolUseBlocks.length === 0 || !hasSearchKey || kieClaudeData.stop_reason !== "tool_use") {
                         // Финальный ответ
                         const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
                         if (!claudeText) {
@@ -312,24 +313,21 @@ export async function chatRoutes(app) {
                         assistantText = claudeText;
                         break;
                     }
-                    // Добавляем ответ ассистента с tool_use в историю
-                    loopMessages.push({ role: "assistant", content: kieClaudeData.content });
-                    // Выполняем все поисковые запросы и собираем tool_result
-                    const toolResults = [];
+                    // Добавляем ответ ассистента с tool_use в историю (content как строка для KIE)
+                    const assistantTextPart = kieClaudeData.content?.find((b) => b.type === "text")?.text ?? "";
+                    loopMessages.push({ role: "assistant", content: assistantTextPart });
+                    // Выполняем все поисковые запросы и собираем результаты
+                    const searchParts = [];
                     for (const toolBlock of toolUseBlocks) {
                         if (toolBlock.name === "web_search") {
                             const query = toolBlock.input?.query || "";
                             console.log(`[web_search] query: "${query}"`);
                             const searchResult = await webSearch(query);
-                            toolResults.push({
-                                type: "tool_result",
-                                tool_use_id: toolBlock.id,
-                                content: searchResult,
-                            });
+                            searchParts.push(`[Результаты поиска для "${query}"]:\n${searchResult}`);
                         }
                     }
-                    // Добавляем результаты поиска как сообщение пользователя
-                    loopMessages.push({ role: "user", content: toolResults });
+                    // Добавляем результаты поиска как сообщение пользователя (plain text)
+                    loopMessages.push({ role: "user", content: searchParts.join("\n\n") });
                 }
                 // Fallback если цикл завершился без результата
                 assistantText ??= "[Не удалось получить ответ после поиска]";
