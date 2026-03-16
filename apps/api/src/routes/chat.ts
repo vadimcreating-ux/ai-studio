@@ -3,44 +3,11 @@ import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
-// ── Web Search (Tavily) ──────────────────────────────────────────────────────
-
-const WEB_SEARCH_TOOL_CLAUDE = {
-  name: "web_search",
-  description: "Поиск актуальной информации в интернете. Используй, когда нужны свежие данные, новости, текущие события или информация, которая могла измениться после твоего обучения.",
-  input_schema: {
-    type: "object",
-    properties: {
-      query: {
-        type: "string",
-        description: "Поисковый запрос",
-      },
-    },
-    required: ["query"],
-  },
-};
-
-const WEB_SEARCH_TOOL_OPENAI = {
-  type: "function",
-  function: {
-    name: "web_search",
-    description: "Поиск актуальной информации в интернете. Используй, когда нужны свежие данные, новости, текущие события или информация, которая могла измениться после твоего обучения.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Поисковый запрос",
-        },
-      },
-      required: ["query"],
-    },
-  },
-};
+// ── Tavily Web Search ─────────────────────────────────────────────────────────
 
 async function webSearch(query: string): Promise<string> {
   const apiKey = process.env.TAVILY_API_KEY;
-  if (!apiKey) return `[Поиск недоступен: не задан TAVILY_API_KEY]`;
+  if (!apiKey) return "[Поиск недоступен: не задан TAVILY_API_KEY]";
 
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -56,8 +23,7 @@ async function webSearch(query: string): Promise<string> {
     });
 
     if (!res.ok) {
-      const err = await res.text();
-      return `[Ошибка поиска: ${res.status} ${err}]`;
+      return `[Ошибка поиска: ${res.status} ${await res.text()}]`;
     }
 
     const data = await res.json() as {
@@ -79,14 +45,52 @@ async function webSearch(query: string): Promise<string> {
   }
 }
 
-// ── Chat Routes ──────────────────────────────────────────────────────────────
+// ── Tool definitions ──────────────────────────────────────────────────────────
+
+// Формат Anthropic (для KIE /claude/v1/messages)
+const WEB_SEARCH_TOOL_CLAUDE = {
+  name: "web_search",
+  description:
+    "Поиск актуальной информации в интернете. Используй, когда нужны свежие данные, новости, текущие события или информация, которая могла измениться после твоего обучения.",
+  input_schema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Поисковый запрос" },
+    },
+    required: ["query"],
+  },
+};
+
+// Формат OpenAI (для KIE /{model}/v1/chat/completions)
+const WEB_SEARCH_TOOL_OPENAI = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description:
+      "Поиск актуальной информации в интернете. Используй, когда нужны свежие данные, новости, текущие события или информация, которая могла измениться после твоего обучения.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Поисковый запрос" },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+// ── Chat Routes ───────────────────────────────────────────────────────────────
 
 export async function chatRoutes(app: FastifyInstance) {
   // Создать новый чат
   app.post("/api/chat/new", async (request, reply) => {
-    const body = request.body as { module?: string; model?: string; title?: string; project_id?: string };
+    const body = request.body as {
+      module?: string;
+      model?: string;
+      title?: string;
+      project_id?: string;
+    };
     const module = body?.module?.trim() || "claude";
-    const model = body?.model?.trim() || "claude-opus-4-5";
+    const model = body?.model?.trim() || "claude-sonnet-4-6-v1messages";
     const title = body?.title?.trim() || "Новый чат";
     const project_id = body?.project_id?.trim() || null;
 
@@ -104,50 +108,59 @@ export async function chatRoutes(app: FastifyInstance) {
     const module = query?.module?.trim() || "claude";
     const project_id = query?.project_id?.trim() || null;
 
-    let result;
-    if (project_id) {
-      result = await dbQuery(
-        `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC`,
-        [module, project_id]
-      );
-    } else {
-      result = await dbQuery(
-        `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`,
-        [module]
-      );
-    }
+    const result = project_id
+      ? await dbQuery(
+          `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC`,
+          [module, project_id]
+        )
+      : await dbQuery(
+          `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`,
+          [module]
+        );
 
     return { ok: true, chats: result.rows };
   });
 
   // Получить историю сообщений чата
-  app.get("/api/chat/:chatId/messages", async (request, reply) => {
-    const params = request.params as { chatId: string };
-
+  app.get("/api/chat/:chatId/messages", async (request) => {
+    const { chatId } = request.params as { chatId: string };
     const result = await dbQuery(
       `SELECT * FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`,
-      [params.chatId]
+      [chatId]
     );
-
     return { ok: true, messages: result.rows };
   });
 
   // Обновить чат (model / title / project_id)
   app.patch("/api/chat/:chatId", async (request, reply) => {
-    const params = request.params as { chatId: string };
-    const body = request.body as { model?: string; title?: string; project_id?: string | null };
+    const { chatId } = request.params as { chatId: string };
+    const body = request.body as {
+      model?: string;
+      title?: string;
+      project_id?: string | null;
+    };
 
     const updates: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
-    if (body.model !== undefined) { updates.push(`model = $${idx++}`); values.push(body.model.trim()); }
-    if (body.title !== undefined) { updates.push(`title = $${idx++}`); values.push(body.title.trim()); }
-    if ("project_id" in body) { updates.push(`project_id = $${idx++}`); values.push(body.project_id ?? null); }
+    if (body.model !== undefined) {
+      updates.push(`model = $${idx++}`);
+      values.push(body.model.trim());
+    }
+    if (body.title !== undefined) {
+      updates.push(`title = $${idx++}`);
+      values.push(body.title.trim());
+    }
+    if ("project_id" in body) {
+      updates.push(`project_id = $${idx++}`);
+      values.push(body.project_id ?? null);
+    }
 
-    if (updates.length === 0) return reply.status(400).send({ ok: false, error: "Нечего обновлять" });
+    if (updates.length === 0)
+      return reply.status(400).send({ ok: false, error: "Нечего обновлять" });
 
-    values.push(params.chatId);
+    values.push(chatId);
     const result = await dbQuery(
       `UPDATE chats SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`,
       values
@@ -156,17 +169,15 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // Удалить чат
-  app.delete("/api/chat/:chatId", async (request, reply) => {
-    const params = request.params as { chatId: string };
-
-    await dbQuery(`DELETE FROM chats WHERE id = $1`, [params.chatId]);
-
+  app.delete("/api/chat/:chatId", async (request) => {
+    const { chatId } = request.params as { chatId: string };
+    await dbQuery(`DELETE FROM chats WHERE id = $1`, [chatId]);
     return { ok: true };
   });
 
-  // Отправить сообщение — основной маршрут
+  // Отправить сообщение
   app.post("/api/chat/:chatId/send", async (request, reply) => {
-    const params = request.params as { chatId: string };
+    const { chatId } = request.params as { chatId: string };
     const body = request.body as {
       message?: string;
       files?: Array<{ dataUrl: string; mimeType: string; name: string }>;
@@ -175,50 +186,46 @@ export async function chatRoutes(app: FastifyInstance) {
     const attachedFiles = body?.files ?? [];
     const apiKey = process.env.KIE_API_KEY;
 
-    if (!apiKey) {
+    if (!apiKey)
       return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-    }
 
-    if (!userMessage && attachedFiles.length === 0) {
+    if (!userMessage && attachedFiles.length === 0)
       return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
-    }
 
-    // Получить данные чата
-    const chatResult = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [params.chatId]);
-    if (chatResult.rows.length === 0) {
+    // ── Получить данные чата ─────────────────────────────────────────────────
+    const chatResult = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]);
+    if (chatResult.rows.length === 0)
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
-    }
     const chat = chatResult.rows[0];
 
-    // Сохранить сообщение пользователя (текст + имена файлов для истории)
-    const savedContent = attachedFiles.length > 0
-      ? `${userMessage}${userMessage ? "\n" : ""}[Файлы: ${attachedFiles.map(f => f.name).join(", ")}]`
-      : userMessage;
+    // ── Сохранить сообщение пользователя ────────────────────────────────────
+    const savedContent =
+      attachedFiles.length > 0
+        ? `${userMessage}${userMessage ? "\n" : ""}[Файлы: ${attachedFiles.map((f) => f.name).join(", ")}]`
+        : userMessage;
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`,
-      [params.chatId, "user", savedContent]
+      [chatId, "user", savedContent]
     );
 
-    // Обновить заголовок чата если это первое сообщение
+    // Обновить заголовок при первом сообщении
     const countResult = await dbQuery(
       `SELECT COUNT(*) FROM chat_messages WHERE chat_id = $1`,
-      [params.chatId]
+      [chatId]
     );
     if (Number(countResult.rows[0].count) === 1) {
       const shortTitle = (userMessage || attachedFiles[0]?.name || "Новый чат").slice(0, 50);
-      await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [shortTitle, params.chatId]);
+      await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [shortTitle, chatId]);
     }
 
-    // Загрузить всю историю для контекста
+    // ── Собрать историю ──────────────────────────────────────────────────────
     const historyResult = await dbQuery(
       `SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`,
-      [params.chatId]
+      [chatId]
     );
+    const historyRows: Array<{ role: string; content: string }> = historyResult.rows;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messages: Array<{ role: string; content: any }> = [];
-
-    // Глобальная память движка (поверх всего)
+    // ── Глобальная память движка ─────────────────────────────────────────────
     const globalSettingsResult = await dbQuery(
       `SELECT about, instructions, memory FROM engine_settings WHERE engine = $1`,
       [chat.module]
@@ -231,8 +238,10 @@ export async function chatRoutes(app: FastifyInstance) {
       if (g.memory) globalParts.push(`Глобальная память:\n${g.memory}`);
     }
 
-    // Добавить system prompt из проекта, если есть
-    let projectContextFiles: Array<{ name: string; mimeType: string; dataUrl: string }> = [];
+    // ── System prompt из проекта ─────────────────────────────────────────────
+    let systemText: string | undefined;
+    let projectContextImages: Array<{ name: string; mimeType: string; dataUrl: string }> = [];
+
     if (chat.project_id) {
       const projectResult = await dbQuery(
         `SELECT system_prompt, style, memory, context_files FROM projects WHERE id = $1`,
@@ -240,14 +249,14 @@ export async function chatRoutes(app: FastifyInstance) {
       );
       if (projectResult.rows.length > 0) {
         const proj = projectResult.rows[0];
-        const parts: string[] = [];
+        const parts: string[] = [...globalParts];
         if (proj.system_prompt) parts.push(proj.system_prompt);
         if (proj.style) parts.push(`Стиль общения: ${proj.style}`);
         if (proj.memory) parts.push(`Контекст проекта:\n${proj.memory}`);
 
-        // Текстовые файлы — добавляем содержимое прямо в system prompt
         const files: Array<{ name: string; mimeType: string; dataUrl: string }> =
           Array.isArray(proj.context_files) ? proj.context_files : [];
+
         for (const file of files) {
           if (!file.mimeType.startsWith("image/")) {
             const base64 = file.dataUrl.split(",")[1] ?? "";
@@ -256,206 +265,305 @@ export async function chatRoutes(app: FastifyInstance) {
           }
         }
 
-        const allParts = [...globalParts, ...parts];
-        if (allParts.length > 0) {
-          messages.push({ role: "system", content: allParts.join("\n\n") });
-        }
-
-        // Изображения — сохраняем для инжекции в виде user/assistant пары
-        projectContextFiles = files.filter((f) => f.mimeType.startsWith("image/"));
+        if (parts.length > 0) systemText = parts.join("\n\n");
+        projectContextImages = files.filter((f) => f.mimeType.startsWith("image/"));
       }
     } else if (globalParts.length > 0) {
-      // Нет проекта, но есть глобальная память
-      messages.push({ role: "system", content: globalParts.join("\n\n") });
+      systemText = globalParts.join("\n\n");
     }
 
-    // Если есть контекстные изображения — добавляем их как user/assistant пару до истории
-    if (projectContextFiles.length > 0) {
-      const imageItems: Array<Record<string, unknown>> = [
-        { type: "text", text: "Вот файлы контекста проекта, учитывай их во всех ответах:" },
-      ];
-      for (const file of projectContextFiles) {
-        imageItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
-      }
-      messages.push({ role: "user", content: imageItems });
-      messages.push({ role: "assistant", content: [{ type: "text", text: "Понял, учту эти материалы как контекст проекта." }] });
-    }
-
-    const historyRows: Array<{ role: string; content: string }> = historyResult.rows;
-    historyRows.forEach((row, index) => {
-      // Последнее сообщение пользователя — добавляем прикреплённые файлы
-      const isLastUserMsg = index === historyRows.length - 1 && row.role === "user";
-      if (isLastUserMsg && attachedFiles.length > 0) {
-        const contentItems: Array<Record<string, unknown>> = [];
-        if (userMessage) contentItems.push({ type: "text", text: userMessage });
-        for (const file of attachedFiles) {
-          if (file.mimeType.startsWith("image/")) {
-            contentItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
-          } else {
-            // Текстовые файлы — декодируем base64 и вставляем как текст
-            const base64 = file.dataUrl.split(",")[1] ?? "";
-            const decoded = Buffer.from(base64, "base64").toString("utf-8");
-            contentItems.push({ type: "text", text: `[Файл: ${file.name}]\n${decoded}` });
-          }
-        }
-        messages.push({ role: row.role, content: contentItems });
-      } else {
-        messages.push({ role: row.role, content: [{ type: "text", text: row.content }] });
-      }
-    });
-
-    // claude-*-v1messages → KIE Anthropic Messages API, остальные → KIE chat/completions
+    // ── Определить тип API ───────────────────────────────────────────────────
+    // Модели заканчивающиеся на "v1messages" → KIE /claude/v1/messages (Anthropic формат)
+    // Остальные → KIE /{model}/v1/chat/completions (OpenAI формат)
     const isKieClaude = chat.model?.endsWith("v1messages");
     const hasSearchKey = !!process.env.TAVILY_API_KEY;
 
-    // Эвристика: нужен ли поиск для этого сообщения
-    const SEARCH_PATTERN = /\b(сегодня|вчера|сейчас|последн|новост|актуальн|текущ|2024|2025|2026|цена|курс|погода|событи|недавн|only|today|now|latest|current|news|recent|price|weather)\b/i;
-    const needsSearch = hasSearchKey && SEARCH_PATTERN.test(userMessage);
-
-    // Если поиск нужен — делаем его заранее и инжектируем в контекст
-    if (needsSearch) {
-      console.log(`[web_search] pre-search for: "${userMessage.slice(0, 100)}"`);
-      const searchResult = await webSearch(userMessage.slice(0, 200));
-      if (searchResult && !searchResult.startsWith("[")) {
-        // Добавляем результаты поиска в системный промпт
-        const existingSystem = messages.find((m) => m.role === "system");
-        const searchNote = `Актуальные данные из интернета (используй их в ответе):\n${searchResult}`;
-        if (existingSystem) {
-          existingSystem.content = `${existingSystem.content}\n\n${searchNote}`;
-        } else {
-          messages.unshift({ role: "system", content: searchNote });
-        }
-      }
-    }
-
     try {
-      let assistantText: string;
+      let assistantText: string | undefined;
 
       if (isKieClaude) {
-        // ── KIE Anthropic Messages API ─────────────────────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        // KIE Anthropic Messages API  →  POST /claude/v1/messages
+        // Docs: https://docs.kie.ai/30749677e0
+        // ════════════════════════════════════════════════════════════════════
 
-        const systemMsg = messages.find((m) => m.role === "system");
-
+        // Строим массив сообщений в формате Anthropic.
+        // Контент — строка (как в примерах KIE docs), кроме случаев с файлами.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const claudeMessages: Array<{ role: string; content: any }> = messages
-          .filter((m) => m.role !== "system")
-          .map((m) => ({
-            role: m.role,
-            // KIE Claude принимает только строки в content — склеиваем текстовые блоки
-            content: Array.isArray(m.content)
-              ? m.content.map((b: any) => (b.type === "text" ? b.text : "")).join("")
-              : m.content,
-          }));
+        const claudeMessages: Array<{ role: string; content: any }> = [];
 
-        const systemText = systemMsg
-          ? (typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content))
-          : undefined;
+        // Если есть контекстные изображения — вставляем их как первую пару
+        if (projectContextImages.length > 0) {
+          const imageContent: Array<Record<string, unknown>> = [
+            { type: "text", text: "Вот файлы контекста проекта, учитывай их во всех ответах:" },
+          ];
+          for (const file of projectContextImages) {
+            const base64data = file.dataUrl.split(",")[1] ?? file.dataUrl;
+            imageContent.push({
+              type: "image",
+              source: { type: "base64", media_type: file.mimeType, data: base64data },
+            });
+          }
+          claudeMessages.push({ role: "user", content: imageContent });
+          claudeMessages.push({
+            role: "assistant",
+            content: "Понял, учту эти материалы как контекст проекта.",
+          });
+        }
 
-        // Согласно docs.kie.ai: model, messages, stream — без tools (KIE не поддерживает)
-        const requestBody: Record<string, unknown> = {
-          model: chat.model,
-          messages: claudeMessages,
-          stream: false,
-          ...(systemText ? { system: systemText } : {}),
-        };
+        // История сообщений
+        historyRows.forEach((row, index) => {
+          const isLastUser = index === historyRows.length - 1 && row.role === "user";
 
-        console.log(`KIE Claude REQUEST:`, JSON.stringify(requestBody, null, 2));
+          if (isLastUser && attachedFiles.length > 0) {
+            // Последнее сообщение пользователя с прикреплёнными файлами
+            const contentItems: Array<Record<string, unknown>> = [];
+            if (userMessage) contentItems.push({ type: "text", text: userMessage });
+            for (const file of attachedFiles) {
+              if (file.mimeType.startsWith("image/")) {
+                const base64data = file.dataUrl.split(",")[1] ?? file.dataUrl;
+                contentItems.push({
+                  type: "image",
+                  source: { type: "base64", media_type: file.mimeType, data: base64data },
+                });
+              } else {
+                const base64 = file.dataUrl.split(",")[1] ?? "";
+                const decoded = Buffer.from(base64, "base64").toString("utf-8");
+                contentItems.push({ type: "text", text: `[Файл: ${file.name}]\n${decoded}` });
+              }
+            }
+            claudeMessages.push({ role: row.role, content: contentItems });
+          } else {
+            // Обычное текстовое сообщение — строка (формат из KIE docs)
+            claudeMessages.push({ role: row.role, content: row.content });
+          }
+        });
 
-        const kieClaudeResponse = await fetch(
-          `${KIE_BASE_URL}/claude/v1/messages`,
-          {
+        // Цикл tool_use согласно Anthropic spec
+        const MAX_LOOPS = 5;
+        for (let loop = 0; loop < MAX_LOOPS; loop++) {
+          const requestBody: Record<string, unknown> = {
+            model: chat.model,
+            messages: claudeMessages,
+            stream: false,
+            ...(systemText ? { system: systemText } : {}),
+            ...(hasSearchKey ? { tools: [WEB_SEARCH_TOOL_CLAUDE] } : {}),
+          };
+
+          console.log(`[KIE Claude] REQUEST loop=${loop}:`, JSON.stringify(requestBody, null, 2));
+
+          const resp = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify(requestBody),
+          });
+
+          const data = await resp.json() as {
+            stop_reason?: string;
+            content?: Array<{
+              type: string;
+              text?: string;
+              id?: string;
+              name?: string;
+              input?: Record<string, unknown>;
+            }>;
+            error?: { message?: string };
+            code?: number;
+            msg?: string;
+          };
+
+          console.log(`[KIE Claude] RESPONSE loop=${loop}:`, resp.status, JSON.stringify(data));
+
+          // KIE может вернуть HTTP 200, но с {code: 500} внутри
+          if (!resp.ok || data.code === 500) {
+            return reply.status(500).send({
+              ok: false,
+              error: data?.msg || data?.error?.message || "KIE Claude вернул ошибку",
+              debug: { status: resp.status, body: data },
+            });
           }
-        );
 
-        const kieClaudeData = await kieClaudeResponse.json() as {
-          stop_reason?: string;
-          content?: Array<{ type: string; text?: string }>;
-          error?: { message?: string };
-          code?: number;
-          msg?: string;
-        };
+          const toolUseBlocks = (data.content ?? []).filter((b) => b.type === "tool_use");
 
-        console.log(`KIE Claude response:`, kieClaudeResponse.status, JSON.stringify(kieClaudeData));
+          // Финальный ответ — нет tool_use или поиск недоступен
+          if (toolUseBlocks.length === 0 || data.stop_reason !== "tool_use" || !hasSearchKey) {
+            assistantText = data.content?.find((b) => b.type === "text")?.text;
+            if (!assistantText) {
+              return reply.status(500).send({
+                ok: false,
+                error: "KIE Claude не вернул текстовый ответ",
+                debug: { status: resp.status, body: data },
+              });
+            }
+            break;
+          }
 
-        // KIE может вернуть HTTP 200, но с {code: 500, msg: "..."} внутри
-        if (!kieClaudeResponse.ok || kieClaudeData.code === 500) {
-          return reply.status(500).send({
-            ok: false,
-            error: kieClaudeData?.msg || kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
-            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
-          });
+          // Добавляем ответ ассистента с tool_use блоками в историю
+          claudeMessages.push({ role: "assistant", content: data.content });
+
+          // Выполняем инструменты и собираем tool_result
+          const toolResults: Array<Record<string, unknown>> = [];
+          for (const block of toolUseBlocks) {
+            if (block.name === "web_search") {
+              const query = (block.input?.query as string) || "";
+              console.log(`[web_search] query: "${query}"`);
+              const searchResult = await webSearch(query);
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: block.id,
+                content: searchResult,
+              });
+            }
+          }
+
+          // Возвращаем результаты в Anthropic-формате
+          claudeMessages.push({ role: "user", content: toolResults });
         }
 
-        const claudeText = kieClaudeData?.content?.find((b) => b.type === "text")?.text;
-        if (!claudeText) {
-          return reply.status(500).send({
-            ok: false,
-            error: "KIE Claude не вернул текстовый ответ",
-            debug: { status: kieClaudeResponse.status, body: kieClaudeData },
-          });
-        }
-        assistantText = claudeText;
+        assistantText ??= "[Не удалось получить ответ]";
 
       } else {
-        // ── KIE chat/completions (GPT, Gemini) ────────────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        // KIE OpenAI-compatible API  →  POST /{model}/v1/chat/completions
+        // ════════════════════════════════════════════════════════════════════
 
-        const requestBody: Record<string, unknown> = {
-          messages,
-          stream: false,
-        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const oaiMessages: Array<{ role: string; content: any; tool_calls?: any; tool_call_id?: string; name?: string }> = [];
 
-        const kieResponse = await fetch(
-          `${KIE_BASE_URL}/${chat.model}/v1/chat/completions`,
-          {
+        if (systemText) oaiMessages.push({ role: "system", content: systemText });
+
+        // Контекстные изображения как первая пара
+        if (projectContextImages.length > 0) {
+          const imageContent: Array<Record<string, unknown>> = [
+            { type: "text", text: "Вот файлы контекста проекта, учитывай их во всех ответах:" },
+          ];
+          for (const file of projectContextImages) {
+            imageContent.push({ type: "image_url", image_url: { url: file.dataUrl } });
+          }
+          oaiMessages.push({ role: "user", content: imageContent });
+          oaiMessages.push({ role: "assistant", content: "Понял, учту эти материалы как контекст проекта." });
+        }
+
+        historyRows.forEach((row, index) => {
+          const isLastUser = index === historyRows.length - 1 && row.role === "user";
+
+          if (isLastUser && attachedFiles.length > 0) {
+            const contentItems: Array<Record<string, unknown>> = [];
+            if (userMessage) contentItems.push({ type: "text", text: userMessage });
+            for (const file of attachedFiles) {
+              if (file.mimeType.startsWith("image/")) {
+                contentItems.push({ type: "image_url", image_url: { url: file.dataUrl } });
+              } else {
+                const base64 = file.dataUrl.split(",")[1] ?? "";
+                const decoded = Buffer.from(base64, "base64").toString("utf-8");
+                contentItems.push({ type: "text", text: `[Файл: ${file.name}]\n${decoded}` });
+              }
+            }
+            oaiMessages.push({ role: row.role, content: contentItems });
+          } else {
+            oaiMessages.push({ role: row.role, content: row.content });
+          }
+        });
+
+        const MAX_LOOPS = 5;
+        for (let loop = 0; loop < MAX_LOOPS; loop++) {
+          const requestBody: Record<string, unknown> = {
+            messages: oaiMessages,
+            stream: false,
+            ...(hasSearchKey ? { tools: [WEB_SEARCH_TOOL_OPENAI], tool_choice: "auto" } : {}),
+          };
+
+          console.log(`[KIE OAI] REQUEST loop=${loop}:`, JSON.stringify(requestBody, null, 2));
+
+          const resp = await fetch(`${KIE_BASE_URL}/${chat.model}/v1/chat/completions`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify(requestBody),
+          });
+
+          const data = await resp.json() as {
+            choices?: Array<{
+              message?: {
+                content?: string;
+                tool_calls?: Array<{
+                  id: string;
+                  type: string;
+                  function: { name: string; arguments: string };
+                }>;
+              };
+              finish_reason?: string;
+            }>;
+            error?: { message?: string };
+          };
+
+          console.log(`[KIE OAI] RESPONSE loop=${loop}:`, resp.status, JSON.stringify(data));
+
+          if (!resp.ok) {
+            return reply.status(500).send({
+              ok: false,
+              error: data?.error?.message || "KIE не вернул ответ",
+              debug: { status: resp.status, body: data },
+            });
           }
-        );
 
-        const kieData = await kieResponse.json() as {
-          choices?: Array<{ message?: { content?: string } }>;
-          error?: { message?: string };
-        };
+          const choice = data.choices?.[0];
+          const toolCalls = choice?.message?.tool_calls ?? [];
 
-        if (!kieResponse.ok) {
-          console.error("KIE error:", kieResponse.status, JSON.stringify(kieData));
-          return reply.status(500).send({
-            ok: false,
-            error: kieData?.error?.message || "KIE не вернул ответ",
-            debug: { status: kieResponse.status, body: kieData },
+          if (toolCalls.length === 0 || choice?.finish_reason !== "tool_calls" || !hasSearchKey) {
+            assistantText = choice?.message?.content;
+            if (!assistantText) {
+              return reply.status(500).send({
+                ok: false,
+                error: "KIE не вернул ответ",
+                debug: { status: resp.status, body: data },
+              });
+            }
+            break;
+          }
+
+          // Добавляем сообщение ассистента с tool_calls
+          oaiMessages.push({
+            role: "assistant",
+            content: choice.message?.content ?? null,
+            tool_calls: toolCalls,
           });
+
+          // Выполняем функции
+          for (const toolCall of toolCalls) {
+            if (toolCall.function.name === "web_search") {
+              let args: { query?: string } = {};
+              try { args = JSON.parse(toolCall.function.arguments); } catch { /* ignore */ }
+              const query = args.query || "";
+              console.log(`[web_search] query: "${query}"`);
+              const searchResult = await webSearch(query);
+              oaiMessages.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                name: "web_search",
+                content: searchResult,
+              });
+            }
+          }
         }
 
-        const content = kieData.choices?.[0]?.message?.content;
-        if (!content) {
-          return reply.status(500).send({
-            ok: false,
-            error: "KIE не вернул ответ",
-            debug: { status: kieResponse.status, body: kieData },
-          });
-        }
-        assistantText = content;
+        assistantText ??= "[Не удалось получить ответ]";
       }
 
-      // Сохранить ответ ассистента
+      // ── Сохранить ответ и вернуть ────────────────────────────────────────
       await dbQuery(
         `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, $2, $3)`,
-        [params.chatId, "assistant", assistantText]
+        [chatId, "assistant", assistantText]
       );
 
       return { ok: true, reply: assistantText };
     } catch (e) {
-      console.error("Chat send error:", e);
+      console.error("[chat send error]", e);
       return reply.status(500).send({ ok: false, error: "Ошибка при обращении к API" });
     }
   });
