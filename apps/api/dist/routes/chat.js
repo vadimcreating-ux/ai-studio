@@ -272,9 +272,9 @@ export async function chatRoutes(app) {
                 let loopMessages = [...claudeMessages];
                 const MAX_TOOL_LOOPS = 5;
                 for (let loop = 0; loop < MAX_TOOL_LOOPS; loop++) {
+                    // Согласно docs.kie.ai: model, messages, tools, stream — без max_tokens
                     const requestBody = {
                         model: chat.model,
-                        max_tokens: 4096,
                         messages: loopMessages,
                         stream: false,
                         ...(systemText ? { system: systemText } : {}),
@@ -291,7 +291,8 @@ export async function chatRoutes(app) {
                     });
                     const kieClaudeData = await kieClaudeResponse.json();
                     console.log(`KIE Claude response (loop ${loop}):`, kieClaudeResponse.status, JSON.stringify(kieClaudeData));
-                    if (!kieClaudeResponse.ok) {
+                    // KIE может вернуть HTTP 200, но с {code: 500, msg: "..."} внутри
+                    if (!kieClaudeResponse.ok || kieClaudeData.code === 500) {
                         return reply.status(500).send({
                             ok: false,
                             error: kieClaudeData?.msg || kieClaudeData?.error?.message || "KIE Claude не вернул ответ",
@@ -313,21 +314,24 @@ export async function chatRoutes(app) {
                         assistantText = claudeText;
                         break;
                     }
-                    // Добавляем ответ ассистента с tool_use в историю (content как строка для KIE)
-                    const assistantTextPart = kieClaudeData.content?.find((b) => b.type === "text")?.text ?? "";
-                    loopMessages.push({ role: "assistant", content: assistantTextPart });
-                    // Выполняем все поисковые запросы и собираем результаты
-                    const searchParts = [];
+                    // Добавляем ответ ассистента с полным content (включая tool_use блоки)
+                    loopMessages.push({ role: "assistant", content: kieClaudeData.content });
+                    // Выполняем поиск и возвращаем tool_result в правильном Anthropic-формате
+                    const toolResults = [];
                     for (const toolBlock of toolUseBlocks) {
                         if (toolBlock.name === "web_search") {
                             const query = toolBlock.input?.query || "";
                             console.log(`[web_search] query: "${query}"`);
                             const searchResult = await webSearch(query);
-                            searchParts.push(`[Результаты поиска для "${query}"]:\n${searchResult}`);
+                            toolResults.push({
+                                type: "tool_result",
+                                tool_use_id: toolBlock.id,
+                                content: searchResult,
+                            });
                         }
                     }
-                    // Добавляем результаты поиска как сообщение пользователя (plain text)
-                    loopMessages.push({ role: "user", content: searchParts.join("\n\n") });
+                    // tool_result передаётся как массив в content пользователя (Anthropic spec)
+                    loopMessages.push({ role: "user", content: toolResults });
                 }
                 // Fallback если цикл завершился без результата
                 assistantText ??= "[Не удалось получить ответ после поиска]";
