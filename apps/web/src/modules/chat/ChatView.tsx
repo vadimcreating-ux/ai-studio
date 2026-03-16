@@ -9,7 +9,7 @@ import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
 
 const CLAUDE_MODELS = [
-  { value: "claude-sonnet-4-6-v1messages", label: "Claude Sonnet 4.6" },
+  { value: "claude-sonnet-4-5-v1messages", label: "Claude Sonnet 4.5" },
 ];
 
 const TEMPLATES_KEY = "ai_studio_prompt_templates";
