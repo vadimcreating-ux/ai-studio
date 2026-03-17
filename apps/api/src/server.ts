@@ -1,5 +1,12 @@
 import { buildApp } from "./app.js";
-import { ensureFilesTable } from "./lib/db.js";
+import { ensureFilesTable, ensureChatsTable, ensureProjectsTable, ensureImageTemplatesTable, ensureVideoTemplatesTable, ensureEngineSettingsTable } from "./lib/db.js";
+import { ProxyAgent, setGlobalDispatcher } from "undici";
+
+// Если задан HTTPS_PROXY — все fetch запросы идут через него (нужно для обхода геоблокировки Anthropic)
+if (process.env.HTTPS_PROXY) {
+  setGlobalDispatcher(new ProxyAgent(process.env.HTTPS_PROXY));
+  console.log(`[proxy] Using HTTPS_PROXY: ${process.env.HTTPS_PROXY}`);
+}
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -8,7 +15,12 @@ async function start() {
   const app = buildApp();
 
   try {
+    await ensureProjectsTable();
     await ensureFilesTable();
+    await ensureChatsTable();
+    await ensureImageTemplatesTable();
+    await ensureVideoTemplatesTable();
+    await ensureEngineSettingsTable();
 
     await app.listen({
       port: PORT,

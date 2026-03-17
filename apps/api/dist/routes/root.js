@@ -1,36 +1,31 @@
-import type { FastifyInstance } from "fastify";
-
-function renderPage(page: string) {
-  const currentPage = page || "dashboard";
-
-  const titles: Record<string, string> = {
-  dashboard: "Dashboard",
-  claude: "Claude",
-  chatgpt: "ChatGPT",
-  gemini: "Gemini",
-  image: "Image",
-  video: "Video",
-  audio: "Audio",
-  avatar: "Avatar",
-  files: "Files",
-  settings: "Settings"
-};
-
-  const descriptions: Record<string, string> = {
-  dashboard: "Стартовый каркас интерфейса для будущих модулей системы.",
-  claude: "Независимый чат-модуль Claude с проектами, контекстом, историей и памятью.",
-  chatgpt: "Независимый чат-модуль ChatGPT с собственной рабочей средой.",
-  gemini: "Независимый чат-модуль Gemini с отдельной логикой и настройками.",
-  image: "Модуль генерации и редактирования изображений через KIE API.",
-  video: "Модуль генерации видео и image-to-video сценариев.",
-  audio: "Модуль музыки, аудио и озвучки.",
-  avatar: "Модуль генерации avatar-видео на основе изображения и аудио.",
-  files: "Общая библиотека файлов и результатов всех модулей.",
-  settings: "Общие настройки системы и будущих интеграций."
-};
-
-  const content: Record<string, string> = {
-    dashboard: `
+function renderPage(page) {
+    const currentPage = page || "dashboard";
+    const titles = {
+        dashboard: "Dashboard",
+        claude: "Claude",
+        chatgpt: "ChatGPT",
+        gemini: "Gemini",
+        image: "Image",
+        video: "Video",
+        audio: "Audio",
+        avatar: "Avatar",
+        files: "Files",
+        settings: "Settings"
+    };
+    const descriptions = {
+        dashboard: "Стартовый каркас интерфейса для будущих модулей системы.",
+        claude: "Независимый чат-модуль Claude с проектами, контекстом, историей и памятью.",
+        chatgpt: "Независимый чат-модуль ChatGPT с собственной рабочей средой.",
+        gemini: "Независимый чат-модуль Gemini с отдельной логикой и настройками.",
+        image: "Модуль генерации и редактирования изображений через KIE API.",
+        video: "Модуль генерации видео и image-to-video сценариев.",
+        audio: "Модуль музыки, аудио и озвучки.",
+        avatar: "Модуль генерации avatar-видео на основе изображения и аудио.",
+        files: "Общая библиотека файлов и результатов всех модулей.",
+        settings: "Общие настройки системы и будущих интеграций."
+    };
+    const content = {
+        dashboard: `
       <div class="grid">
         <section class="card">
           <h2>Текущий статус</h2>
@@ -86,7 +81,7 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-           claude: `
+        claude: `
       <div class="workspace">
         <aside class="panel" id="claude-sidebar">
           <div class="panel-header-row">
@@ -296,7 +291,7 @@ function renderPage(page: string) {
       })();
       </script>
     `,
-       chatgpt: `
+        chatgpt: `
       <div class="workspace">
         <aside class="panel">
           <div class="panel-header-row">
@@ -608,7 +603,7 @@ function renderPage(page: string) {
         </aside>
       </div>
     `,
-            image: `
+        image: `
       <div class="workspace">
         <aside class="panel">
           <div class="panel-header-row">
@@ -763,7 +758,7 @@ function renderPage(page: string) {
         </aside>
       </div>
     `,
-    video: `
+        video: `
       <div class="grid">
         <section class="card">
           <h2>Структура модуля Video</h2>
@@ -795,7 +790,7 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-    audio: `
+        audio: `
       <div class="grid">
         <section class="card">
           <h2>Структура модуля Audio</h2>
@@ -827,7 +822,7 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-    avatar: `
+        avatar: `
       <div class="grid">
         <section class="card">
           <h2>Структура модуля Avatar</h2>
@@ -859,7 +854,7 @@ function renderPage(page: string) {
         </section>
       </div>
     `,
-   files: `
+        files: `
   <div class="grid">
     <section class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
@@ -874,7 +869,7 @@ function renderPage(page: string) {
     </section>
   </div>
 `,
-    settings: `
+        settings: `
       <div class="grid">
         <section class="card">
           <h2>Структура модуля Settings</h2>
@@ -906,15 +901,12 @@ function renderPage(page: string) {
         </section>
       </div>
     `
-  };
-
-  const title = titles[currentPage] || "Dashboard";
-  const description = descriptions[currentPage] || descriptions.dashboard;
-  const pageContent = content[currentPage] || content.dashboard;
-
-  const isActive = (value: string) => currentPage === value ? "active" : "";
-
-  return `
+    };
+    const title = titles[currentPage] || "Dashboard";
+    const description = descriptions[currentPage] || descriptions.dashboard;
+    const pageContent = content[currentPage] || content.dashboard;
+    const isActive = (value) => currentPage === value ? "active" : "";
+    return `
     <!doctype html>
     <html lang="ru">
       <head>
@@ -1764,11 +1756,10 @@ deleteButtons.forEach(function (button) {
     </html>
   `;
 }
-export async function rootRoutes(app: FastifyInstance) {
-  app.get("/", async (request, reply) => {
-    const query = request.query as { page?: string };
-    const page = query?.page || "dashboard";
-
-    reply.type("text/html").send(renderPage(page));
-  });
+export async function rootRoutes(app) {
+    app.get("/", async (request, reply) => {
+        const query = request.query;
+        const page = query?.page || "dashboard";
+        reply.type("text/html").send(renderPage(page));
+    });
 }
