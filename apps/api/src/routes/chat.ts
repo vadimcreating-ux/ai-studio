@@ -81,6 +81,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const body = request.body as {
       message: string;
       files?: Array<{ dataUrl: string; mimeType: string; name: string }>;
+      webSearch?: boolean;
     };
 
     const apiKey = process.env.KIE_API_KEY;
@@ -160,6 +161,9 @@ export async function chatRoutes(app: FastifyInstance) {
     };
     if (systemParts.length > 0) {
       requestBody.system = systemParts.join("\n\n");
+    }
+    if (body.webSearch) {
+      requestBody.tools = [{ type: "function", function: { name: "googleSearch" } }];
     }
 
     const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
