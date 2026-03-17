@@ -39,3 +39,16 @@ await dbQuery(`
 - `main` ветка автоматически деплоится на Timeweb
 - Перед мержем в `main` убедись, что все изменения схемы БД следуют правилам выше
 - Переменные окружения: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE`
+
+## KIE API — важно не менять
+
+Для модуля `claude` используется **KIE API** (`https://api.kie.ai`) с форматом **Anthropic Messages API**:
+
+- Эндпоинт: `POST https://api.kie.ai/claude/v1/messages`
+- Формат запроса: стандартный Anthropic (`model`, `messages`, `system`, `stream`)
+- Авторизация: `Authorization: Bearer ${KIE_API_KEY}`
+- Ответ: стандартный Anthropic (`content: [{ type: "text", text: "..." }]`)
+
+**Не менять на OpenAI-совместимый формат** (`/v1/chat/completions`, `messages[].role = "system"` и т.д.) — это сломает все чаты модуля claude.
+
+Файл с логикой вызова: `apps/api/src/routes/chat.ts`
