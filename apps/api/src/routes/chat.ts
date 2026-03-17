@@ -163,7 +163,15 @@ export async function chatRoutes(app: FastifyInstance) {
       requestBody.system = systemParts.join("\n\n");
     }
     if (body.webSearch) {
-      requestBody.tools = [{ type: "function", function: { name: "googleSearch" } }];
+      requestBody.tools = [{
+        name: "googleSearch",
+        description: "Search the internet for current information",
+        input_schema: {
+          type: "object",
+          properties: { query: { type: "string", description: "Search query" } },
+          required: ["query"],
+        },
+      }];
     }
 
     const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
