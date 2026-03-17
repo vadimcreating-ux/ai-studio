@@ -86,6 +86,22 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       reader.readAsText(file);
     });
 
+  const editMessage = useMutation({
+    mutationFn: ({ messageId, content }: { messageId: string; content: string }) =>
+      chatApi.updateMessage(chat!.id, messageId, content),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["messages", chat?.id] }),
+  });
+
+  const deleteMessage = useMutation({
+    mutationFn: (messageId: string) => chatApi.deleteMessage(chat!.id, messageId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["messages", chat?.id] }),
+  });
+
+  const regenerateMsg = useMutation({
+    mutationFn: (messageId: string) => chatApi.regenerate(chat!.id, messageId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["messages", chat?.id] }),
+  });
+
   const sendMessage = useMutation({
     mutationFn: async ({ chatId, message, files, webSearch }: { chatId: string; message: string; files: File[]; webSearch: boolean }) => {
       const converted = await Promise.all(
@@ -160,7 +176,15 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         )}
 
         {allMessages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} engineLabel={engineLabel} />
+          <ChatMessage
+            key={msg.id}
+            message={msg}
+            engineLabel={engineLabel}
+            onEdit={(id, content) => editMessage.mutate({ messageId: id, content })}
+            onDelete={(id) => deleteMessage.mutate(id)}
+            onRegenerate={msg.role === "assistant" ? (id) => regenerateMsg.mutate(id) : undefined}
+            isRegenerating={regenerateMsg.isPending && regenerateMsg.variables === msg.id}
+          />
         ))}
 
         {sendMessage.isPending && (

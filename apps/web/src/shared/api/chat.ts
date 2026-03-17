@@ -44,4 +44,13 @@ export const chatApi = {
 
   delete: (chatId: string) =>
     api.delete<{ ok: true }>(`/api/chat/${chatId}`),
+
+  updateMessage: (chatId: string, messageId: string, content: string) =>
+    api.patch<{ ok: true; message: Message }>(`/api/chat/${chatId}/messages/${messageId}`, { content }),
+
+  deleteMessage: (chatId: string, messageId: string) =>
+    api.delete<{ ok: true }>(`/api/chat/${chatId}/messages/${messageId}`),
+
+  regenerate: (chatId: string, messageId: string) =>
+    api.post<{ ok: true; reply: string }>(`/api/chat/${chatId}/messages/${messageId}/regenerate`, {}),
 };

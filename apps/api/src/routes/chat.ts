@@ -102,6 +102,125 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  // Edit a single message
+  app.patch("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
+    const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+    const body = request.body as { content?: string };
+    const content = body.content?.trim();
+    if (!content) return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
+
+    const result = await dbQuery(
+      `UPDATE chat_messages SET content = $1 WHERE id = $2 AND chat_id = $3 RETURNING *`,
+      [content, messageId, chatId]
+    );
+    if (result.rows.length === 0)
+      return reply.status(404).send({ ok: false, error: "Сообщение не найдено" });
+    return { ok: true, message: result.rows[0] };
+  });
+
+  // Delete a single message
+  app.delete("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
+    const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+    const result = await dbQuery(
+      `DELETE FROM chat_messages WHERE id = $1 AND chat_id = $2 RETURNING id`,
+      [messageId, chatId]
+    );
+    if (result.rows.length === 0)
+      return reply.status(404).send({ ok: false, error: "Сообщение не найдено" });
+    return { ok: true };
+  });
+
+  // Regenerate: delete target message + all after it, then re-call KIE
+  app.post("/api/chat/:chatId/messages/:messageId/regenerate", async (request, reply) => {
+    const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+
+    const apiKey = process.env.KIE_API_KEY;
+    if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+
+    const msgRes = await dbQuery(
+      `SELECT * FROM chat_messages WHERE id = $1 AND chat_id = $2`,
+      [messageId, chatId]
+    );
+    if (msgRes.rows.length === 0)
+      return reply.status(404).send({ ok: false, error: "Сообщение не найдено" });
+
+    const targetMsg = msgRes.rows[0] as { created_at: string };
+
+    // History before the target message
+    const historyRes = await dbQuery(
+      `SELECT role, content FROM chat_messages WHERE chat_id = $1 AND created_at < $2 ORDER BY created_at ASC`,
+      [chatId, targetMsg.created_at]
+    );
+
+    // Delete target + everything after
+    await dbQuery(
+      `DELETE FROM chat_messages WHERE chat_id = $1 AND created_at >= $2`,
+      [chatId, targetMsg.created_at]
+    );
+
+    const history = historyRes.rows as Array<{ role: string; content: string }>;
+    if (history.length === 0 || history[history.length - 1].role !== "user") {
+      return reply.status(400).send({ ok: false, error: "История должна заканчиваться сообщением пользователя" });
+    }
+
+    const [chatRes, settingsRes] = await Promise.all([
+      dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]),
+      dbQuery(`SELECT * FROM engine_settings WHERE engine = 'claude'`, []),
+    ]);
+    if (chatRes.rows.length === 0)
+      return reply.status(404).send({ ok: false, error: "Чат не найден" });
+
+    const settings = settingsRes.rows[0];
+    const systemParts: string[] = [];
+    if (settings?.about?.trim())        systemParts.push(settings.about.trim());
+    if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
+    if (settings?.memory?.trim())       systemParts.push(`Память:\n${settings.memory.trim()}`);
+
+    const requestBody: Record<string, unknown> = {
+      model: chatRes.rows[0].model as string,
+      messages: history.map((r) => ({ role: r.role, content: r.content })),
+      stream: false,
+    };
+    if (systemParts.length > 0) requestBody.system = systemParts.join("\n\n");
+
+    const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!kieRes.ok) {
+      const errText = await kieRes.text();
+      app.log.error(`kie.ai error ${kieRes.status}: ${errText}`);
+      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
+    }
+
+    const rawBody = await kieRes.text();
+    const data = JSON.parse(rawBody) as Record<string, unknown>;
+    if (typeof data.code === "number" && data.code !== 200) {
+      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${data.msg} (code ${data.code})` });
+    }
+
+    const contentBlocks = data.content;
+    let assistantReply = "";
+    if (Array.isArray(contentBlocks)) {
+      assistantReply = (contentBlocks as Array<{ type?: string; text?: string }>)
+        .filter((b) => b.type === "text" && b.text)
+        .map((b) => b.text ?? "")
+        .join("")
+        .trim();
+    }
+    if (!assistantReply) {
+      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai" });
+    }
+
+    await dbQuery(
+      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
+      [chatId, assistantReply]
+    );
+    return { ok: true, reply: assistantReply };
+  });
+
   app.post("/api/chat/:chatId/send", async (request, reply) => {
     const { chatId } = request.params as { chatId: string };
     const body = request.body as {
