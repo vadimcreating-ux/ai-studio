@@ -193,8 +193,8 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     if (!assistantReply) {
-      app.log.error(`kie.ai returned empty content. Full response: ${rawBody.slice(0, 1000)}`);
-      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai" });
+      app.log.error(`kie.ai returned empty content. Full response: ${rawBody.slice(0, 2000)}`);
+      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai", debug: rawBody.slice(0, 2000) });
     }
 
     // Save assistant reply to DB
