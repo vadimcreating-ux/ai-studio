@@ -1,0 +1,39 @@
+name: Sync work to main
+
+on:
+  push:
+    branches:
+      - work
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge work into main
+        run: |
+          git fetch origin main work
+          git checkout -B main origin/main
+
+          if git merge --ff-only origin/work; then
+            echo "Fast-forward merge completed"
+          else
+            git merge --no-ff origin/work -m "chore: sync work into main"
+          fi
+
+      - name: Push main
+        run: git push origin main

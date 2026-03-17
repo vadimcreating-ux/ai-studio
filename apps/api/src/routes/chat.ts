@@ -107,6 +107,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const body = request.body as {
       message: string;
       files?: Array<{ dataUrl: string; mimeType: string; name: string }>;
+      webSearch?: boolean;
     };
 
     const apiKey = process.env.KIE_API_KEY;
@@ -151,27 +152,28 @@ export async function chatRoutes(app: FastifyInstance) {
       systemParts.push(`Содержимое URL из промпта:\n\n${fetched.join("\n\n")}`);
     }
 
-    // Build messages array
+    // Build messages array (Anthropic Messages API format — no system role in messages)
     type KieMessage = { role: string; content: string | unknown[] };
     const messages: KieMessage[] = [];
 
-    if (systemParts.length > 0) {
-      messages.push({ role: "system", content: systemParts.join("\n\n") });
-    }
-
-    // History
+    // History (only user/assistant roles)
     for (const row of historyRes.rows) {
       messages.push({ role: row.role, content: row.content });
     }
 
-    // Current user message (with optional images)
+    // Current user message (with optional files)
     if (body.files && body.files.length > 0) {
       const contentParts: unknown[] = [{ type: "text", text: userText }];
       for (const f of body.files) {
         if (f.mimeType.startsWith("image/")) {
-          contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+          // Anthropic image block format
+          const base64Data = f.dataUrl.split(",")[1] ?? f.dataUrl;
+          contentParts.push({
+            type: "image",
+            source: { type: "base64", media_type: f.mimeType, data: base64Data },
+          });
         } else {
-          // text files — append content as plain text
+          // text files — append as plain text block
           const base64 = f.dataUrl.split(",")[1] ?? "";
           const decoded = Buffer.from(base64, "base64").toString("utf-8");
           contentParts.push({ type: "text", text: `\n\n[${f.name}]\n${decoded}` });
@@ -190,13 +192,34 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const chatModel = chatRes.rows[0].model as string;
 
-    const kieRes = await fetch(`${KIE_BASE_URL}/${chatModel}/v1/chat/completions`, {
+    // KIE Anthropic Messages API: POST /claude/v1/messages
+    const requestBody: Record<string, unknown> = {
+      model: chatModel,
+      messages,
+      stream: false,
+    };
+    if (systemParts.length > 0) {
+      requestBody.system = systemParts.join("\n\n");
+    }
+    if (body.webSearch) {
+      requestBody.tools = [{
+        name: "googleSearch",
+        description: "Search the internet for current information",
+        input_schema: {
+          type: "object",
+          properties: { query: { type: "string", description: "Search query" } },
+          required: ["query"],
+        },
+      }];
+    }
+
+    const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ messages, stream: false }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!kieRes.ok) {
@@ -206,23 +229,30 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const rawBody = await kieRes.text();
-    app.log.info(`kie.ai response: ${rawBody.slice(0, 500)}`);
+    app.log.info(`kie.ai response: ${rawBody.slice(0, 1000)}`);
     const data = JSON.parse(rawBody) as Record<string, unknown>;
 
-    // Extract text from any known response shape
-    const choiceContent = (data as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-    }).choices?.[0]?.message?.content;
+    // KIE wraps application-level errors as HTTP 200 with { code, msg }
+    if (typeof data.code === "number" && data.code !== 200) {
+      const kieErr = `${data.msg ?? "unknown error"} (code ${data.code})`;
+      app.log.error(`kie.ai app error: ${kieErr}`);
+      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieErr}` });
+    }
 
+    // Anthropic Messages API response: { content: [{ type: "text", text: "..." }] }
+    const contentBlocks = data.content;
     let assistantReply = "";
-    if (typeof choiceContent === "string") {
-      assistantReply = choiceContent.trim();
-    } else if (Array.isArray(choiceContent)) {
-      assistantReply = (choiceContent as Array<{ type?: string; text?: string }>)
-        .filter((b) => b.text)
+    if (Array.isArray(contentBlocks)) {
+      assistantReply = (contentBlocks as Array<{ type?: string; text?: string }>)
+        .filter((b) => b.type === "text" && b.text)
         .map((b) => b.text ?? "")
         .join("")
         .trim();
+    }
+
+    if (!assistantReply) {
+      app.log.error(`kie.ai returned empty content. Full response: ${rawBody.slice(0, 2000)}`);
+      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai", debug: rawBody.slice(0, 2000) });
     }
 
     // Save assistant reply to DB

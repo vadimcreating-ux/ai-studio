@@ -87,7 +87,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
     });
 
   const sendMessage = useMutation({
-    mutationFn: async ({ chatId, message, files }: { chatId: string; message: string; files: File[] }) => {
+    mutationFn: async ({ chatId, message, files, webSearch }: { chatId: string; message: string; files: File[]; webSearch: boolean }) => {
       const converted = await Promise.all(
         files.map(async (file) => {
           if (file.type.startsWith("image/")) {
@@ -99,7 +99,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
           }
         })
       );
-      return chatApi.send(chatId, message, converted.length > 0 ? converted : undefined);
+      return chatApi.send(chatId, message, converted.length > 0 ? converted : undefined, webSearch || undefined);
     },
     onMutate: ({ message }) => {
       const opt: Message = {
@@ -188,7 +188,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       <MessageInput
         value={inputText}
         onChange={setInputText}
-        onSend={(text, files) => { chat && sendMessage.mutate({ chatId: chat.id, message: text, files }); setInputText(""); }}
+        onSend={(text, files, webSearch) => { chat && sendMessage.mutate({ chatId: chat.id, message: text, files, webSearch }); setInputText(""); }}
         onShowTemplates={() => setShowTemplates(true)}
         isLoading={sendMessage.isPending}
         disabled={!chat}
