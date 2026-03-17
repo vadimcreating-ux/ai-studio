@@ -4,6 +4,32 @@ import { dbQuery } from "../lib/db.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5";
 
+const URL_REGEX = /https?:\/\/[^\s"'<>)\]]+/g;
+const MAX_URL_CONTENT_CHARS = 15000;
+
+async function fetchUrlContent(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AI-Studio-Bot/1.0)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    const text = await res.text();
+    const cleaned = text
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned.slice(0, MAX_URL_CONTENT_CHARS);
+  } catch (e) {
+    return `[Не удалось загрузить ${url}: ${e instanceof Error ? e.message : e}]`;
+  }
+}
+
+function extractUrls(text: string): string[] {
+  return [...new Set(text.match(URL_REGEX) ?? [])];
+}
+
 export async function chatRoutes(app: FastifyInstance) {
 
   app.post("/api/chat/new", async (request) => {
@@ -111,6 +137,19 @@ export async function chatRoutes(app: FastifyInstance) {
     if (settings?.about?.trim())        systemParts.push(settings.about.trim());
     if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
     if (settings?.memory?.trim())       systemParts.push(`Память:\n${settings.memory.trim()}`);
+
+    // Fetch URLs mentioned in system prompt or user message
+    const allText = [...systemParts, userText].join("\n");
+    const urls = extractUrls(allText);
+    if (urls.length > 0) {
+      const fetched = await Promise.all(
+        urls.map(async (url) => {
+          const content = await fetchUrlContent(url);
+          return `=== Содержимое ${url} ===\n${content}`;
+        })
+      );
+      systemParts.push(`Содержимое URL из промпта:\n\n${fetched.join("\n\n")}`);
+    }
 
     // Build messages array
     type KieMessage = { role: string; content: string | unknown[] };
