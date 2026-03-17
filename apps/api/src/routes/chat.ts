@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6-v1messages";
+const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5";
 
 export async function chatRoutes(app: FastifyInstance) {
 
@@ -178,8 +178,15 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const rawBody = await kieRes.text();
-    app.log.info(`kie.ai response: ${rawBody.slice(0, 500)}`);
+    app.log.info(`kie.ai response: ${rawBody.slice(0, 1000)}`);
     const data = JSON.parse(rawBody) as Record<string, unknown>;
+
+    // KIE wraps application-level errors as HTTP 200 with { code, msg }
+    if (typeof data.code === "number" && data.code !== 200) {
+      const kieErr = `${data.msg ?? "unknown error"} (code ${data.code})`;
+      app.log.error(`kie.ai app error: ${kieErr}`);
+      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieErr}` });
+    }
 
     // Anthropic Messages API response: { content: [{ type: "text", text: "..." }] }
     const contentBlocks = data.content;
