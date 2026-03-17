@@ -15,9 +15,9 @@ async function start() {
   const app = buildApp();
 
   try {
+    await ensureChatsTable();
     await ensureProjectsTable();
     await ensureFilesTable();
-    await ensureChatsTable();
     await ensureImageTemplatesTable();
     await ensureVideoTemplatesTable();
     await ensureEngineSettingsTable();
