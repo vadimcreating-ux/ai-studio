@@ -151,13 +151,13 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const chatModel = chatRes.rows[0].model as string;
 
-    const kieRes = await fetch(`${KIE_BASE_URL}/${chatModel}/v1/chat/completions`, {
+    const kieRes = await fetch(`${KIE_BASE_URL}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ messages, stream: false }),
+      body: JSON.stringify({ model: chatModel, messages, stream: false }),
     });
 
     if (!kieRes.ok) {
@@ -184,6 +184,11 @@ export async function chatRoutes(app: FastifyInstance) {
         .map((b) => b.text ?? "")
         .join("")
         .trim();
+    }
+
+    if (!assistantReply) {
+      app.log.error(`kie.ai returned empty content. Full response: ${rawBody.slice(0, 1000)}`);
+      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai" });
     }
 
     // Save assistant reply to DB
