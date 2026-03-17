@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5";
+const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6-v1messages";
 
 export async function chatRoutes(app: FastifyInstance) {
 
@@ -112,27 +112,28 @@ export async function chatRoutes(app: FastifyInstance) {
     if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
     if (settings?.memory?.trim())       systemParts.push(`Память:\n${settings.memory.trim()}`);
 
-    // Build messages array
+    // Build messages array (Anthropic Messages API format — no system role in messages)
     type KieMessage = { role: string; content: string | unknown[] };
     const messages: KieMessage[] = [];
 
-    if (systemParts.length > 0) {
-      messages.push({ role: "system", content: systemParts.join("\n\n") });
-    }
-
-    // History
+    // History (only user/assistant roles)
     for (const row of historyRes.rows) {
       messages.push({ role: row.role, content: row.content });
     }
 
-    // Current user message (with optional images)
+    // Current user message (with optional files)
     if (body.files && body.files.length > 0) {
       const contentParts: unknown[] = [{ type: "text", text: userText }];
       for (const f of body.files) {
         if (f.mimeType.startsWith("image/")) {
-          contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+          // Anthropic image block format
+          const base64Data = f.dataUrl.split(",")[1] ?? f.dataUrl;
+          contentParts.push({
+            type: "image",
+            source: { type: "base64", media_type: f.mimeType, data: base64Data },
+          });
         } else {
-          // text files — append content as plain text
+          // text files — append as plain text block
           const base64 = f.dataUrl.split(",")[1] ?? "";
           const decoded = Buffer.from(base64, "base64").toString("utf-8");
           contentParts.push({ type: "text", text: `\n\n[${f.name}]\n${decoded}` });
@@ -151,13 +152,23 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const chatModel = chatRes.rows[0].model as string;
 
-    const kieRes = await fetch(`${KIE_BASE_URL}/v1/chat/completions`, {
+    // KIE Anthropic Messages API: POST /claude/v1/messages
+    const requestBody: Record<string, unknown> = {
+      model: chatModel,
+      messages,
+      stream: false,
+    };
+    if (systemParts.length > 0) {
+      requestBody.system = systemParts.join("\n\n");
+    }
+
+    const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ model: chatModel, messages, stream: false }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!kieRes.ok) {
@@ -170,17 +181,12 @@ export async function chatRoutes(app: FastifyInstance) {
     app.log.info(`kie.ai response: ${rawBody.slice(0, 500)}`);
     const data = JSON.parse(rawBody) as Record<string, unknown>;
 
-    // Extract text from any known response shape
-    const choiceContent = (data as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-    }).choices?.[0]?.message?.content;
-
+    // Anthropic Messages API response: { content: [{ type: "text", text: "..." }] }
+    const contentBlocks = data.content;
     let assistantReply = "";
-    if (typeof choiceContent === "string") {
-      assistantReply = choiceContent.trim();
-    } else if (Array.isArray(choiceContent)) {
-      assistantReply = (choiceContent as Array<{ type?: string; text?: string }>)
-        .filter((b) => b.text)
+    if (Array.isArray(contentBlocks)) {
+      assistantReply = (contentBlocks as Array<{ type?: string; text?: string }>)
+        .filter((b) => b.type === "text" && b.text)
         .map((b) => b.text ?? "")
         .join("")
         .trim();
