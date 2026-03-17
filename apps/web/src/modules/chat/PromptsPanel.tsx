@@ -126,18 +126,12 @@ export default function PromptsPanel({
         </button>
       </div>
 
-      {/* Model selector */}
+      {/* Model label */}
       {modelOptions.length > 0 && (
         <div className="px-3 py-2 border-b border-border shrink-0">
-          <select
-            value={selectedModel}
-            onChange={(e) => handleModelChange(e.target.value)}
-            className="w-full bg-[#1c2128] border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-[#c9d1d9] outline-none focus:border-accent transition-colors cursor-pointer"
-          >
-            {modelOptions.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
+          <span className="text-[12px] text-[#c9d1d9]">
+            {modelOptions.find((m) => m.value === selectedModel)?.label ?? selectedModel}
+          </span>
         </div>
       )}
 
