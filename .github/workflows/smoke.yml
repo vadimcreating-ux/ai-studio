@@ -55,7 +55,11 @@ jobs:
           exit 1
 
       - name: Run smoke tests
-        run: TEST_URL=https://vadimcreating-ux-ai-studio-775d.twc1.net npm run test:smoke
+        env:
+          TEST_URL: https://vadimcreating-ux-ai-studio-775d.twc1.net
+          TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+        run: npm run test:smoke
 
       - name: Upload report
         if: always()
