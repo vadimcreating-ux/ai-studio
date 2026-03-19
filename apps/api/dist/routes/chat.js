@@ -308,7 +308,8 @@ export async function chatRoutes(app) {
         await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`, [chatId, result.reply]);
         return { ok: true, reply: result.reply };
     });
-    app.post("/api/chat/:chatId/send", async (request, reply) => {
+    // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
+    app.post("/api/chat/:chatId/send", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
         const { chatId } = request.params;
         const parsed = SendMessageSchema.safeParse(request.body);
         if (!parsed.success)

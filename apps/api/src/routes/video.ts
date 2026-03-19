@@ -30,8 +30,8 @@ async function saveVideoToFiles(data: {
 }
 
 export async function videoRoutes(app: FastifyInstance) {
-  // Генерация видео — создание задачи (sora-2-pro-image-to-video)
-  app.post("/api/video/generate", async (request, reply) => {
+  // Генерация видео — 5 запросов в минуту (очень дорогая операция)
+  app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = request.body as {
       model?: string;
       prompt?: string;

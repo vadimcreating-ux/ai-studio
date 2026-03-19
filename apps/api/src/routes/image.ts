@@ -11,8 +11,8 @@ const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map<string, string>();
 
 export async function imageRoutes(app: FastifyInstance) {
-  // Генерация изображения — создание задачи
-  app.post("/api/image/generate", async (request, reply) => {
+  // Генерация изображения — 10 запросов в минуту (дорогая операция)
+  app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = request.body as {
       model?: string;
       prompt?: string;

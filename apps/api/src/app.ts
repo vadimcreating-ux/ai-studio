@@ -1,4 +1,4 @@
-import Fastify, { type FastifyRequest } from "fastify";
+import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import rateLimit from "@fastify/rate-limit";
 import cors from "@fastify/cors";
@@ -25,7 +25,6 @@ const loggerConfig = isDev
     }
   : {
       level: "info",
-      // JSON-логи — в проде их собирает Timeweb, можно фильтровать по полям
       serializers: {
         req: (req: { method: string; url: string; hostname: string }) => ({
           method: req.method,
@@ -40,6 +39,8 @@ export function buildApp() {
   const app = Fastify({
     logger: loggerConfig,
     bodyLimit: BODY_LIMIT,
+    // Доверяем первому прокси (Timeweb) для корректного определения IP
+    trustProxy: true,
   });
 
   // CORS: в dev разрешаем всё, в проде — только явно заданный FRONTEND_URL (или same-origin)
@@ -50,14 +51,12 @@ export function buildApp() {
     credentials: true,
   });
 
-  // Rate limiting: только для API-эндпоинтов (/api/*), статику не ограничиваем
-  // 300 req/min — достаточно для нормального использования и E2E-тестов
+  // Rate limiting: global: false — применяется ТОЛЬКО к маршрутам с явным config.rateLimit
+  // Глобальный лимит по IP нежизнеспособен за прокси Timeweb (shared IP)
+  // Лимиты стоят только на дорогих операциях: отправка сообщений, генерация медиа
   app.register(rateLimit, {
-    max: 300,
-    timeWindow: "1 minute",
-    keyGenerator: (request: FastifyRequest) => request.ip,
-    allowList: (request: FastifyRequest) => !request.url.startsWith("/api/"),
-    errorResponseBuilder: (_req: FastifyRequest) => ({
+    global: false,
+    errorResponseBuilder: () => ({
       ok: false,
       error: "Слишком много запросов. Подождите немного и попробуйте снова.",
     }),
@@ -67,18 +66,14 @@ export function buildApp() {
   app.register(registerRoutes);
 
   // Путь к собранному фронтенду: apps/web/dist
-  // Из apps/api/dist/server.js → ../../web/dist
   const webDistPath = path.join(__dirname, "../../web/dist");
 
   if (fs.existsSync(webDistPath)) {
-    // Раздаём статические файлы (JS, CSS, картинки) — с долгим кешем (content-hashed имена)
     app.register(fastifyStatic, {
       root: webDistPath,
       prefix: "/",
     });
 
-    // Все маршруты которые не нашли файл → отдаём index.html (React Router)
-    // index.html не кешируем, чтобы браузер сразу видел новый бандл
     app.setNotFoundHandler((_req, reply) => {
       reply
         .header("Cache-Control", "no-cache, no-store, must-revalidate")

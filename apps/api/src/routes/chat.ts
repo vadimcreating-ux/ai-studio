@@ -403,7 +403,8 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, reply: result.reply };
   });
 
-  app.post("/api/chat/:chatId/send", async (request, reply) => {
+  // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
+  app.post("/api/chat/:chatId/send", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const { chatId } = request.params as { chatId: string };
     const parsed = SendMessageSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });

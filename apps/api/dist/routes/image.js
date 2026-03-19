@@ -4,8 +4,8 @@ import { FilesQuerySchema } from "../lib/validation.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map();
 export async function imageRoutes(app) {
-    // Генерация изображения — создание задачи
-    app.post("/api/image/generate", async (request, reply) => {
+    // Генерация изображения — 10 запросов в минуту (дорогая операция)
+    app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
         const body = request.body;
         const apiKey = process.env.KIE_API_KEY;
         if (!apiKey) {
