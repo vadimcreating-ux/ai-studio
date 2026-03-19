@@ -8,22 +8,36 @@ const ENGINES = [
 
 for (const engine of ENGINES) {
   test.describe(`Chat: ${engine.label}`, () => {
+    // Запоминаем чаты которые были ДО теста, чтобы удалить только созданные тестом
+    let existingChatIds = new Set<string>();
+
+    test.beforeAll(async ({ request }) => {
+      const res = await request.get(`/api/chat/list?module=${engine.name}&limit=200`);
+      const data = await res.json();
+      existingChatIds = new Set((data.chats ?? []).map((c: { id: string }) => c.id));
+    });
+
+    test.afterAll(async ({ request }) => {
+      const res = await request.get(`/api/chat/list?module=${engine.name}&limit=200`);
+      const data = await res.json();
+      const testChats = (data.chats ?? []).filter((c: { id: string }) => !existingChatIds.has(c.id));
+      for (const chat of testChats) {
+        await request.delete(`/api/chat/${chat.id}`).catch(() => {});
+      }
+    });
+
     test.beforeEach(async ({ page }) => {
       await page.goto(engine.url);
       await page.waitForLoadState("load");
     });
 
     test("отображается 3 панели (проекты / чат / история)", async ({ page }) => {
-      // Левая панель — проекты
       await expect(page.getByText(/Проект/i).first()).toBeVisible();
-      // Центральная — поле ввода
       await expect(page.locator("textarea")).toBeVisible();
-      // Правая — список чатов / история
       await expect(page.getByText(/Новый чат/i).first()).toBeVisible();
     });
 
     test("поле ввода сообщения активно и принимает текст", async ({ page }) => {
-      // Создаём новый чат чтобы textarea стала активной (без выбранного чата она disabled)
       await page.getByText(/Новый чат/i).first().click();
       await page.waitForTimeout(500);
 
@@ -41,7 +55,6 @@ for (const engine of ENGINES) {
     });
 
     test("выбор модели отображается в панели", async ({ page }) => {
-      // Модель отображается как текст (span) в правой панели PromptsPanel
       const models: Record<string, RegExp> = {
         claude:  /Claude Sonnet/i,
         chatgpt: /GPT-/i,
@@ -53,23 +66,36 @@ for (const engine of ENGINES) {
 }
 
 test.describe("Chat: отправка сообщения (Claude)", () => {
+  let existingChatIds = new Set<string>();
+
+  test.beforeAll(async ({ request }) => {
+    const res = await request.get(`/api/chat/list?module=claude&limit=200`);
+    const data = await res.json();
+    existingChatIds = new Set((data.chats ?? []).map((c: { id: string }) => c.id));
+  });
+
+  test.afterAll(async ({ request }) => {
+    const res = await request.get(`/api/chat/list?module=claude&limit=200`);
+    const data = await res.json();
+    const testChats = (data.chats ?? []).filter((c: { id: string }) => !existingChatIds.has(c.id));
+    for (const chat of testChats) {
+      await request.delete(`/api/chat/${chat.id}`).catch(() => {});
+    }
+  });
+
   test("отправить сообщение и получить ответ", async ({ page }) => {
-    test.setTimeout(60_000); // KIE может отвечать долго
+    test.setTimeout(60_000);
 
     await page.goto("/claude");
     await page.waitForLoadState("networkidle");
 
-    // Создать новый чат
     await page.getByText(/Новый чат/i).first().click();
     await page.waitForTimeout(500);
 
     const textarea = page.locator("textarea").first();
     await textarea.fill("Ответь ровно одним словом: тест");
-
-    // Отправить — Enter или кнопка Send
     await textarea.press("Enter");
 
-    // Ждём появления ответа ассистента (роль assistant)
     await expect(
       page.locator('[data-role="assistant"], .message-assistant').first()
     ).toBeVisible({ timeout: 45_000 });
