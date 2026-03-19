@@ -10,7 +10,7 @@
  */
 
 const BASE_URL = (process.env.TEST_URL || "http://localhost:3000").replace(/\/$/, "");
-const TIMEOUT_MS = 30_000; // 30s на KIE-вызовы
+const TIMEOUT_MS = 60_000; // 60s на KIE-вызовы (gemini-2.5-pro бывает медленным)
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
@@ -268,7 +268,7 @@ async function main() {
     await runProjectsTests();
     await runChatTests("claude",  "claude-sonnet-4-5");
     await runChatTests("chatgpt", "gpt-5-2");
-    await runChatTests("gemini",  "gemini-2.0-flash");
+    await runChatTests("gemini",  "gemini-2.5-pro");
     await runImageTests();
   } finally {
     // Cleanup: удалить тестовые данные даже при ошибках

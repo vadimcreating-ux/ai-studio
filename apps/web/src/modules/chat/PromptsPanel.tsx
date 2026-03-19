@@ -15,7 +15,6 @@ const ENGINE_MODELS: Record<string, Array<{ value: string; label: string }>> = {
   ],
   gemini: [
     { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
   ],
 };
 

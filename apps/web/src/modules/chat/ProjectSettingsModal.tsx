@@ -14,7 +14,6 @@ const CHATGPT_MODELS = [
 
 const GEMINI_MODELS = [
   { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
 ];
 
 function getModels(module: string) {
