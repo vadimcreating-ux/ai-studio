@@ -43,11 +43,14 @@ export function buildApp() {
             : (process.env.FRONTEND_URL ?? false),
         credentials: true,
     });
-    // Rate limiting: 60 запросов в минуту на IP
+    // Rate limiting: только для API-эндпоинтов (/api/*), статику не ограничиваем
+    // 300 req/min — достаточно для нормального использования и E2E-тестов
     app.register(rateLimit, {
-        max: 60,
+        max: 300,
         timeWindow: "1 minute",
-        errorResponseBuilder: () => ({
+        keyGenerator: (request) => request.ip,
+        allowList: (request) => !request.url.startsWith("/api/"),
+        errorResponseBuilder: (_req) => ({
             ok: false,
             error: "Слишком много запросов. Подождите немного и попробуйте снова.",
         }),

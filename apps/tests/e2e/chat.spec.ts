@@ -10,7 +10,7 @@ for (const engine of ENGINES) {
   test.describe(`Chat: ${engine.label}`, () => {
     test.beforeEach(async ({ page }) => {
       await page.goto(engine.url);
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("load");
     });
 
     test("отображается 3 панели (проекты / чат / история)", async ({ page }) => {
@@ -23,6 +23,10 @@ for (const engine of ENGINES) {
     });
 
     test("поле ввода сообщения активно и принимает текст", async ({ page }) => {
+      // Создаём новый чат чтобы textarea стала активной (без выбранного чата она disabled)
+      await page.getByText(/Новый чат/i).first().click();
+      await page.waitForTimeout(500);
+
       const textarea = page.locator("textarea").first();
       await textarea.click();
       await textarea.fill("Привет, это E2E тест");
@@ -33,14 +37,17 @@ for (const engine of ENGINES) {
       const btn = page.getByText(/Новый чат/i).first();
       await expect(btn).toBeVisible();
       await btn.click();
-      // После клика фокус должен сброситься — чат сбрасывается
-      // Просто убеждаемся что не упало
       await expect(page.locator("textarea").first()).toBeVisible();
     });
 
     test("выбор модели отображается в панели", async ({ page }) => {
-      // Селект модели есть в правой панели
-      await expect(page.locator("select").first()).toBeVisible();
+      // Модель отображается как текст (span) в правой панели PromptsPanel
+      const models: Record<string, RegExp> = {
+        claude:  /Claude Sonnet/i,
+        chatgpt: /GPT-/i,
+        gemini:  /Gemini/i,
+      };
+      await expect(page.getByText(models[engine.name]).first()).toBeVisible();
     });
   });
 }
