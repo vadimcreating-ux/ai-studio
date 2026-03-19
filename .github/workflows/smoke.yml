@@ -2,7 +2,19 @@ name: Smoke Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, "claude/*"]
+
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Ветка для тестирования"
+        required: true
+        default: main
+        type: choice
+        options:
+          - main
+          - develop
+          - current
 
 jobs:
   smoke:
@@ -11,6 +23,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show tested branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual run: branch = ${{ github.event.inputs.branch }}"
+          else
+            echo "Auto run: push to ${{ github.ref_name }}"
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -41,5 +61,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-report
+          name: smoke-report-${{ github.ref_name }}-${{ github.run_number }}
           path: smoke-report-*.json
