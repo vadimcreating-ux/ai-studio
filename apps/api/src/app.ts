@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import rateLimit from "@fastify/rate-limit";
 import cors from "@fastify/cors";
+import fastifyJwt from "@fastify/jwt";
+import fastifyCookie from "@fastify/cookie";
 import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
@@ -41,6 +43,14 @@ export function buildApp() {
     bodyLimit: BODY_LIMIT,
     // Доверяем первому прокси (Timeweb) для корректного определения IP
     trustProxy: true,
+  });
+
+  // Cookies (нужно до JWT, чтобы парсить auth_token из cookie)
+  app.register(fastifyCookie);
+
+  // JWT: подписываем токены секретом из окружения
+  app.register(fastifyJwt, {
+    secret: process.env.JWT_SECRET ?? "dev-secret-change-in-production",
   });
 
   // CORS: в dev разрешаем всё, в проде — только явно заданный FRONTEND_URL (или same-origin)

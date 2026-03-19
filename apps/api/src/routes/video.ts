@@ -1,6 +1,27 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import { dbQuery } from "../lib/db.js";
+import { authenticate } from "../lib/auth.js";
+
+
+async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
+  const priceRes = await dbQuery("SELECT credits FROM credit_prices WHERE operation = $1", [operation]);
+  const cost = Number(priceRes.rows[0]?.credits ?? 0);
+  if (cost === 0) return true;
+  const result = await dbQuery(
+    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance",
+    [cost, userId]
+  );
+  if (result.rows.length === 0) {
+    reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
+    return false;
+  }
+  await dbQuery(
+    "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
+    [userId, -cost, operation, `Запрос к ${operation}`]
+  );
+  return true;
+}
 
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 
@@ -30,8 +51,14 @@ async function saveVideoToFiles(data: {
 }
 
 export async function videoRoutes(app: FastifyInstance) {
+  app.addHook("preHandler", authenticate);
+
   // Генерация видео — 5 запросов в минуту (очень дорогая операция)
   app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const user = request.authUser!;
+    const creditsOk = await deductCredits(user.userId, "video_generate", reply);
+    if (!creditsOk) return;
+
     const body = request.body as {
       model?: string;
       prompt?: string;

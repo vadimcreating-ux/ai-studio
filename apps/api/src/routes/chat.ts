@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { dbQuery } from "../lib/db.js";
+import { authenticate } from "../lib/auth.js";
 import {
   CreateChatSchema,
   UpdateChatSchema,
@@ -7,6 +8,28 @@ import {
   EditMessageSchema,
   ChatListQuerySchema,
 } from "../lib/validation.js";
+
+
+// Atomic credit check + deduction. Returns false and sends error if insufficient.
+async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
+  const priceRes = await dbQuery("SELECT credits FROM credit_prices WHERE operation = $1", [operation]);
+  const cost = Number(priceRes.rows[0]?.credits ?? 0);
+  if (cost === 0) return true;
+
+  const result = await dbQuery(
+    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance",
+    [cost, userId]
+  );
+  if (result.rows.length === 0) {
+    reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
+    return false;
+  }
+  await dbQuery(
+    "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
+    [userId, -cost, operation, `Запрос к ${operation}`]
+  );
+  return true;
+}
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const DEFAULT_MODEL: Record<string, string> = {
@@ -217,43 +240,50 @@ async function callKieAI({
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 export async function chatRoutes(app: FastifyInstance) {
+  app.addHook("preHandler", authenticate);
 
   app.post("/api/chat/new", async (request, reply) => {
+    const user = request.authUser!;
     const parsed = CreateChatSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
     const body = parsed.data;
     const module = body.module ?? "claude";
     const result = await dbQuery(
-      `INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO chats (module, model, title, project_id, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [
         module,
         body.model ?? DEFAULT_MODEL[module] ?? DEFAULT_MODEL.claude,
         body.title ?? "Новый чат",
         body.project_id ?? null,
+        user.userId,
       ]
     );
     return { ok: true, chat: result.rows[0] };
   });
 
   app.get("/api/chat/list", async (request, reply) => {
+    const user = request.authUser!;
     const parsed = ChatListQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные параметры" });
     const { module, project_id, limit, offset } = parsed.data;
     const mod = module ?? "claude";
 
+    // Admin sees all chats; regular users see only their own (+ legacy null user_id chats)
+    const userFilter = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
+
     const result = project_id
       ? await dbQuery(
-          `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+          `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ${userFilter} ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
           [mod, project_id, limit, offset]
         )
       : await dbQuery(
-          `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+          `SELECT * FROM chats WHERE module = $1 ${userFilter} ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
           [mod, limit, offset]
         );
 
     const totalResult = project_id
-      ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2`, [mod, project_id])
-      : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1`, [mod]);
+      ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2 ${userFilter}`, [mod, project_id])
+      : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 ${userFilter}`, [mod]);
 
     return {
       ok: true,
@@ -333,6 +363,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
   // Regenerate: delete target message + all after it, then re-call KIE
   app.post("/api/chat/:chatId/messages/:messageId/regenerate", async (request, reply) => {
+    const user = request.authUser!;
     const { chatId, messageId } = request.params as { chatId: string; messageId: string };
 
     const apiKey = process.env.KIE_API_KEY;
@@ -382,6 +413,11 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const lastUserMsg = history[history.length - 1];
 
+    // Check and deduct credits for regeneration
+    const regenOperation = `chat_${chat.module}`;
+    const creditsOk = await deductCredits(user.userId, regenOperation, reply);
+    if (!creditsOk) return;
+
     const result = await callKieAI({
       module: chat.module,
       model: chat.model,
@@ -405,6 +441,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
   // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
   app.post("/api/chat/:chatId/send", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const user = request.authUser!;
     const { chatId } = request.params as { chatId: string };
     const parsed = SendMessageSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
@@ -421,6 +458,11 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
     }
     const chat = chatRes.rows[0] as { module: string; model: string };
+
+    // Check and deduct credits before calling KIE
+    const operation = `chat_${chat.module}` as string;
+    const ok = await deductCredits(user.userId, operation, reply);
+    if (!ok) return;
 
     const [settingsRes, historyRes] = await Promise.all([
       dbQuery(`SELECT * FROM engine_settings WHERE engine = $1`, [chat.module]),

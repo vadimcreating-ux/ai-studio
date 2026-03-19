@@ -4,7 +4,9 @@ import ReactDOM from "react-dom";
 import {
   Image, Video, Music,
   FolderOpen, Settings, Cpu, Bot, Sparkles, Zap, ChevronDown, MessageSquare,
+  Coins, LogOut, ShieldCheck, User,
 } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
 const chatRoutes = [
   { to: "/claude",  label: "Claude",  icon: <Cpu      size={16} /> },
@@ -94,6 +96,71 @@ function ChatDropdown() {
   );
 }
 
+function UserMenu() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  if (!user) return null;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
+      >
+        <Coins size={14} className="text-accent" />
+        <span className="font-medium">{user.credits_balance.toLocaleString()}</span>
+        <div className="w-px h-4 bg-border" />
+        <User size={14} className="text-muted" />
+        <span className="text-muted max-w-[100px] truncate">{user.name}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-panel border border-border rounded-xl shadow-xl min-w-[200px] py-1">
+          <div className="px-4 py-2 border-b border-border">
+            <div className="text-white text-sm font-medium truncate">{user.name}</div>
+            <div className="text-muted text-xs truncate">{user.email}</div>
+            <div className="flex items-center gap-1 mt-1">
+              <Coins size={12} className="text-accent" />
+              <span className="text-sm text-white font-medium">{user.credits_balance.toLocaleString()}</span>
+              <span className="text-xs text-muted">кредитов</span>
+            </div>
+          </div>
+
+          {user.role === "admin" && (
+            <button
+              onClick={() => { navigate("/admin"); setOpen(false); }}
+              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
+            >
+              <ShieldCheck size={14} />
+              Панель администратора
+            </button>
+          )}
+
+          <button
+            onClick={() => { logout(); setOpen(false); }}
+            className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
+          >
+            <LogOut size={14} />
+            Выйти
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TopNav() {
   return (
     <header className="flex items-center h-[72px] border-b border-border bg-panel shrink-0 px-5 gap-1">
@@ -150,6 +217,12 @@ export default function TopNav() {
           </NavLink>
         ))}
       </div>
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* User menu */}
+      <UserMenu />
     </header>
   );
 }

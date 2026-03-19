@@ -1,14 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
+import { authenticate } from "../lib/auth.js";
 import { CreateProjectSchema, UpdateProjectSchema } from "../lib/validation.js";
 
+
 export async function projectRoutes(app: FastifyInstance) {
+  app.addHook("preHandler", authenticate);
+
   app.get("/api/projects", async (request) => {
+    const user = request.authUser!;
     const query = request.query as { module?: string };
     const module = query?.module?.trim() || "claude";
 
+    const userFilter = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
+
     const result = await dbQuery(
-      `SELECT * FROM projects WHERE module = $1 ORDER BY created_at ASC`,
+      `SELECT * FROM projects WHERE module = $1 ${userFilter} ORDER BY created_at ASC`,
       [module]
     );
 
@@ -16,13 +23,14 @@ export async function projectRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/projects", async (request, reply) => {
+    const user = request.authUser!;
     const parsed = CreateProjectSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
     const body = parsed.data;
 
     const result = await dbQuery(
-      `INSERT INTO projects (module, name, description, model, system_prompt, style, memory, context_files)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      `INSERT INTO projects (module, name, description, model, system_prompt, style, memory, context_files, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         body.module ?? "claude",
         body.name,
@@ -32,6 +40,7 @@ export async function projectRoutes(app: FastifyInstance) {
         body.style ?? "",
         body.memory ?? "",
         JSON.stringify(body.context_files ?? []),
+        user.userId,
       ]
     );
 
@@ -39,10 +48,13 @@ export async function projectRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/projects/:id", async (request, reply) => {
+    const user = request.authUser!;
     const params = request.params as { id: string };
     const parsed = UpdateProjectSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
     const body = parsed.data;
+
+    const ownerCheck = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
 
     const result = await dbQuery(
       `UPDATE projects
@@ -54,7 +66,7 @@ export async function projectRoutes(app: FastifyInstance) {
          style = COALESCE($5, style),
          memory = COALESCE($6, memory),
          context_files = COALESCE($7, context_files)
-       WHERE id = $8 RETURNING *`,
+       WHERE id = $8 ${ownerCheck} RETURNING *`,
       [
         body.name ?? null,
         body.description ?? null,
@@ -75,8 +87,10 @@ export async function projectRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/projects/:id", async (request) => {
+    const user = request.authUser!;
     const params = request.params as { id: string };
-    await dbQuery(`DELETE FROM projects WHERE id = $1`, [params.id]);
+    const ownerCheck = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
+    await dbQuery(`DELETE FROM projects WHERE id = $1 ${ownerCheck}`, [params.id]);
     return { ok: true };
   });
 }

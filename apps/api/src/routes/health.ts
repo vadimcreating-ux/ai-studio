@@ -1,24 +1,22 @@
 import type { FastifyInstance } from "fastify";
+import { authenticate, requireAdmin } from "../lib/auth.js";
 
 export async function healthRoutes(app: FastifyInstance) {
+  // Public health check — no auth
   app.get("/health", async () => {
-    return {
-      ok: true,
-      service: "ai-studio-api"
-    };
+    return { ok: true, service: "ai-studio-api" };
   });
 
-  app.get("/api/kie-balance", async () => {
+  // KIE balance — admin only
+  app.get("/api/kie-balance", { preHandler: [authenticate, requireAdmin] }, async () => {
     const apiKey = process.env.KIE_API_KEY;
     if (!apiKey) return { ok: true, balance: null, reason: "no_key" };
 
     try {
-      // Официальный endpoint из документации KIE API
       const res = await fetch("https://api.kie.ai/api/v1/chat/credit", {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!res.ok) return { ok: true, balance: null };
-      // Ответ: { "code": 200, "msg": "success", "data": 100 }
       const data = await res.json() as { code?: number; msg?: string; data?: unknown };
       return { ok: true, balance: data.data ?? null };
     } catch {
