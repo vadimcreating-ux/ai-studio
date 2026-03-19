@@ -83,33 +83,50 @@ await dbQuery(`
 
 ---
 
-## KIE API — критически важно не менять
+## KIE API — единственный внешний API, критически важно не менять
 
-Весь AI-функционал идёт через **KIE API** (`https://api.kie.ai`). Авторизация: `Authorization: Bearer ${KIE_API_KEY}`.
+Весь AI-функционал идёт исключительно через **KIE API** (`https://api.kie.ai`).
+Единственный нужный ключ: `KIE_API_KEY`. Других API-ключей (OpenAI, Google, Anthropic) нет и быть не должно.
 
-### Модуль claude — Anthropic Messages API
+Авторизация везде: `Authorization: Bearer ${KIE_API_KEY}`
 
-**Эндпоинт:** `POST https://api.kie.ai/claude/v1/messages`
+### Роутинг чатов по движку — `apps/api/src/routes/chat.ts`
 
+Функция `callKieAI()` роутит запрос в зависимости от `chat.module`:
+
+| Движок | KIE эндпоинт | Формат |
+|---|---|---|
+| `claude` | `POST /claude/v1/messages` | **Anthropic Messages API** |
+| `chatgpt` | `POST /{model}/v1/chat/completions` | **OpenAI Chat Completions** |
+| `gemini` | `POST /{model}/v1/chat/completions` | **OpenAI Chat Completions** |
+
+#### Claude — Anthropic Messages API
 ```json
-// Запрос (стандартный Anthropic формат)
+// Запрос
 { "model": "claude-sonnet-4-5", "messages": [...], "system": "...", "stream": false }
-
 // Ответ
 { "content": [{ "type": "text", "text": "..." }] }
 ```
+**❌ НЕ менять** claude на OpenAI формат — сломает все claude-чаты.
 
-**❌ НЕ МЕНЯТЬ** на OpenAI-совместимый формат (`/v1/chat/completions`, `role: "system"` в messages и т.д.) — это сломает все чаты.
+#### ChatGPT / Gemini — OpenAI Chat Completions
+```
+POST https://api.kie.ai/{model}/v1/chat/completions
+```
+```json
+// Запрос — system идёт как первый message с role "system"
+{ "messages": [{ "role": "system", "content": [{"type":"text","text":"..."}] }, ...], "stream": false }
+// Ответ
+{ "choices": [{ "message": { "content": "..." } }] }
+```
 
-Логика вызова: `apps/api/src/routes/chat.ts`
+#### Ошибки KIE
+KIE может вернуть HTTP 200, но с ошибкой внутри: `{ code: number, msg: string }` — всегда проверяй `data.code !== 200`.
 
-Ошибки KIE: могут приходить как HTTP 200 с `{ code: number, msg: string }` — всегда проверяй `data.code`.
-
-### Остальные модули (image, video, prompt improvement)
-
+### Image / Video генерация
 - Генерация: `POST https://api.kie.ai/api/v1/jobs/createTask`
 - Статус: `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=X`
-- Улучшение промптов: `POST https://api.kie.ai/gpt-5-2/v1/chat/completions` (OpenAI-формат — только для этого эндпоинта)
+- Улучшение промптов: `POST https://api.kie.ai/gpt-5-2/v1/chat/completions` (OpenAI-формат)
 - Баланс: `GET https://api.kie.ai/api/v1/chat/credit`
 
 ---

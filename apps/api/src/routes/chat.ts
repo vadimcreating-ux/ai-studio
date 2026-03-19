@@ -2,7 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5";
+const DEFAULT_MODEL: Record<string, string> = {
+  claude:  "claude-sonnet-4-5",
+  chatgpt: "gpt-5-2",
+  gemini:  "gemini-2.5-pro",
+};
 
 const URL_REGEX = /https?:\/\/[^\s"'<>)\]]+/g;
 const MAX_URL_CONTENT_CHARS = 15000;
@@ -30,17 +34,173 @@ function extractUrls(text: string): string[] {
   return [...new Set(text.match(URL_REGEX) ?? [])];
 }
 
+// ─── KIE routing ────────────────────────────────────────────────────────────
+//
+// Claude  → Anthropic Messages API  POST /claude/v1/messages
+//           Response: { content: [{ type: "text", text }] }
+//
+// ChatGPT/Gemini → OpenAI Chat Completions  POST /{model}/v1/chat/completions
+//           Response: { choices: [{ message: { content } }] }
+//
+// ВАЖНО: не менять этот роутинг без явного подтверждения!
+// ────────────────────────────────────────────────────────────────────────────
+
+type KieFile = { dataUrl: string; mimeType: string; name: string };
+
+async function callKieAI({
+  module, model, systemText, history, userText, files, webSearch, apiKey, log,
+}: {
+  module: string;
+  model: string;
+  systemText: string;
+  history: Array<{ role: string; content: string }>;
+  userText: string;
+  files?: KieFile[];
+  webSearch?: boolean;
+  apiKey: string;
+  log: FastifyInstance["log"];
+}): Promise<{ reply: string } | { error: string; status: number }> {
+
+  if (module === "claude") {
+    // ── Anthropic Messages API ──────────────────────────────────────────────
+    type Msg = { role: string; content: string | unknown[] };
+    const messages: Msg[] = history.map((r) => ({ role: r.role, content: r.content }));
+
+    // Build current user content block (text + optional files)
+    if (files && files.length > 0) {
+      const parts: unknown[] = [{ type: "text", text: userText }];
+      for (const f of files) {
+        if (f.mimeType.startsWith("image/")) {
+          const base64 = f.dataUrl.split(",")[1] ?? f.dataUrl;
+          parts.push({ type: "image", source: { type: "base64", media_type: f.mimeType, data: base64 } });
+        } else {
+          const base64 = f.dataUrl.split(",")[1] ?? "";
+          const decoded = Buffer.from(base64, "base64").toString("utf-8");
+          parts.push({ type: "text", text: `\n\n[${f.name}]\n${decoded}` });
+        }
+      }
+      messages.push({ role: "user", content: parts });
+    } else {
+      messages.push({ role: "user", content: userText });
+    }
+
+    const requestBody: Record<string, unknown> = { model, messages, stream: false };
+    if (systemText) requestBody.system = systemText;
+    if (webSearch) {
+      requestBody.tools = [{
+        name: "googleSearch",
+        description: "Search the internet for current information",
+        input_schema: {
+          type: "object",
+          properties: { query: { type: "string", description: "Search query" } },
+          required: ["query"],
+        },
+      }];
+    }
+
+    const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      log.error(`kie.ai claude error ${res.status}: ${err}`);
+      return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
+    }
+    const raw = await res.text();
+    log.info(`kie.ai claude response: ${raw.slice(0, 1000)}`);
+    const data = JSON.parse(raw) as Record<string, unknown>;
+
+    if (typeof data.code === "number" && data.code !== 200) {
+      return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
+    }
+    const blocks = data.content;
+    let reply = "";
+    if (Array.isArray(blocks)) {
+      reply = (blocks as Array<{ type?: string; text?: string }>)
+        .filter((b) => b.type === "text" && b.text)
+        .map((b) => b.text ?? "")
+        .join("").trim();
+    }
+    if (!reply) {
+      log.error(`kie.ai claude empty. Full: ${raw.slice(0, 2000)}`);
+      return { error: "Пустой ответ от kie.ai", status: 502 };
+    }
+    return { reply };
+
+  } else {
+    // ── OpenAI Chat Completions API (chatgpt / gemini) ──────────────────────
+    type Msg = { role: string; content: string | unknown[] };
+    const messages: Msg[] = [];
+
+    if (systemText) {
+      messages.push({ role: "system", content: [{ type: "text", text: systemText }] });
+    }
+    for (const r of history) {
+      messages.push({ role: r.role, content: r.content });
+    }
+
+    // Build current user content (text + optional files in OpenAI format)
+    if (files && files.length > 0) {
+      const parts: unknown[] = [{ type: "text", text: userText }];
+      for (const f of files) {
+        if (f.mimeType.startsWith("image/")) {
+          parts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+        } else {
+          const base64 = f.dataUrl.split(",")[1] ?? "";
+          const decoded = Buffer.from(base64, "base64").toString("utf-8");
+          parts.push({ type: "text", text: `\n\n[${f.name}]\n${decoded}` });
+        }
+      }
+      messages.push({ role: "user", content: parts });
+    } else {
+      messages.push({ role: "user", content: [{ type: "text", text: userText }] });
+    }
+
+    const res = await fetch(`${KIE_BASE_URL}/${model}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({ messages, stream: false }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      log.error(`kie.ai ${module} error ${res.status}: ${err}`);
+      return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
+    }
+    const raw = await res.text();
+    log.info(`kie.ai ${module} response: ${raw.slice(0, 1000)}`);
+    const data = JSON.parse(raw) as Record<string, unknown>;
+
+    if (typeof data.code === "number" && data.code !== 200) {
+      return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
+    }
+    const reply = (data as { choices?: Array<{ message?: { content?: string } }> })
+      .choices?.[0]?.message?.content?.trim() ?? "";
+    if (!reply) {
+      log.error(`kie.ai ${module} empty. Full: ${raw.slice(0, 2000)}`);
+      return { error: "Пустой ответ от kie.ai", status: 502 };
+    }
+    return { reply };
+  }
+}
+
+// ─── Routes ─────────────────────────────────────────────────────────────────
+
 export async function chatRoutes(app: FastifyInstance) {
 
   app.post("/api/chat/new", async (request) => {
     const body = request.body as {
       module?: string; model?: string; title?: string; project_id?: string;
     };
+    const module = body?.module?.trim() || "claude";
     const result = await dbQuery(
       `INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`,
       [
-        body?.module?.trim() || "claude",
-        body?.model?.trim() || DEFAULT_CLAUDE_MODEL,
+        module,
+        body?.model?.trim() || DEFAULT_MODEL[module] || DEFAULT_MODEL.claude,
         body?.title?.trim() || "Новый чат",
         body?.project_id?.trim() || null,
       ]
@@ -146,13 +306,11 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const targetMsg = msgRes.rows[0] as { created_at: string };
 
-    // History before the target message
     const historyRes = await dbQuery(
       `SELECT role, content FROM chat_messages WHERE chat_id = $1 AND created_at < $2 ORDER BY created_at ASC`,
       [chatId, targetMsg.created_at]
     );
 
-    // Delete target + everything after
     await dbQuery(
       `DELETE FROM chat_messages WHERE chat_id = $1 AND created_at >= $2`,
       [chatId, targetMsg.created_at]
@@ -165,67 +323,53 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const [chatRes, settingsRes] = await Promise.all([
       dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]),
-      dbQuery(`SELECT * FROM engine_settings WHERE engine = 'claude'`, []),
+      // will be loaded after we know the module
+      Promise.resolve(null),
     ]);
     if (chatRes.rows.length === 0)
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
 
-    const settings = settingsRes.rows[0];
+    const chat = chatRes.rows[0] as { module: string; model: string };
+    const settingsRow = await dbQuery(
+      `SELECT * FROM engine_settings WHERE engine = $1`,
+      [chat.module]
+    );
+
+    const settings = settingsRow.rows[0];
     const systemParts: string[] = [];
     if (settings?.about?.trim())        systemParts.push(settings.about.trim());
     if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
     if (settings?.memory?.trim())       systemParts.push(`Память:\n${settings.memory.trim()}`);
 
-    const requestBody: Record<string, unknown> = {
-      model: chatRes.rows[0].model as string,
-      messages: history.map((r) => ({ role: r.role, content: r.content })),
-      stream: false,
-    };
-    if (systemParts.length > 0) requestBody.system = systemParts.join("\n\n");
+    // Last user message text (for regeneration context)
+    const lastUserMsg = history[history.length - 1];
 
-    const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify(requestBody),
+    const result = await callKieAI({
+      module: chat.module,
+      model: chat.model,
+      systemText: systemParts.join("\n\n"),
+      history: history.slice(0, -1), // all except the last user msg
+      userText: lastUserMsg.content,
+      apiKey,
+      log: app.log,
     });
 
-    if (!kieRes.ok) {
-      const errText = await kieRes.text();
-      app.log.error(`kie.ai error ${kieRes.status}: ${errText}`);
-      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
-    }
-
-    const rawBody = await kieRes.text();
-    const data = JSON.parse(rawBody) as Record<string, unknown>;
-    if (typeof data.code === "number" && data.code !== 200) {
-      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${data.msg} (code ${data.code})` });
-    }
-
-    const contentBlocks = data.content;
-    let assistantReply = "";
-    if (Array.isArray(contentBlocks)) {
-      assistantReply = (contentBlocks as Array<{ type?: string; text?: string }>)
-        .filter((b) => b.type === "text" && b.text)
-        .map((b) => b.text ?? "")
-        .join("")
-        .trim();
-    }
-    if (!assistantReply) {
-      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai" });
+    if ("error" in result) {
+      return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, assistantReply]
+      [chatId, result.reply]
     );
-    return { ok: true, reply: assistantReply };
+    return { ok: true, reply: result.reply };
   });
 
   app.post("/api/chat/:chatId/send", async (request, reply) => {
     const { chatId } = request.params as { chatId: string };
     const body = request.body as {
       message: string;
-      files?: Array<{ dataUrl: string; mimeType: string; name: string }>;
+      files?: KieFile[];
       webSearch?: boolean;
     };
 
@@ -239,20 +383,19 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
     }
 
-    // Load chat info + engine settings (system prompt)
-    const [chatRes, settingsRes, historyRes] = await Promise.all([
-      dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]),
-      dbQuery(`SELECT * FROM engine_settings WHERE engine = 'claude'`, []),
-      dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [chatId]),
-    ]);
-
+    // Load chat + engine settings for the correct engine + history
+    const chatRes = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]);
     if (chatRes.rows.length === 0) {
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
     }
+    const chat = chatRes.rows[0] as { module: string; model: string };
+
+    const [settingsRes, historyRes] = await Promise.all([
+      dbQuery(`SELECT * FROM engine_settings WHERE engine = $1`, [chat.module]),
+      dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [chatId]),
+    ]);
 
     const settings = settingsRes.rows[0];
-
-    // Build system prompt from engine settings
     const systemParts: string[] = [];
     if (settings?.about?.trim())        systemParts.push(settings.about.trim());
     if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
@@ -271,115 +414,33 @@ export async function chatRoutes(app: FastifyInstance) {
       systemParts.push(`Содержимое URL из промпта:\n\n${fetched.join("\n\n")}`);
     }
 
-    // Build messages array (Anthropic Messages API format — no system role in messages)
-    type KieMessage = { role: string; content: string | unknown[] };
-    const messages: KieMessage[] = [];
-
-    // History (only user/assistant roles)
-    for (const row of historyRes.rows) {
-      messages.push({ role: row.role, content: row.content });
-    }
-
-    // Current user message (with optional files)
-    if (body.files && body.files.length > 0) {
-      const contentParts: unknown[] = [{ type: "text", text: userText }];
-      for (const f of body.files) {
-        if (f.mimeType.startsWith("image/")) {
-          // Anthropic image block format
-          const base64Data = f.dataUrl.split(",")[1] ?? f.dataUrl;
-          contentParts.push({
-            type: "image",
-            source: { type: "base64", media_type: f.mimeType, data: base64Data },
-          });
-        } else {
-          // text files — append as plain text block
-          const base64 = f.dataUrl.split(",")[1] ?? "";
-          const decoded = Buffer.from(base64, "base64").toString("utf-8");
-          contentParts.push({ type: "text", text: `\n\n[${f.name}]\n${decoded}` });
-        }
-      }
-      messages.push({ role: "user", content: contentParts });
-    } else {
-      messages.push({ role: "user", content: userText });
-    }
-
     // Save user message to DB
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'user', $2)`,
       [chatId, userText]
     );
 
-    const chatModel = chatRes.rows[0].model as string;
-
-    // KIE Anthropic Messages API: POST /claude/v1/messages
-    const requestBody: Record<string, unknown> = {
-      model: chatModel,
-      messages,
-      stream: false,
-    };
-    if (systemParts.length > 0) {
-      requestBody.system = systemParts.join("\n\n");
-    }
-    if (body.webSearch) {
-      requestBody.tools = [{
-        name: "googleSearch",
-        description: "Search the internet for current information",
-        input_schema: {
-          type: "object",
-          properties: { query: { type: "string", description: "Search query" } },
-          required: ["query"],
-        },
-      }];
-    }
-
-    const kieRes = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
+    const result = await callKieAI({
+      module: chat.module,
+      model: chat.model,
+      systemText: systemParts.join("\n\n"),
+      history: historyRes.rows as Array<{ role: string; content: string }>,
+      userText,
+      files: body.files,
+      webSearch: body.webSearch,
+      apiKey,
+      log: app.log,
     });
 
-    if (!kieRes.ok) {
-      const errText = await kieRes.text();
-      app.log.error(`kie.ai error ${kieRes.status}: ${errText}`);
-      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieRes.status}` });
+    if ("error" in result) {
+      return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    const rawBody = await kieRes.text();
-    app.log.info(`kie.ai response: ${rawBody.slice(0, 1000)}`);
-    const data = JSON.parse(rawBody) as Record<string, unknown>;
-
-    // KIE wraps application-level errors as HTTP 200 with { code, msg }
-    if (typeof data.code === "number" && data.code !== 200) {
-      const kieErr = `${data.msg ?? "unknown error"} (code ${data.code})`;
-      app.log.error(`kie.ai app error: ${kieErr}`);
-      return reply.status(502).send({ ok: false, error: `Ошибка kie.ai: ${kieErr}` });
-    }
-
-    // Anthropic Messages API response: { content: [{ type: "text", text: "..." }] }
-    const contentBlocks = data.content;
-    let assistantReply = "";
-    if (Array.isArray(contentBlocks)) {
-      assistantReply = (contentBlocks as Array<{ type?: string; text?: string }>)
-        .filter((b) => b.type === "text" && b.text)
-        .map((b) => b.text ?? "")
-        .join("")
-        .trim();
-    }
-
-    if (!assistantReply) {
-      app.log.error(`kie.ai returned empty content. Full response: ${rawBody.slice(0, 2000)}`);
-      return reply.status(502).send({ ok: false, error: "Пустой ответ от kie.ai", debug: rawBody.slice(0, 2000) });
-    }
-
-    // Save assistant reply to DB
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, assistantReply]
+      [chatId, result.reply]
     );
 
-    return { ok: true, reply: assistantReply };
+    return { ok: true, reply: result.reply };
   });
 }
