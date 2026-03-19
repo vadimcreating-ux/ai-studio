@@ -1,5 +1,6 @@
 import { saveImageToFiles, getFiles, deleteFileById, } from "../lib/files-store.js";
 import { dbQuery } from "../lib/db.js";
+import { FilesQuerySchema } from "../lib/validation.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map();
 export async function imageRoutes(app) {
@@ -176,9 +177,14 @@ export async function imageRoutes(app) {
             return reply.status(500).send({ ok: false, error: "Ошибка при скачивании файла" });
         }
     });
-    // Список файлов
-    app.get("/api/files", async () => {
-        return { ok: true, files: await getFiles() };
+    // Список файлов (с пагинацией)
+    app.get("/api/files", async (request, reply) => {
+        const parsed = FilesQuerySchema.safeParse(request.query);
+        if (!parsed.success)
+            return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные параметры" });
+        const { limit, offset } = parsed.data;
+        const { files, total } = await getFiles(limit, offset);
+        return { ok: true, files, total, limit, offset };
     });
     // Улучшение промпта через GPT
     app.post("/api/image/improve-prompt", async (request, reply) => {
