@@ -12,14 +12,18 @@
     "build": "npm run build -w apps/web && npm run build -w apps/api",
     "build:api": "npm run build -w apps/api",
     "build:web": "npm run build -w apps/web",
-    "test:smoke": "tsx apps/tests/smoke.ts"
+    "test:smoke": "tsx apps/tests/smoke.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
-    "fastify": "^5.0.0",
-    "typescript": "^5.6.0",
-    "tsx": "^4.19.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.6",
+    "fastify": "^5.0.0",
     "pg": "^8.20.0",
-    "@types/pg": "^8.15.6"
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
   }
 }

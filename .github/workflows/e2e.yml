@@ -1,0 +1,52 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, develop, "claude/*"]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: Run E2E tests against prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Wait for prod to be healthy
+        run: |
+          echo "Waiting for prod to respond..."
+          for i in $(seq 1 24); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://vadimcreating-ux-ai-studio-775d.twc1.net/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Prod is up!"
+              exit 0
+            fi
+            echo "Attempt $i/24: got HTTP $STATUS, waiting 10s..."
+            sleep 10
+          done
+          echo "Prod did not respond after 4 minutes"
+          exit 1
+
+      - name: Run E2E tests
+        run: TEST_URL=https://vadimcreating-ux-ai-studio-775d.twc1.net npm run test:e2e
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-${{ github.run_number }}
+          path: |
+            e2e-report.json
+            test-results/
