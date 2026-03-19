@@ -167,7 +167,7 @@ export default function ChatMessage({ message, engineLabel, onEdit, onDelete, on
 
   // Assistant message
   return (
-    <div className="group flex flex-col items-start mb-5">
+    <div data-role="assistant" className="group flex flex-col items-start mb-5">
       <div className="flex items-center justify-between w-full mb-1.5 px-1">
         <span className="text-[10px] font-semibold tracking-widest text-muted">
           {engineLabel.toUpperCase()}

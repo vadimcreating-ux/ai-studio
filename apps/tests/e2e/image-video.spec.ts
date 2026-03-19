@@ -43,7 +43,7 @@ test.describe("Image page", () => {
   });
 
   test("Улучшить промпт вызывает API и обновляет поле", async ({ page }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(60_000);
 
     const textarea = page.locator("textarea").first();
     await textarea.fill("кот");
@@ -52,7 +52,7 @@ test.describe("Image page", () => {
     await improveBtn.click();
 
     // Ждём изменения значения в textarea (prompting KIE)
-    await expect(textarea).not.toHaveValue("кот", { timeout: 25_000 });
+    await expect(textarea).not.toHaveValue("кот", { timeout: 50_000 });
     const newValue = await textarea.inputValue();
     expect(newValue.length).toBeGreaterThan(3);
   });
