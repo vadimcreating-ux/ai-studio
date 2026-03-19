@@ -1,10 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
+import { VALID_ENGINES, UpdateEngineSettingsSchema } from "../lib/validation.js";
 
 export async function engineSettingsRoutes(app: FastifyInstance) {
-  // Получить настройки движка
-  app.get("/api/engine-settings/:engine", async (request) => {
+  app.get("/api/engine-settings/:engine", async (request, reply) => {
     const { engine } = request.params as { engine: string };
+
+    if (!VALID_ENGINES.includes(engine as typeof VALID_ENGINES[number])) {
+      return reply.status(400).send({ ok: false, error: "Неизвестный движок" });
+    }
 
     const result = await dbQuery(
       `SELECT * FROM engine_settings WHERE engine = $1`,
@@ -18,14 +22,19 @@ export async function engineSettingsRoutes(app: FastifyInstance) {
     return { ok: true, settings: result.rows[0] };
   });
 
-  // Сохранить / обновить настройки движка
-  app.put("/api/engine-settings/:engine", async (request) => {
+  app.put("/api/engine-settings/:engine", async (request, reply) => {
     const { engine } = request.params as { engine: string };
-    const body = request.body as { about?: string; instructions?: string; memory?: string };
 
-    const about = body?.about ?? "";
-    const instructions = body?.instructions ?? "";
-    const memory = body?.memory ?? "";
+    if (!VALID_ENGINES.includes(engine as typeof VALID_ENGINES[number])) {
+      return reply.status(400).send({ ok: false, error: "Неизвестный движок" });
+    }
+
+    const parsed = UpdateEngineSettingsSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+
+    const about = parsed.data.about ?? "";
+    const instructions = parsed.data.instructions ?? "";
+    const memory = parsed.data.memory ?? "";
 
     await dbQuery(
       `INSERT INTO engine_settings (engine, about, instructions, memory, updated_at)

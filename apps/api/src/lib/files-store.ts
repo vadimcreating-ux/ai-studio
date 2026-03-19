@@ -77,16 +77,20 @@ export async function saveImageToFiles(data: {
   return mapRowToFileItem(fallback.rows[0]);
 }
 
-export async function getFiles(): Promise<FileItem[]> {
-  const result = await dbQuery(
-    `
-      SELECT id, task_id, type, name, url, created_at, source, prompt
-      FROM files
-      ORDER BY created_at DESC
-    `
-  );
+export async function getFiles(limit = 50, offset = 0): Promise<{ files: FileItem[]; total: number }> {
+  const [result, countResult] = await Promise.all([
+    dbQuery(
+      `SELECT id, task_id, type, name, url, created_at, source, prompt
+       FROM files ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    ),
+    dbQuery(`SELECT COUNT(*) FROM files`),
+  ]);
 
-  return result.rows.map(mapRowToFileItem);
+  return {
+    files: result.rows.map(mapRowToFileItem),
+    total: parseInt(countResult.rows[0].count, 10),
+  };
 }
 
 export async function deleteFileById(id: string): Promise<boolean> {

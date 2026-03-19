@@ -17,11 +17,19 @@ export type Message = {
   created_at: string;
 };
 
+export type ChatListResponse = {
+  ok: true;
+  chats: Chat[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export const chatApi = {
-  list: (module: string, project_id?: string) => {
-    const params = new URLSearchParams({ module });
+  list: (module: string, project_id?: string, limit = 50, offset = 0) => {
+    const params = new URLSearchParams({ module, limit: String(limit), offset: String(offset) });
     if (project_id) params.set("project_id", project_id);
-    return api.get<{ ok: true; chats: Chat[] }>(`/api/chat/list?${params}`);
+    return api.get<ChatListResponse>(`/api/chat/list?${params}`);
   },
 
   create: (data: { module: string; model?: string; title?: string; project_id?: string }) =>

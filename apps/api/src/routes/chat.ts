@@ -1,5 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
+import {
+  CreateChatSchema,
+  UpdateChatSchema,
+  SendMessageSchema,
+  EditMessageSchema,
+  ChatListQuerySchema,
+} from "../lib/validation.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const DEFAULT_MODEL: Record<string, string> = {
@@ -11,7 +18,27 @@ const DEFAULT_MODEL: Record<string, string> = {
 const URL_REGEX = /https?:\/\/[^\s"'<>)\]]+/g;
 const MAX_URL_CONTENT_CHARS = 15000;
 
+// SSRF-защита: разрешаем только публичные HTTP(S) URLs, блокируем приватные подсети и localhost
+const PRIVATE_IP_REGEX = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|0\.0\.0\.0)/i;
+
+function isSafeUrl(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    const host = url.hostname;
+    if (PRIVATE_IP_REGEX.test(host)) return false;
+    // Запрещаем IP-адреса (только доменные имена)
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchUrlContent(url: string): Promise<string> {
+  if (!isSafeUrl(url)) {
+    return `[URL пропущен по соображениям безопасности: ${url}]`;
+  }
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; AI-Studio-Bot/1.0)" },
@@ -191,37 +218,50 @@ async function callKieAI({
 
 export async function chatRoutes(app: FastifyInstance) {
 
-  app.post("/api/chat/new", async (request) => {
-    const body = request.body as {
-      module?: string; model?: string; title?: string; project_id?: string;
-    };
-    const module = body?.module?.trim() || "claude";
+  app.post("/api/chat/new", async (request, reply) => {
+    const parsed = CreateChatSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    const body = parsed.data;
+    const module = body.module ?? "claude";
     const result = await dbQuery(
       `INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`,
       [
         module,
-        body?.model?.trim() || DEFAULT_MODEL[module] || DEFAULT_MODEL.claude,
-        body?.title?.trim() || "Новый чат",
-        body?.project_id?.trim() || null,
+        body.model ?? DEFAULT_MODEL[module] ?? DEFAULT_MODEL.claude,
+        body.title ?? "Новый чат",
+        body.project_id ?? null,
       ]
     );
     return { ok: true, chat: result.rows[0] };
   });
 
-  app.get("/api/chat/list", async (request) => {
-    const q = request.query as { module?: string; project_id?: string };
-    const module = q?.module?.trim() || "claude";
-    const project_id = q?.project_id?.trim() || null;
+  app.get("/api/chat/list", async (request, reply) => {
+    const parsed = ChatListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные параметры" });
+    const { module, project_id, limit, offset } = parsed.data;
+    const mod = module ?? "claude";
+
     const result = project_id
       ? await dbQuery(
-          `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC`,
-          [module, project_id]
+          `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+          [mod, project_id, limit, offset]
         )
       : await dbQuery(
-          `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC`,
-          [module]
+          `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+          [mod, limit, offset]
         );
-    return { ok: true, chats: result.rows };
+
+    const totalResult = project_id
+      ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2`, [mod, project_id])
+      : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1`, [mod]);
+
+    return {
+      ok: true,
+      chats: result.rows,
+      total: parseInt(totalResult.rows[0].count, 10),
+      limit,
+      offset,
+    };
   });
 
   app.get("/api/chat/:chatId/messages", async (request) => {
@@ -235,14 +275,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
   app.patch("/api/chat/:chatId", async (request, reply) => {
     const { chatId } = request.params as { chatId: string };
-    const body = request.body as { model?: string; title?: string; project_id?: string | null };
+    const parsed = UpdateChatSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    const body = parsed.data;
 
     const updates: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
-    if (body.model !== undefined) { updates.push(`model = $${idx++}`); values.push(body.model.trim()); }
-    if (body.title !== undefined) { updates.push(`title = $${idx++}`); values.push(body.title.trim()); }
+    if (body.model !== undefined) { updates.push(`model = $${idx++}`); values.push(body.model); }
+    if (body.title !== undefined) { updates.push(`title = $${idx++}`); values.push(body.title); }
     if ("project_id" in body) { updates.push(`project_id = $${idx++}`); values.push(body.project_id ?? null); }
 
     if (updates.length === 0)
@@ -265,13 +307,12 @@ export async function chatRoutes(app: FastifyInstance) {
   // Edit a single message
   app.patch("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
     const { chatId, messageId } = request.params as { chatId: string; messageId: string };
-    const body = request.body as { content?: string };
-    const content = body.content?.trim();
-    if (!content) return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
+    const parsed = EditMessageSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
 
     const result = await dbQuery(
       `UPDATE chat_messages SET content = $1 WHERE id = $2 AND chat_id = $3 RETURNING *`,
-      [content, messageId, chatId]
+      [parsed.data.content, messageId, chatId]
     );
     if (result.rows.length === 0)
       return reply.status(404).send({ ok: false, error: "Сообщение не найдено" });
@@ -321,10 +362,8 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(400).send({ ok: false, error: "История должна заканчиваться сообщением пользователя" });
     }
 
-    const [chatRes, settingsRes] = await Promise.all([
+    const [chatRes] = await Promise.all([
       dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]),
-      // will be loaded after we know the module
-      Promise.resolve(null),
     ]);
     if (chatRes.rows.length === 0)
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
@@ -341,14 +380,13 @@ export async function chatRoutes(app: FastifyInstance) {
     if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
     if (settings?.memory?.trim())       systemParts.push(`Память:\n${settings.memory.trim()}`);
 
-    // Last user message text (for regeneration context)
     const lastUserMsg = history[history.length - 1];
 
     const result = await callKieAI({
       module: chat.module,
       model: chat.model,
       systemText: systemParts.join("\n\n"),
-      history: history.slice(0, -1), // all except the last user msg
+      history: history.slice(0, -1),
       userText: lastUserMsg.content,
       apiKey,
       log: app.log,
@@ -367,23 +405,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
   app.post("/api/chat/:chatId/send", async (request, reply) => {
     const { chatId } = request.params as { chatId: string };
-    const body = request.body as {
-      message: string;
-      files?: KieFile[];
-      webSearch?: boolean;
-    };
+    const parsed = SendMessageSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
 
     const apiKey = process.env.KIE_API_KEY;
     if (!apiKey) {
       return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
     }
 
-    const userText = body.message?.trim();
-    if (!userText) {
-      return reply.status(400).send({ ok: false, error: "Пустое сообщение" });
-    }
+    const { message: userText, files, webSearch } = parsed.data;
 
-    // Load chat + engine settings for the correct engine + history
     const chatRes = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]);
     if (chatRes.rows.length === 0) {
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
@@ -401,7 +432,7 @@ export async function chatRoutes(app: FastifyInstance) {
     if (settings?.instructions?.trim()) systemParts.push(settings.instructions.trim());
     if (settings?.memory?.trim())       systemParts.push(`Память:\n${settings.memory.trim()}`);
 
-    // Fetch URLs mentioned in system prompt or user message
+    // Fetch URLs mentioned in system prompt or user message (с SSRF-защитой)
     const allText = [...systemParts, userText].join("\n");
     const urls = extractUrls(allText);
     if (urls.length > 0) {
@@ -414,7 +445,6 @@ export async function chatRoutes(app: FastifyInstance) {
       systemParts.push(`Содержимое URL из промпта:\n\n${fetched.join("\n\n")}`);
     }
 
-    // Save user message to DB
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'user', $2)`,
       [chatId, userText]
@@ -426,8 +456,8 @@ export async function chatRoutes(app: FastifyInstance) {
       systemText: systemParts.join("\n\n"),
       history: historyRes.rows as Array<{ role: string; content: string }>,
       userText,
-      files: body.files,
-      webSearch: body.webSearch,
+      files,
+      webSearch,
       apiKey,
       log: app.log,
     });

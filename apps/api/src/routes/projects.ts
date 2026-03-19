@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
+import { CreateProjectSchema, UpdateProjectSchema } from "../lib/validation.js";
 
 export async function projectRoutes(app: FastifyInstance) {
   app.get("/api/projects", async (request) => {
@@ -15,36 +16,22 @@ export async function projectRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/projects", async (request, reply) => {
-    const body = request.body as {
-      module?: string;
-      name?: string;
-      description?: string;
-      model?: string;
-      system_prompt?: string;
-      style?: string;
-      memory?: string;
-      context_files?: Array<{ name: string; mimeType: string; dataUrl: string }>;
-    };
-
-    const module = body?.module?.trim() || "claude";
-    const name = body?.name?.trim();
-
-    if (!name) {
-      return reply.status(400).send({ ok: false, error: "Не указано имя проекта" });
-    }
+    const parsed = CreateProjectSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    const body = parsed.data;
 
     const result = await dbQuery(
       `INSERT INTO projects (module, name, description, model, system_prompt, style, memory, context_files)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [
-        module,
-        name,
-        body?.description || "",
-        body?.model || "",
-        body?.system_prompt || "",
-        body?.style || "",
-        body?.memory || "",
-        JSON.stringify(body?.context_files ?? []),
+        body.module ?? "claude",
+        body.name,
+        body.description ?? "",
+        body.model ?? "",
+        body.system_prompt ?? "",
+        body.style ?? "",
+        body.memory ?? "",
+        JSON.stringify(body.context_files ?? []),
       ]
     );
 
@@ -53,15 +40,9 @@ export async function projectRoutes(app: FastifyInstance) {
 
   app.put("/api/projects/:id", async (request, reply) => {
     const params = request.params as { id: string };
-    const body = request.body as {
-      name?: string;
-      description?: string;
-      model?: string;
-      system_prompt?: string;
-      style?: string;
-      memory?: string;
-      context_files?: Array<{ name: string; mimeType: string; dataUrl: string }>;
-    };
+    const parsed = UpdateProjectSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    const body = parsed.data;
 
     const result = await dbQuery(
       `UPDATE projects
@@ -75,13 +56,13 @@ export async function projectRoutes(app: FastifyInstance) {
          context_files = COALESCE($7, context_files)
        WHERE id = $8 RETURNING *`,
       [
-        body?.name ?? null,
-        body?.description ?? null,
-        body?.model ?? null,
-        body?.system_prompt ?? null,
-        body?.style ?? null,
-        body?.memory ?? null,
-        body?.context_files !== undefined ? JSON.stringify(body.context_files) : null,
+        body.name ?? null,
+        body.description ?? null,
+        body.model ?? null,
+        body.system_prompt ?? null,
+        body.style ?? null,
+        body.memory ?? null,
+        body.context_files !== undefined ? JSON.stringify(body.context_files) : null,
         params.id,
       ]
     );

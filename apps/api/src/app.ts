@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
+import rateLimit from "@fastify/rate-limit";
 import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
@@ -7,9 +8,23 @@ import { registerRoutes } from "./routes/index.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
+// 10 MB лимит на тело запроса (base64 файлы могут быть крупными)
+const BODY_LIMIT = 10 * 1024 * 1024;
+
 export function buildApp() {
   const app = Fastify({
     logger: true,
+    bodyLimit: BODY_LIMIT,
+  });
+
+  // Rate limiting: 60 запросов в минуту на IP
+  app.register(rateLimit, {
+    max: 60,
+    timeWindow: "1 minute",
+    errorResponseBuilder: () => ({
+      ok: false,
+      error: "Слишком много запросов. Подождите немного и попробуйте снова.",
+    }),
   });
 
   // Регистрируем API-маршруты
