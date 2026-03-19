@@ -11,7 +11,8 @@
     "start": "npm run start -w apps/api",
     "build": "npm run build -w apps/web && npm run build -w apps/api",
     "build:api": "npm run build -w apps/api",
-    "build:web": "npm run build -w apps/web"
+    "build:web": "npm run build -w apps/web",
+    "test:smoke": "tsx apps/tests/smoke.ts"
   },
   "dependencies": {
     "fastify": "^5.0.0",
