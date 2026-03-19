@@ -26,6 +26,9 @@ type TestResult = {
 const results: TestResult[] = [];
 const cleanup: Array<() => Promise<void>> = [];
 
+// Глобальный cookie для авторизованных запросов
+let authCookie = "";
+
 async function test(name: string, fn: () => Promise<void>): Promise<void> {
   const start = Date.now();
   try {
@@ -44,9 +47,13 @@ async function test(name: string, fn: () => Promise<void>): Promise<void> {
 
 async function api(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
   const hasBody = body !== undefined;
+  const headers: Record<string, string> = {};
+  if (hasBody) headers["Content-Type"] = "application/json";
+  if (authCookie) headers["Cookie"] = authCookie;
+
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: hasBody ? { "Content-Type": "application/json" } : {},
+    headers,
     body: hasBody ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
@@ -70,6 +77,40 @@ function assert(condition: boolean, message: string): void {
 
 // ─── Тест-группы ─────────────────────────────────────────────────────────────
 
+async function runAuthSetup() {
+  console.log("\n── Auth Setup ───────────────────────────────────────────");
+
+  const email = process.env.TEST_EMAIL;
+  const password = process.env.TEST_PASSWORD;
+
+  if (!email || !password) {
+    console.log("  ⚠  TEST_EMAIL / TEST_PASSWORD не заданы — пропускаем авторизованные тесты");
+    console.log("     Задай переменные: TEST_EMAIL=... TEST_PASSWORD=... npm run test:smoke");
+    return false;
+  }
+
+  let loginOk = false;
+  await test("POST /api/auth/login — авторизация тестового пользователя", async () => {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const setCookie = res.headers.get("set-cookie");
+    const data = await res.json() as Record<string, unknown>;
+    assert(res.ok && data.ok === true, `Логин упал: ${data.error ?? res.status}`);
+    assert(!!setCookie, "нет set-cookie в ответе");
+    // Извлечь auth_token=... из set-cookie
+    const match = setCookie.match(/auth_token=[^;]+/);
+    assert(!!match, "нет auth_token в cookie");
+    authCookie = match![0];
+    loginOk = true;
+  });
+
+  return loginOk;
+}
+
 async function runHealthTests() {
   console.log("\n── Health & Status ──────────────────────────────────────");
 
@@ -78,7 +119,7 @@ async function runHealthTests() {
     assert(data.ok === true, "ok !== true");
   });
 
-  await test("GET /api/kie-balance — KIE API доступен", async () => {
+  await test("GET /api/kie-balance — KIE API доступен (admin)", async () => {
     const data = await api("GET", "/api/kie-balance");
     assert(data.ok === true, "ok !== true");
     assert(typeof (data as Record<string, unknown>).balance !== "undefined" ||
@@ -263,6 +304,20 @@ async function main() {
   const start = Date.now();
 
   try {
+    // Health не требует авторизации
+    await test("GET /health — сервер отвечает", async () => {
+      const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(10_000) });
+      const data = await res.json() as Record<string, unknown>;
+      assert(data.ok === true, "ok !== true");
+    });
+
+    // Логин — все последующие тесты требуют авторизации
+    const loggedIn = await runAuthSetup();
+    if (!loggedIn) {
+      console.log("\n⚠  Пропускаем все тесты требующие авторизации");
+      return;
+    }
+
     await runHealthTests();
     await runSettingsTests();
     await runProjectsTests();

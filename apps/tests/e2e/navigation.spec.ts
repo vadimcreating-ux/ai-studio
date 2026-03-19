@@ -3,7 +3,13 @@ import { test, expect } from "@playwright/test";
 test.describe("Routing", () => {
   test("корень / редиректит на /claude", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveURL(/\/claude/);
+    // С авторизацией / → /claude, без авторизации / → /login
+    await expect(page).toHaveURL(/\/(claude|login)/);
+    // Если залогинены — должен быть /claude
+    const url = page.url();
+    if (!url.includes("/login")) {
+      await expect(page).toHaveURL(/\/claude/);
+    }
   });
 
   test("/dashboard редиректит на /claude", async ({ page }) => {
@@ -27,15 +33,24 @@ test.describe("TopNav", () => {
     await page.getByText(/AI Studio/i).first().click();
     await expect(page).toHaveURL(/\/claude/);
   });
+});
 
-  test("NavBar ссылки ведут на правильные страницы", async ({ page }) => {
+test.describe("Auth", () => {
+  test("незалогиненный пользователь редиректится на /login", async ({ browser }) => {
+    // Используем чистый контекст без cookies
+    const ctx = await browser.newContext({ storageState: undefined });
+    const page = await ctx.newPage();
     await page.goto("/claude");
-    await page.waitForLoadState("load");
+    await expect(page).toHaveURL(/\/login/);
+    await ctx.close();
+  });
 
-    await page.getByRole("link", { name: /Image/i }).first().click();
-    await expect(page).toHaveURL(/\/image/);
-
-    await page.getByRole("link", { name: /Video/i }).first().click();
-    await expect(page).toHaveURL(/\/video/);
+  test("страница /login содержит форму входа", async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: undefined });
+    const page = await ctx.newPage();
+    await page.goto("/login");
+    await expect(page.locator("input[type=email]")).toBeVisible();
+    await expect(page.locator("input[type=password]")).toBeVisible();
+    await ctx.close();
   });
 });

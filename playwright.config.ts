@@ -17,12 +17,21 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     headless: true,
+    storageState: "apps/tests/.auth/user.json",
   },
 
   projects: [
+    // Шаг 1: логин — выполняется один раз перед всеми тестами
+    {
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+      use: { storageState: undefined },
+    },
+    // Шаг 2: основные тесты — используют сохранённые cookies
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      dependencies: ["setup"],
     },
   ],
 });

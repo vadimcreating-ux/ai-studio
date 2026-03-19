@@ -1,0 +1,33 @@
+import { test as setup } from "@playwright/test";
+import path from "path";
+
+export const AUTH_FILE = path.join(import.meta.dirname, "../.auth/user.json");
+
+/**
+ * Global auth setup — логинится один раз и сохраняет cookies.
+ * Требует переменных: TEST_EMAIL, TEST_PASSWORD
+ * По умолчанию использует первого зарегистрированного пользователя (admin).
+ */
+setup("authenticate", async ({ page, request }) => {
+  const email = process.env.TEST_EMAIL;
+  const password = process.env.TEST_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error(
+      "Укажи TEST_EMAIL и TEST_PASSWORD для E2E тестов.\n" +
+      "Пример: TEST_EMAIL=admin@example.com TEST_PASSWORD=12345678 npm run test:e2e"
+    );
+  }
+
+  const res = await request.post("/api/auth/login", {
+    data: { email, password },
+  });
+
+  if (!res.ok()) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Логин упал (${res.status()}): ${body.error ?? "неизвестная ошибка"}`);
+  }
+
+  // Сохранить cookies для всех остальных тестов
+  await page.context().storageState({ path: AUTH_FILE });
+});
