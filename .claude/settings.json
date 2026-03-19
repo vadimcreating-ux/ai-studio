@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CHANGED=$(git -C \"$PWD\" diff --name-only HEAD 2>/dev/null; git -C \"$PWD\" diff --name-only --cached 2>/dev/null); STRUCTURAL=$(echo \"$CHANGED\" | grep -E '(apps/api/src/routes/|apps/api/src/lib/|apps/web/src/modules/|apps/web/src/pages/|apps/web/src/App\\.tsx|package\\.json|apps/api/src/app\\.ts|apps/api/src/server\\.ts)' | grep -v 'CLAUDE\\.md' || true); CLAUDE_CHANGED=$(echo \"$CHANGED\" | grep 'CLAUDE\\.md' || true); if [ -n \"$STRUCTURAL\" ] && [ -z \"$CLAUDE_CHANGED\" ]; then FILELIST=$(echo \"$STRUCTURAL\" | head -8 | sed 's/^/  • /' | tr '\\n' '|' | sed 's/|/\\\\n/g'); printf '{\"systemMessage\": \"⚠️  Структурные файлы изменены, но CLAUDE.md не обновлён.\\\\nФайлы: %s\\\\nОбнови CLAUDE.md если изменения влияют на архитектуру, стек, роуты или соглашения.\"}' \"$FILELIST\"; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
