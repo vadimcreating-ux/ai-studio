@@ -4,7 +4,6 @@ import { ProxyAgent, setGlobalDispatcher } from "undici";
 // Если задан HTTPS_PROXY — все fetch запросы идут через него (нужно для обхода геоблокировки Anthropic)
 if (process.env.HTTPS_PROXY) {
     setGlobalDispatcher(new ProxyAgent(process.env.HTTPS_PROXY));
-    console.log(`[proxy] Using HTTPS_PROXY: ${process.env.HTTPS_PROXY}`);
 }
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -17,11 +16,11 @@ async function start() {
         await ensureImageTemplatesTable();
         await ensureVideoTemplatesTable();
         await ensureEngineSettingsTable();
-        await app.listen({
-            port: PORT,
-            host: HOST
-        });
-        app.log.info(`Server started on http://${HOST}:${PORT}`);
+        if (process.env.HTTPS_PROXY) {
+            app.log.info({ proxy: process.env.HTTPS_PROXY }, "Using HTTPS_PROXY");
+        }
+        await app.listen({ port: PORT, host: HOST });
+        app.log.info({ port: PORT, host: HOST, env: process.env.NODE_ENV ?? "development" }, "Server started");
     }
     catch (error) {
         app.log.error(error);
