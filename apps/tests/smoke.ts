@@ -43,10 +43,11 @@ async function test(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function api(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
+  const hasBody = body !== undefined;
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers: hasBody ? { "Content-Type": "application/json" } : {},
+    body: hasBody ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
