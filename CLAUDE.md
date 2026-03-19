@@ -7,15 +7,19 @@
 ## Стек технологий
 
 ### Backend — `apps/api`
-- **Fastify** ^5.0.0 (Node.js + TypeScript, ES modules)
+- **Fastify** ^5.0.0 (Node.js + TypeScript, ES modules), `trustProxy: true`
 - **PostgreSQL** через `pg` ^8.20.0
+- **Zod** — валидация всех входящих данных (`apps/api/src/lib/validation.ts`)
+- **@fastify/cors** — CORS (dev: все origins, prod: только `FRONTEND_URL`)
+- **@fastify/rate-limit** — rate limit только на дорогих операциях (не глобальный)
+- **pino-pretty** (devDep) — красивые логи в dev
 - **tsx** для dev, `tsc` для прода
-- Точка входа: `apps/api/src/index.ts` (dev) / `apps/api/src/app.ts` (prod)
+- Точка входа: `apps/api/src/server.ts` (dev/prod)
 
 ### Frontend — `apps/web`
 - **React** 18.3.1 + **Vite** 5.4.10
 - **React Router** v6 (SPA, все роуты → `index.html`)
-- **@tanstack/react-query** v5 — весь data fetching (не zustand, не fetch напрямую)
+- **@tanstack/react-query** v5 — весь data fetching (не fetch напрямую)
 - **Tailwind CSS** 3.4.14 — весь стайлинг (без inline styles, без CSS-модулей)
 - **lucide-react** — иконки
 - **react-markdown** + **remark-gfm** — рендеринг Markdown в чате
@@ -24,6 +28,7 @@
 - npm workspaces (`apps/*`)
 - `npm run dev` — запускает api + web одновременно
 - `npm run build` — сначала web, потом api
+- `npm run cleanup:test-chats` — удаляет тестовые чаты из БД
 
 ---
 
@@ -64,6 +69,8 @@ main     →  автодеплой на прод   (Timeweb App #1)   ← реа
 KIE_API_KEY       # Bearer-токен для KIE API — обязателен
 PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD / PGSSLMODE
 PORT              # default 3000
+NODE_ENV          # "production" в проде (влияет на логи и CORS)
+FRONTEND_URL      # опционально — для CORS если фронт на отдельном домене
 HTTPS_PROXY       # опционально, для обхода гео-блокировки
 ```
 
@@ -159,7 +166,8 @@ KIE может вернуть HTTP 200, но с ошибкой внутри: `{ 
 ## Роуты и страницы
 
 ```
-/dashboard    → DashboardPage
+/             → redirect → /claude
+/dashboard    → redirect → /claude  (dashboard удалён, будет переделан с нуля)
 /claude       → ClaudePage → ChatModule (engine="claude")
 /chatgpt      → ChatGPTPage → ChatModule (engine="chatgpt")
 /gemini       → GeminiPage → ChatModule (engine="gemini")
@@ -169,7 +177,8 @@ KIE может вернуть HTTP 200, но с ошибкой внутри: `{ 
 /settings     → SettingsPage
 ```
 
-Все три чат-движка используют один компонент `ChatModule` — не дублировать логику.
+- Все три чат-движка используют один компонент `ChatModule` — не дублировать логику
+- Логотип "AI Studio" в TopNav ведёт на `/claude`
 
 ---
 
@@ -179,15 +188,17 @@ KIE может вернуть HTTP 200, но с ошибкой внутри: `{ 
 apps/web/src/
 ├── App.tsx                     # Роуты
 ├── main.tsx                    # QueryClient + RouterProvider
-├── layout/                     # AppLayout, TopNav
+├── layout/
+│   ├── AppLayout.tsx           # Корневой layout (TopNav + Outlet)
+│   └── TopNav.tsx              # Горизонтальная навигация + лого
 ├── modules/chat/               # ChatModule и все его части
 │   ├── ChatModule.tsx          # Контейнер (3 панели)
 │   ├── ChatView.tsx            # Центр: сообщения + ввод
-│   ├── ChatMessage.tsx         # Рендер сообщения
+│   ├── ChatMessage.tsx         # Рендер сообщения (data-role="assistant" на assistant-сообщениях)
 │   ├── MessageInput.tsx        # Поле ввода
 │   ├── ProjectsPanel.tsx       # Левая панель
-│   └── PromptsPanel.tsx        # Правая панель (история чатов)
-├── pages/                      # Страницы по роутам
+│   └── PromptsPanel.tsx        # Правая панель (история чатов, модель как span)
+├── pages/                      # Страницы по роутам (DashboardPage удалён)
 └── shared/
     ├── api/                    # HTTP-клиенты (chat.ts, projects.ts, ...)
     └── utils/                  # date.ts и др.
@@ -201,11 +212,11 @@ apps/web/src/
 | Метод | Путь | Описание |
 |---|---|---|
 | POST | `/api/chat/new` | Создать чат |
-| GET | `/api/chat/list?module=X` | Список чатов |
+| GET | `/api/chat/list?module=X&limit=N&offset=N` | Список чатов (с пагинацией, возвращает `total`) |
 | GET | `/api/chat/:id/messages` | История сообщений |
 | PATCH | `/api/chat/:id` | Обновить model/title/project_id |
 | DELETE | `/api/chat/:id` | Удалить чат (cascade messages) |
-| POST | `/api/chat/:id/send` | Отправить сообщение → KIE |
+| POST | `/api/chat/:id/send` | Отправить сообщение → KIE *(rate limit: 30/min)* |
 | PATCH | `/api/chat/:id/messages/:msgId` | Редактировать сообщение |
 | DELETE | `/api/chat/:id/messages/:msgId` | Удалить сообщение |
 | POST | `/api/chat/:id/messages/:msgId/regenerate` | Регенерировать ответ |
@@ -214,8 +225,12 @@ apps/web/src/
 `GET/POST /api/projects`, `PUT/DELETE /api/projects/:id`
 
 ### Images & Videos
-`POST /api/image/generate`, `GET /api/image/status`, `GET /api/image/download`
-`POST /api/video/generate`, `GET /api/video/status`, `GET /api/video/download`
+`POST /api/image/generate` *(rate limit: 10/min)*, `GET /api/image/status`, `GET /api/image/download`
+`POST /api/video/generate` *(rate limit: 5/min)*, `GET /api/video/status`, `GET /api/video/download`
+
+### Files
+`GET /api/files?limit=N&offset=N` — список файлов с пагинацией (возвращает `total`)
+`DELETE /api/files/:id`
 
 ### Прочее
 `GET /health`, `GET /api/kie-balance`, `GET/PUT /api/engine-settings/:engine`
@@ -246,7 +261,14 @@ apps/web/src/
 ### Backend
 - Все роуты регистрируются через `app.register(routesFn)`
 - Запросы к БД — только через `dbQuery()` из `apps/api/src/lib/db.ts`
-- Параметры запроса всегда приводить через `as { ... }` с `.trim()`
+- **Валидация входных данных** — через Zod-схемы из `apps/api/src/lib/validation.ts`. Использовать `.safeParse()`, не `as { ... }`
+- **Rate limiting** — `global: false`, лимиты только на дорогих эндпоинтах через `config: { rateLimit: { max, timeWindow } }` в опциях роута. Глобальный rate limit по IP сломан за Timeweb-прокси (shared IP)
+- **SSRF защита** — `fetchUrlContent()` в `chat.ts` проверяет URL через `isSafeUrl()`: блокирует localhost, приватные подсети, raw IP, не-http(s) схемы
+
+### Логирование
+- Dev (`NODE_ENV != production`): pino-pretty с цветами
+- Prod: JSON-логи со структурированными полями `req.method`, `req.url`, `res.statusCode`
+- Использовать `app.log.info({ field: value }, "message")` — не `console.log`
 
 ---
 
@@ -274,3 +296,19 @@ claude:  [{ value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }]
 chatgpt: [{ value: "gpt-5-2", label: "GPT-5" }, { value: "gpt-4o", label: "GPT-4o" }]
 gemini:  [{ value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" }, { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }]
 ```
+
+---
+
+## Тестирование
+
+```bash
+npm run test:smoke              # API smoke-тесты (создаёт/удаляет чаты автоматически)
+npm run test:e2e                # Playwright E2E (создаёт/удаляет чаты автоматически)
+npm run cleanup:test-chats      # Удалить тестовые чаты оставшиеся от упавших тестов
+```
+
+### E2E тесты — соглашения
+- E2E тесты используют `beforeAll`/`afterAll` для очистки: запоминают существующие chatIds, удаляют только то, что создали сами
+- Smoke тесты создают чаты с заголовком `[smoke-test] {module}` и удаляют их в `finally`
+- `cleanup:test-chats` удаляет: `[smoke-test]*` чаты + пустые "Новый чат" без сообщений
+- E2E тесты запускаются против прода (`TEST_URL` в GitHub Actions), не против feature-ветки
