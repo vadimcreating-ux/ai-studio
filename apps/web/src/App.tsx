@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
-import DashboardPage from "./pages/DashboardPage";
 import ClaudePage from "./pages/ClaudePage";
 import ChatGPTPage from "./pages/ChatGPTPage";
 import GeminiPage from "./pages/GeminiPage";
@@ -16,8 +15,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route index element={<Navigate to="/claude" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/claude" replace />} />
           <Route path="/claude" element={<ClaudePage />} />
           <Route path="/chatgpt" element={<ChatGPTPage />} />
           <Route path="/gemini" element={<GeminiPage />} />

@@ -98,8 +98,8 @@ export default function TopNav() {
   return (
     <header className="flex items-center h-[72px] border-b border-border bg-panel shrink-0 px-5 gap-1">
 
-      {/* Logo → Dashboard */}
-      <NavLink to="/dashboard" className="flex items-center gap-3 mr-4 shrink-0 hover:opacity-80 transition-opacity">
+      {/* Logo → Claude */}
+      <NavLink to="/claude" className="flex items-center gap-3 mr-4 shrink-0 hover:opacity-80 transition-opacity">
         <div className="w-11 h-11 rounded-xl bg-accent flex items-center justify-center">
           <Zap size={22} className="text-white" fill="white" />
         </div>
