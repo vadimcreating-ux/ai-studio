@@ -268,7 +268,7 @@ async function main() {
     await runProjectsTests();
     await runChatTests("claude",  "claude-sonnet-4-5");
     await runChatTests("chatgpt", "gpt-5-2");
-    await runChatTests("gemini",  "gemini-2.5-pro");
+    await runChatTests("gemini",  "gemini-2.0-flash");
     await runImageTests();
   } finally {
     // Cleanup: удалить тестовые данные даже при ошибках
