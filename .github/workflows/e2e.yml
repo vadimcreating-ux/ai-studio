@@ -39,8 +39,14 @@ jobs:
           echo "Prod did not respond after 4 minutes"
           exit 1
 
+      - name: Create auth directory
+        run: mkdir -p apps/tests/.auth && echo '{"cookies":[],"origins":[]}' > apps/tests/.auth/user.json
+
       - name: Run E2E tests
         run: TEST_URL=https://vadimcreating-ux-ai-studio-775d.twc1.net npm run test:e2e
+        env:
+          TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
 
       - name: Upload report
         if: always()
