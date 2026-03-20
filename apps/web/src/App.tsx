@@ -13,6 +13,7 @@ import AvatarPage from "./pages/AvatarPage";
 import FilesPage from "./pages/FilesPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdminPage from "./pages/AdminPage";
+import DashboardPage from "./pages/DashboardPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -46,8 +47,8 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/claude" replace />} />
-        <Route path="/dashboard" element={<Navigate to="/claude" replace />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/claude" element={<ClaudePage />} />
         <Route path="/chatgpt" element={<ChatGPTPage />} />
         <Route path="/gemini" element={<GeminiPage />} />
