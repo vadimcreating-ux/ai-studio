@@ -222,4 +222,8 @@ export async function ensureFilesTable() {
   await dbQuery(`
     ALTER TABLE files ADD COLUMN s3_key TEXT
   `).catch(() => {});
+
+  await dbQuery(`
+    ALTER TABLE files ADD COLUMN credits_spent NUMERIC(12,4)
+  `).catch(() => {});
 }

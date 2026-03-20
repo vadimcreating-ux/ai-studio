@@ -12,6 +12,7 @@ export type FileItem = {
   source: "kie";
   prompt: string | null;
   fileSizeBytes: number | null;
+  creditsSpent: number | null;
 };
 
 function mapRowToFileItem(row: any): FileItem {
@@ -28,6 +29,7 @@ function mapRowToFileItem(row: any): FileItem {
     source: row.source,
     prompt: row.prompt ?? null,
     fileSizeBytes: row.file_size_bytes ? Number(row.file_size_bytes) : null,
+    creditsSpent: row.credits_spent != null ? Number(row.credits_spent) : null,
   };
 }
 
@@ -73,10 +75,11 @@ export async function saveFileToStorage(data: {
   type: "image" | "video";
   prompt?: string;
   userId?: string;
+  creditsSpent?: number;
 }): Promise<FileItem> {
   // Return existing record if already saved
   const existing = await dbQuery(
-    `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes
+    `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
      FROM files WHERE task_id = $1 LIMIT 1`,
     [data.taskId]
   );
@@ -117,11 +120,11 @@ export async function saveFileToStorage(data: {
   }
 
   const inserted = await dbQuery(
-    `INSERT INTO files (id, task_id, type, name, url, storage_url, s3_key, file_size_bytes, created_at, source, prompt, user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)
+    `INSERT INTO files (id, task_id, type, name, url, storage_url, s3_key, file_size_bytes, created_at, source, prompt, user_id, credits_spent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11, $12)
      ON CONFLICT (task_id) DO NOTHING
-     RETURNING id, task_id, type, name, url, storage_url, s3_key, file_size_bytes, created_at, source, prompt`,
-    [id, data.taskId, data.type, name, data.url, storageUrl, s3KeySaved, fileSizeBytes, "kie", data.prompt || null, data.userId || null]
+     RETURNING id, task_id, type, name, url, storage_url, s3_key, file_size_bytes, created_at, source, prompt, credits_spent`,
+    [id, data.taskId, data.type, name, data.url, storageUrl, s3KeySaved, fileSizeBytes, "kie", data.prompt || null, data.userId || null, data.creditsSpent ?? null]
   );
 
   // Update user storage_used_mb
@@ -136,7 +139,7 @@ export async function saveFileToStorage(data: {
   if (inserted.rows[0]) return mapRowToFileItem(inserted.rows[0]);
 
   const fallback = await dbQuery(
-    `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes
+    `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
      FROM files WHERE task_id = $1 LIMIT 1`,
     [data.taskId]
   );
@@ -149,6 +152,7 @@ export async function saveImageToFiles(data: {
   url: string;
   prompt?: string;
   userId?: string;
+  creditsSpent?: number;
 }): Promise<FileItem> {
   return saveFileToStorage({ ...data, type: "image" });
 }
@@ -159,6 +163,7 @@ export async function saveVideoToFiles(data: {
   url: string;
   prompt?: string;
   userId?: string;
+  creditsSpent?: number;
 }): Promise<void> {
   await saveFileToStorage({ ...data, type: "video" });
 }
@@ -176,7 +181,7 @@ export async function getFiles(
 
   const [result, countResult] = await Promise.all([
     dbQuery(
-      `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes
+      `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
        FROM files ${where} ORDER BY created_at DESC LIMIT ${limitIdx} OFFSET ${offsetIdx}`,
       listParams
     ),

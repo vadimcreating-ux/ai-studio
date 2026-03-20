@@ -4,10 +4,10 @@ import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
 
-async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
+async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<number | false> {
   const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
   const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
-  if (baseCredits === 0) return true;
+  if (baseCredits === 0) return 0;
   const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
   const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
   const result = await dbQuery(
@@ -22,13 +22,14 @@ async function deductCredits(userId: string, operation: string, reply: FastifyRe
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
     [userId, -cost, operation, `Запрос к ${operation}`]
   );
-  return true;
+  return cost;
 }
 
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const videoPromptStore = new Map<string, string>();
+const videoCostStore = new Map<string, number>();
 
 export async function videoRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
@@ -36,8 +37,9 @@ export async function videoRoutes(app: FastifyInstance) {
   // Генерация видео — 5 запросов в минуту (очень дорогая операция)
   app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
     const user = request.authUser!;
-    const creditsOk = await deductCredits(user.userId, "video_generate", reply);
-    if (!creditsOk) return;
+    const creditsResult = await deductCredits(user.userId, "video_generate", reply);
+    if (creditsResult === false) return;
+    const creditsSpent = creditsResult;
 
     const body = request.body as {
       model?: string;
@@ -110,6 +112,7 @@ export async function videoRoutes(app: FastifyInstance) {
 
       const taskId = createData.data.taskId!;
       if (taskId) videoPromptStore.set(taskId, prompt ?? "");
+      if (taskId && creditsSpent > 0) videoCostStore.set(taskId, creditsSpent);
 
       return { ok: true, taskId };
     } catch {
@@ -178,6 +181,7 @@ export async function videoRoutes(app: FastifyInstance) {
             url: videoUrl,
             prompt: videoPromptStore.get(taskId),
             userId: request.authUser?.userId,
+            creditsSpent: videoCostStore.get(taskId),
           });
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -186,6 +190,7 @@ export async function videoRoutes(app: FastifyInstance) {
           console.error("saveVideoToFiles failed:", err.message);
         }
         videoPromptStore.delete(taskId);
+        videoCostStore.delete(taskId);
       }
 
       const statusMap: Record<string, string> = {

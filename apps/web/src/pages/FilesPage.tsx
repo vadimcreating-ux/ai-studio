@@ -14,6 +14,7 @@ type FileItem = {
   createdAt: string;
   prompt: string | null;
   fileSizeBytes: number | null;
+  creditsSpent: number | null;
 };
 
 function formatBytes(bytes: number | null): string {
@@ -176,6 +177,11 @@ function FileCard({ file, onDelete, deleting }: { file: FileItem; onDelete: () =
           <span className="text-xs text-muted">{formatBytes(file.fileSizeBytes)}</span>
           <span className="text-xs text-muted">{formatDate(file.createdAt)}</span>
         </div>
+        {file.creditsSpent != null && (
+          <div className="mt-0.5">
+            <span className="text-[11px] text-muted/70">{file.creditsSpent} кред.</span>
+          </div>
+        )}
       </div>
 
       {/* Actions overlay */}

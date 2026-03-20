@@ -11,11 +11,13 @@ import { FilesQuerySchema } from "../lib/validation.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map<string, string>();
+const imageCostStore = new Map<string, number>();
 
-async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
+// Returns cost deducted (>= 0) on success, or false on failure (reply already sent)
+async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<number | false> {
   const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
   const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
-  if (baseCredits === 0) return true;
+  if (baseCredits === 0) return 0;
   const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
   const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
   const result = await dbQuery(
@@ -30,7 +32,7 @@ async function deductCredits(userId: string, operation: string, reply: FastifyRe
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
     [userId, -cost, operation, `Запрос к ${operation}`]
   );
-  return true;
+  return cost;
 }
 
 export async function imageRoutes(app: FastifyInstance) {
@@ -39,8 +41,9 @@ export async function imageRoutes(app: FastifyInstance) {
   // Генерация изображения — 10 запросов в минуту (дорогая операция)
   app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const user = request.authUser!;
-    const creditsOk = await deductCredits(user.userId, "image_generate", reply);
-    if (!creditsOk) return;
+    const creditsResult = await deductCredits(user.userId, "image_generate", reply);
+    if (creditsResult === false) return;
+    const creditsSpent = creditsResult;
     const body = request.body as {
       model?: string;
       prompt?: string;
@@ -139,6 +142,7 @@ export async function imageRoutes(app: FastifyInstance) {
 
       const taskId = createData.data.taskId;
       if (prompt) imagePromptStore.set(taskId, prompt);
+      if (creditsSpent > 0) imageCostStore.set(taskId, creditsSpent);
 
       return { ok: true, taskId };
     } catch {
@@ -204,12 +208,14 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       if (state === "success" && resultImageUrl) {
+        const resolvedTaskId = data.taskId ?? taskId;
         try {
           await saveImageToFiles({
-            taskId: data.taskId ?? taskId,
+            taskId: resolvedTaskId,
             url: resultImageUrl,
             prompt: imagePromptStore.get(taskId) || undefined,
             userId: request.authUser?.userId,
+            creditsSpent: imageCostStore.get(taskId),
           });
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -218,6 +224,7 @@ export async function imageRoutes(app: FastifyInstance) {
           console.error("saveImageToFiles failed:", err.message);
         }
         imagePromptStore.delete(taskId);
+        imageCostStore.delete(taskId);
       }
 
       const statusMap: Record<string, string> = {

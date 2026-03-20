@@ -137,6 +137,7 @@ type GeneratedImage = { taskId: string; imageUrl: string; prompt: string };
 type FileItem = {
   id: string; taskId: string; type: "image"; name: string;
   url: string; createdAt: string; source: "kie"; prompt: string | null;
+  creditsSpent: number | null;
 };
 
 type ProjectFile = { name: string; mimeType: string; dataUrl: string };
@@ -1093,7 +1094,10 @@ function HistoryItem({ file, onUsePrompt, onDownload, onDelete, onOpen }: {
           <p className="text-[12px] text-white/80 leading-snug line-clamp-2 cursor-pointer hover:text-white transition-colors" title={file.prompt ?? ""} onClick={onOpen}>
             {file.prompt || <span className="text-muted italic">без промпта</span>}
           </p>
-          <p className="text-[10px] text-muted mt-0.5">{formatDate(file.createdAt)}</p>
+          <p className="text-[10px] text-muted mt-0.5">
+            {formatDate(file.createdAt)}
+            {file.creditsSpent != null && <span className="ml-1.5 text-accent/80">{file.creditsSpent} кред.</span>}
+          </p>
         </div>
         <div className="flex items-center gap-0.5 mt-1">
           {file.prompt && (
