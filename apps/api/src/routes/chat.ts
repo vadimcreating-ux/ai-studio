@@ -127,6 +127,33 @@ async function callKieAI({
   apiKey: string;
   log: FastifyInstance["log"];
 }): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
+  // Retry up to 2 extra times on transient KIE 500
+  const KIE_RETRY_DELAYS = [3000, 6000];
+  let lastResult: { reply: string; creditsConsumed: number } | { error: string; status: number } | null = null;
+  for (let attempt = 0; attempt <= KIE_RETRY_DELAYS.length; attempt++) {
+    lastResult = await callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, apiKey, log });
+    if (!("error" in lastResult)) return lastResult; // success
+    if (attempt < KIE_RETRY_DELAYS.length) {
+      log.warn(`kie.ai transient error (retry ${attempt + 1}/${KIE_RETRY_DELAYS.length}): ${lastResult.error}`);
+      await new Promise((r) => setTimeout(r, KIE_RETRY_DELAYS[attempt]));
+    }
+  }
+  return lastResult!;
+}
+
+async function callKieAIOnce({
+  module, model, systemText, history, userText, files, webSearch, apiKey, log,
+}: {
+  module: string;
+  model: string;
+  systemText: string;
+  history: Array<{ role: string; content: string }>;
+  userText: string;
+  files?: KieFile[];
+  webSearch?: boolean;
+  apiKey: string;
+  log: FastifyInstance["log"];
+}): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
 
   if (module === "claude") {
     // ── Anthropic Messages API ──────────────────────────────────────────────
