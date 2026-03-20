@@ -3,8 +3,21 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
-// Charge based on KIE's actual consumption × markup.
-// If KIE didn't report credits (kieCredits = 0), falls back to configured price in credit_prices table.
+// Extract credits_consumed from KIE recordInfo response.
+function extractKieCredits(raw: Record<string, unknown>): number {
+  for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
+    if (typeof raw[key] === "number" && (raw[key] as number) > 0) return raw[key] as number;
+  }
+  const inner = raw.data as Record<string, unknown> | undefined;
+  if (inner && typeof inner === "object") {
+    for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
+      if (typeof inner[key] === "number" && (inner[key] as number) > 0) return inner[key] as number;
+    }
+  }
+  return 0;
+}
+
+// Charge KIE credits × markup. Falls back to credit_prices.credits when kieCredits=0.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
   let effectiveCredits = kieCredits;
   let markupPercent = 0;
@@ -135,33 +148,29 @@ export async function videoRoutes(app: FastifyInstance) {
         { headers: { Authorization: `Bearer ${apiKey}` } }
       );
 
-      const statusData = await statusResponse.json() as {
-        code?: number;
-        message?: string;
-        credits_consumed?: number;
-        data?: {
-          taskId?: string;
-          state?: string;
-          resultJson?: string;
-          failMsg?: string;
-          progress?: number;
-        };
-      };
+      const rawText = await statusResponse.text();
+      let statusData: Record<string, unknown>;
+      try {
+        statusData = JSON.parse(rawText) as Record<string, unknown>;
+      } catch {
+        return reply.status(500).send({ ok: false, error: "Неверный формат ответа KIE" });
+      }
 
-      if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
+      const kieCode = statusData.code as number | undefined;
+      const kieData = statusData.data as Record<string, unknown> | undefined;
+      if (!statusResponse.ok || kieCode !== 200 || !kieData) {
         return reply.status(500).send({
           ok: false,
-          error: statusData?.message || "Не удалось получить статус задачи",
+          error: (statusData.message as string | undefined) || "Не удалось получить статус задачи",
         });
       }
 
-      const data = statusData.data;
-      const state = data.state ?? "waiting";
+      const state = (kieData.state as string | undefined) ?? "waiting";
 
       let videoUrl = "";
-      if (data.resultJson) {
+      if (kieData.resultJson) {
         try {
-          const parsed = JSON.parse(data.resultJson) as {
+          const parsed = JSON.parse(kieData.resultJson as string) as {
             resultUrls?: string[];
             videoUrl?: string;
           };
@@ -172,9 +181,15 @@ export async function videoRoutes(app: FastifyInstance) {
       }
 
       if (state === "success" && videoUrl) {
-        const resolvedTaskId = data.taskId ?? taskId;
+        const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
-        const kieCredits = typeof statusData.credits_consumed === "number" ? statusData.credits_consumed : 0;
+
+        // Log raw KIE response on success to see all fields including credits
+        app.log.info({ taskId, kieRaw: rawText.slice(0, 2000) }, "KIE video success raw");
+
+        const kieCredits = extractKieCredits(statusData);
+        app.log.info({ taskId, kieCredits, rawFields: Object.keys(statusData) }, "KIE video credits consumed");
+
         try {
           const { isNew } = await saveVideoToFiles({
             taskId: resolvedTaskId,
@@ -187,21 +202,11 @@ export async function videoRoutes(app: FastifyInstance) {
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
-          } else if (!isNew) {
-            // File already existed — update credits_spent for display if still null (no double charge)
-            const priceRes = await dbQuery(
-              "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
-              ["video_generate"]
-            ).catch(() => ({ rows: [] as Array<{ credits: number; markup_percent: number }> }));
-            const price = Number(priceRes.rows[0]?.credits ?? 0);
-            const markup = Number(priceRes.rows[0]?.markup_percent ?? 0);
-            const displayAmount = Math.round(price * (1 + markup / 100) * 10000) / 10000;
-            if (displayAmount > 0) {
-              await dbQuery(
-                "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
-                [displayAmount, resolvedTaskId]
-              );
-            }
+          } else if (!isNew && kieCredits > 0) {
+            await dbQuery(
+              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
+              [kieCredits, resolvedTaskId]
+            );
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -222,12 +227,12 @@ export async function videoRoutes(app: FastifyInstance) {
 
       return {
         ok: true,
-        taskId: data.taskId ?? taskId,
+        taskId: (kieData.taskId as string | undefined) ?? taskId,
         state,
         status: statusMap[state] ?? "GENERATING",
         videoUrl,
-        progress: data.progress ?? 0,
-        errorMessage: data.failMsg || "",
+        progress: (kieData.progress as number | undefined) ?? 0,
+        errorMessage: (kieData.failMsg as string | undefined) || "",
       };
     } catch {
       return reply.status(500).send({ ok: false, error: "Не удалось проверить статус в KIE" });

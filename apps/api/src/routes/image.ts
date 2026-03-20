@@ -13,8 +13,24 @@ import { uploadToS3, isS3Configured } from "../lib/s3.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map<string, string>();
 
-// Charge based on KIE's actual consumption × markup (same pattern as chat's spendCredits).
-// If KIE didn't report credits (kieCredits = 0), falls back to configured price in credit_prices table.
+// Extract credits_consumed from KIE recordInfo response.
+// KIE may place this field at the root or inside data, with various names.
+function extractKieCredits(raw: Record<string, unknown>): number {
+  // Check root level: credits_consumed, creditsConsumed, credits, credit
+  for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
+    if (typeof raw[key] === "number" && (raw[key] as number) > 0) return raw[key] as number;
+  }
+  // Check inside data object
+  const inner = raw.data as Record<string, unknown> | undefined;
+  if (inner && typeof inner === "object") {
+    for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
+      if (typeof inner[key] === "number" && (inner[key] as number) > 0) return inner[key] as number;
+    }
+  }
+  return 0;
+}
+
+// Charge KIE credits × markup. Falls back to credit_prices.credits when kieCredits=0.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
   let effectiveCredits = kieCredits;
   let markupPercent = 0;
@@ -188,44 +204,37 @@ export async function imageRoutes(app: FastifyInstance) {
         }
       );
 
-      const statusData = await statusResponse.json() as {
-        code?: number;
-        message?: string;
-        credits_consumed?: number;
-        data?: {
-          taskId?: string;
-          model?: string;
-          state?: string;
-          resultJson?: string;
-          failCode?: number;
-          failMsg?: string;
-        };
-      };
+      const rawText = await statusResponse.text();
+      let statusData: Record<string, unknown>;
+      try {
+        statusData = JSON.parse(rawText) as Record<string, unknown>;
+      } catch {
+        return reply.status(500).send({ ok: false, error: "Неверный формат ответа KIE" });
+      }
 
-      // Log FULL raw KIE response to debug credits field name/structure
-      app.log.info({ taskId, rawKieResponse: statusData }, "KIE recordInfo raw response");
+      // Log raw KIE response on success state to see all fields including credits
+      const rawState = (statusData.data as Record<string, unknown> | undefined)?.state;
+      if (rawState === "success") {
+        app.log.info({ taskId, kieRaw: rawText.slice(0, 2000) }, "KIE recordInfo success raw");
+      }
 
-      if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
-        console.error("KIE image status error:", statusResponse.status, JSON.stringify(statusData));
+      const kieCode = statusData.code as number | undefined;
+      const kieData = statusData.data as Record<string, unknown> | undefined;
+      if (!statusResponse.ok || kieCode !== 200 || !kieData) {
+        console.error("KIE image status error:", statusResponse.status, rawText.slice(0, 500));
         return reply.status(500).send({
           ok: false,
-          error: statusData?.message || "Не удалось получить статус задачи",
+          error: (statusData.message as string | undefined) || "Не удалось получить статус задачи",
         });
       }
 
-      const data = statusData.data;
-      const state = data.state ?? "waiting";
-
-      // Log non-terminal states at debug level to trace stuck tasks
-      if (state !== "success" && state !== "fail") {
-        app.log.info({ taskId, state, rawData: data }, "KIE image status poll");
-      }
+      const state = (kieData.state as string | undefined) ?? "waiting";
 
       // Parse resultJson string to get image URLs
       let resultImageUrl = "";
-      if (data.resultJson) {
+      if (kieData.resultJson) {
         try {
-          const parsed = JSON.parse(data.resultJson) as { resultUrls?: string[] };
+          const parsed = JSON.parse(kieData.resultJson as string) as { resultUrls?: string[] };
           resultImageUrl = parsed.resultUrls?.[0] ?? "";
         } catch {
           // ignore parse error
@@ -233,11 +242,13 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       if (state === "success" && resultImageUrl) {
-        const resolvedTaskId = data.taskId ?? taskId;
+        const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
-        // Log raw KIE data to debug credits field names
-        app.log.info({ kieStatusData: data }, "KIE image status success");
-        const kieCredits = typeof statusData.credits_consumed === "number" ? statusData.credits_consumed : 0;
+
+        // Extract actual KIE credits consumed from the response (checks root and data, multiple field names)
+        const kieCredits = extractKieCredits(statusData);
+        app.log.info({ taskId, kieCredits, rawFields: Object.keys(statusData) }, "KIE image credits consumed");
+
         try {
           const { isNew } = await saveImageToFiles({
             taskId: resolvedTaskId,
@@ -250,21 +261,12 @@ export async function imageRoutes(app: FastifyInstance) {
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
-          } else if (!isNew) {
-            // File already existed — update credits_spent for display if still null (no double charge to user)
-            const priceRes = await dbQuery(
-              "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
-              ["image_generate"]
-            ).catch(() => ({ rows: [] as Array<{ credits: number; markup_percent: number }> }));
-            const price = Number(priceRes.rows[0]?.credits ?? 0);
-            const markup = Number(priceRes.rows[0]?.markup_percent ?? 0);
-            const displayAmount = Math.round(price * (1 + markup / 100) * 10000) / 10000;
-            if (displayAmount > 0) {
-              await dbQuery(
-                "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
-                [displayAmount, resolvedTaskId]
-              );
-            }
+          } else if (!isNew && kieCredits > 0) {
+            // File already saved but credits_spent not yet set (e.g. first poll charged but didn't update)
+            await dbQuery(
+              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
+              [kieCredits, resolvedTaskId]
+            );
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -284,11 +286,11 @@ export async function imageRoutes(app: FastifyInstance) {
 
       return {
         ok: true,
-        taskId: data.taskId ?? taskId,
+        taskId: (kieData.taskId as string | undefined) ?? taskId,
         state,
         status: mappedStatus,
         imageUrl: resultImageUrl,
-        errorMessage: data.failMsg || (mappedStatus === "FAILED" ? `Задача завершилась со статусом: ${state}` : ""),
+        errorMessage: (kieData.failMsg as string | undefined) || (mappedStatus === "FAILED" ? `Задача завершилась со статусом: ${state}` : ""),
       };
     } catch {
       return reply.status(500).send({ ok: false, error: "Не удалось проверить статус в KIE" });
