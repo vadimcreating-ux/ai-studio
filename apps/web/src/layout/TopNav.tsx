@@ -7,7 +7,7 @@ import {
   Coins, LogOut, ShieldCheck, User,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { useBackendStatus } from "./AppLayout";
+import { useBackendStatus } from "../shared/hooks/useBackendStatus";
 
 const chatRoutes = [
   { to: "/claude",  label: "Claude",  icon: <Cpu      size={16} /> },
