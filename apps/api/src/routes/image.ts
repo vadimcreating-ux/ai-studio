@@ -100,11 +100,8 @@ export async function imageRoutes(app: FastifyInstance) {
         if (body?.quality) input.quality = body.quality;
       } else {
         if (body?.image_input?.length) {
-          // KIE expects raw base64, not full data URLs
-          input.image_input = body.image_input.map((dataUrl: string) => {
-            const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
-            return match ? match[1] : dataUrl;
-          });
+          // KIE expects full data URLs (e.g. data:image/png;base64,...) — do NOT strip the prefix
+          input.image_input = body.image_input;
         }
         if (body?.resolution) input.resolution = body.resolution;
         if (body?.output_format) input.output_format = body.output_format;
