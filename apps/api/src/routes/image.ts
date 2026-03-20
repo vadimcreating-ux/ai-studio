@@ -197,6 +197,9 @@ export async function imageRoutes(app: FastifyInstance) {
         };
       };
 
+      // Log FULL raw KIE response to debug credits field name/structure
+      app.log.info({ taskId, rawKieResponse: statusData }, "KIE recordInfo raw response");
+
       if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
         console.error("KIE image status error:", statusResponse.status, JSON.stringify(statusData));
         return reply.status(500).send({
