@@ -3,20 +3,6 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
-// Extract credits_consumed from KIE recordInfo response.
-function extractKieCredits(raw: Record<string, unknown>): number {
-  for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
-    if (typeof raw[key] === "number" && (raw[key] as number) > 0) return raw[key] as number;
-  }
-  const inner = raw.data as Record<string, unknown> | undefined;
-  if (inner && typeof inner === "object") {
-    for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
-      if (typeof inner[key] === "number" && (inner[key] as number) > 0) return inner[key] as number;
-    }
-  }
-  return 0;
-}
-
 // Charge KIE credits × markup. Falls back to credit_prices.credits when kieCredits=0.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
   let effectiveCredits = kieCredits;
@@ -148,20 +134,17 @@ export async function videoRoutes(app: FastifyInstance) {
         { headers: { Authorization: `Bearer ${apiKey}` } }
       );
 
-      const rawText = await statusResponse.text();
-      let statusData: Record<string, unknown>;
-      try {
-        statusData = JSON.parse(rawText) as Record<string, unknown>;
-      } catch {
-        return reply.status(500).send({ ok: false, error: "Неверный формат ответа KIE" });
-      }
+      const statusData = await statusResponse.json() as {
+        code?: number;
+        message?: string;
+        data?: Record<string, unknown>;
+      };
 
-      const kieCode = statusData.code as number | undefined;
-      const kieData = statusData.data as Record<string, unknown> | undefined;
-      if (!statusResponse.ok || kieCode !== 200 || !kieData) {
+      const kieData = statusData.data;
+      if (!statusResponse.ok || statusData.code !== 200 || !kieData) {
         return reply.status(500).send({
           ok: false,
-          error: (statusData.message as string | undefined) || "Не удалось получить статус задачи",
+          error: statusData.message || "Не удалось получить статус задачи",
         });
       }
 
@@ -184,11 +167,9 @@ export async function videoRoutes(app: FastifyInstance) {
         const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
 
-        // Log raw KIE response on success to see all fields including credits
-        app.log.info({ taskId, kieRaw: rawText.slice(0, 2000) }, "KIE video success raw");
-
-        const kieCredits = extractKieCredits(statusData);
-        app.log.info({ taskId, kieCredits, rawFields: Object.keys(statusData) }, "KIE video credits consumed");
+        // KIE returns actual credits in data.credits
+        const kieCredits = typeof kieData.credits === "number" ? kieData.credits : 0;
+        app.log.info({ taskId, kieCredits }, "KIE video credits consumed");
 
         try {
           const { isNew } = await saveVideoToFiles({

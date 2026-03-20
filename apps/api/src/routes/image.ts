@@ -13,23 +13,6 @@ import { uploadToS3, isS3Configured } from "../lib/s3.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map<string, string>();
 
-// Extract credits_consumed from KIE recordInfo response.
-// KIE may place this field at the root or inside data, with various names.
-function extractKieCredits(raw: Record<string, unknown>): number {
-  // Check root level: credits_consumed, creditsConsumed, credits, credit
-  for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
-    if (typeof raw[key] === "number" && (raw[key] as number) > 0) return raw[key] as number;
-  }
-  // Check inside data object
-  const inner = raw.data as Record<string, unknown> | undefined;
-  if (inner && typeof inner === "object") {
-    for (const key of ["credits_consumed", "creditsConsumed", "credits", "credit"]) {
-      if (typeof inner[key] === "number" && (inner[key] as number) > 0) return inner[key] as number;
-    }
-  }
-  return 0;
-}
-
 // Charge KIE credits × markup. Falls back to credit_prices.credits when kieCredits=0.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
   let effectiveCredits = kieCredits;
@@ -204,27 +187,18 @@ export async function imageRoutes(app: FastifyInstance) {
         }
       );
 
-      const rawText = await statusResponse.text();
-      let statusData: Record<string, unknown>;
-      try {
-        statusData = JSON.parse(rawText) as Record<string, unknown>;
-      } catch {
-        return reply.status(500).send({ ok: false, error: "Неверный формат ответа KIE" });
-      }
+      const statusData = await statusResponse.json() as {
+        code?: number;
+        message?: string;
+        data?: Record<string, unknown>;
+      };
 
-      // Log raw KIE response on success state to see all fields including credits
-      const rawState = (statusData.data as Record<string, unknown> | undefined)?.state;
-      if (rawState === "success") {
-        app.log.info({ taskId, kieRaw: rawText.slice(0, 2000) }, "KIE recordInfo success raw");
-      }
-
-      const kieCode = statusData.code as number | undefined;
-      const kieData = statusData.data as Record<string, unknown> | undefined;
-      if (!statusResponse.ok || kieCode !== 200 || !kieData) {
-        console.error("KIE image status error:", statusResponse.status, rawText.slice(0, 500));
+      const kieData = statusData.data;
+      if (!statusResponse.ok || statusData.code !== 200 || !kieData) {
+        console.error("KIE image status error:", statusResponse.status, JSON.stringify(statusData));
         return reply.status(500).send({
           ok: false,
-          error: (statusData.message as string | undefined) || "Не удалось получить статус задачи",
+          error: statusData.message || "Не удалось получить статус задачи",
         });
       }
 
@@ -245,9 +219,9 @@ export async function imageRoutes(app: FastifyInstance) {
         const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
 
-        // Extract actual KIE credits consumed from the response (checks root and data, multiple field names)
-        const kieCredits = extractKieCredits(statusData);
-        app.log.info({ taskId, kieCredits, rawFields: Object.keys(statusData) }, "KIE image credits consumed");
+        // KIE returns actual credits in data.credits (confirmed from working implementation)
+        const kieCredits = typeof kieData.credits === "number" ? kieData.credits : 0;
+        app.log.info({ taskId, kieCredits }, "KIE image credits consumed");
 
         try {
           const { isNew } = await saveImageToFiles({
