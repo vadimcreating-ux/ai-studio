@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { dbQuery } from "../lib/db.js";
-import { hashPassword, verifyPassword, setAuthCookie, clearAuthCookie, type JwtPayload } from "../lib/auth.js";
+import { hashPassword, verifyPassword, setAuthCookie, clearAuthCookie, authenticate, type JwtPayload } from "../lib/auth.js";
 import { RegisterSchema, LoginSchema } from "../lib/validation.js";
 
 export async function authRoutes(app: FastifyInstance) {
@@ -99,7 +100,80 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ ok: false, error: "Аккаунт не найден или отключён" });
     }
 
-    return reply.send({ ok: true, data: { id: user.id, email: user.email, name: user.name, role: user.role, credits_balance: user.credits_balance, storage_quota_mb: user.storage_quota_mb, storage_used_mb: Number(user.storage_used_mb) } });
+    return reply.send({ ok: true, data: { id: user.id, email: user.email, name: user.name, role: user.role, credits_balance: user.credits_balance, storage_quota_mb: user.storage_quota_mb, storage_used_mb: Number(user.storage_used_mb), avatar_url: user.avatar_url ?? null } });
+  });
+
+  // PATCH /api/auth/profile — update name and/or avatar_url
+  app.patch("/api/auth/profile", { preHandler: authenticate }, async (req, reply) => {
+    const schema = z.object({
+      name: z.string().trim().min(1).max(100).optional(),
+      avatar_url: z.string().url().max(500).nullable().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    }
+    const { name, avatar_url } = parsed.data;
+    const userId = req.authUser!.userId;
+
+    const setClauses: string[] = [];
+    const params: unknown[] = [];
+    if (name !== undefined) { params.push(name); setClauses.push(`name = $${params.length}`); }
+    if (avatar_url !== undefined) { params.push(avatar_url); setClauses.push(`avatar_url = $${params.length}`); }
+    if (setClauses.length === 0) return reply.status(400).send({ ok: false, error: "Нечего обновлять" });
+
+    params.push(userId);
+    const result = await dbQuery(
+      `UPDATE users SET ${setClauses.join(", ")} WHERE id = $${params.length} RETURNING id, email, name, role, credits_balance, storage_quota_mb, storage_used_mb, avatar_url`,
+      params
+    );
+    const user = result.rows[0];
+    return reply.send({ ok: true, data: { id: user.id, email: user.email, name: user.name, role: user.role, credits_balance: user.credits_balance, storage_quota_mb: user.storage_quota_mb, storage_used_mb: Number(user.storage_used_mb), avatar_url: user.avatar_url ?? null } });
+  });
+
+  // PATCH /api/auth/password — change password
+  app.patch("/api/auth/password", { preHandler: authenticate }, async (req, reply) => {
+    const schema = z.object({
+      current_password: z.string().min(1).max(128),
+      new_password: z.string().min(8).max(128),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    }
+    const { current_password, new_password } = parsed.data;
+    const userId = req.authUser!.userId;
+
+    const result = await dbQuery("SELECT password_hash FROM users WHERE id = $1", [userId]);
+    const user = result.rows[0];
+    if (!user?.password_hash) {
+      return reply.status(400).send({ ok: false, error: "Смена пароля недоступна для аккаунтов Google" });
+    }
+
+    const valid = await verifyPassword(current_password, user.password_hash);
+    if (!valid) {
+      return reply.status(401).send({ ok: false, error: "Текущий пароль неверен" });
+    }
+
+    const newHash = await hashPassword(new_password);
+    // Increment jwt_version to invalidate all old sessions
+    await dbQuery("UPDATE users SET password_hash = $1, jwt_version = jwt_version + 1 WHERE id = $2", [newHash, userId]);
+
+    // Issue a fresh token for the current session
+    const userRow = (await dbQuery("SELECT id, email, name, role, jwt_version FROM users WHERE id = $1", [userId])).rows[0];
+    const payload: JwtPayload = { userId: userRow.id, email: userRow.email, name: userRow.name, role: userRow.role, jwtVersion: userRow.jwt_version };
+    const token = app.jwt.sign(payload, { expiresIn: "30d" });
+    setAuthCookie(reply, token);
+
+    return reply.send({ ok: true, data: null });
+  });
+
+  // POST /api/auth/logout-all — invalidate all sessions
+  app.post("/api/auth/logout-all", { preHandler: authenticate }, async (req, reply) => {
+    const userId = req.authUser!.userId;
+    await dbQuery("UPDATE users SET jwt_version = jwt_version + 1 WHERE id = $1", [userId]);
+    clearAuthCookie(reply);
+    return reply.send({ ok: true, data: null });
   });
 
   // ─── Google OAuth ─────────────────────────────────────────────────────────

@@ -43,6 +43,14 @@ export async function ensureUsersTable() {
   await dbQuery(`
     ALTER TABLE users ADD COLUMN storage_used_mb NUMERIC(12,4) NOT NULL DEFAULT 0
   `).catch(() => {});
+
+  await dbQuery(`
+    ALTER TABLE users ADD COLUMN avatar_url TEXT
+  `).catch(() => {});
+
+  await dbQuery(`
+    ALTER TABLE users ADD COLUMN jwt_version INTEGER NOT NULL DEFAULT 0
+  `).catch(() => {});
 }
 
 export async function ensureCreditTransactionsTable() {

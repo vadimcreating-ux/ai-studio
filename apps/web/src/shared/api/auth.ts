@@ -9,6 +9,7 @@ export type User = {
   credits_balance: number;
   storage_quota_mb: number;
   storage_used_mb: number;
+  avatar_url: string | null;
   created_at: string;
 };
 

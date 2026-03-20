@@ -7,6 +7,7 @@ import {
   Coins, LogOut, ShieldCheck, User, LayoutDashboard,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import SettingsModal from "../components/SettingsModal";
 
 const chatRoutes = [
   { to: "/claude",  label: "Claude",  icon: <Cpu      size={16} /> },
@@ -21,8 +22,7 @@ const mediaItems = [
 ];
 
 const sysItems = [
-  { to: "/files",    label: "Files",    icon: <FolderOpen size={18} /> },
-  { to: "/settings", label: "Settings", icon: <Settings   size={18} /> },
+  { to: "/files", label: "Files", icon: <FolderOpen size={18} /> },
 ];
 
 function ChatDropdown() {
@@ -101,6 +101,7 @@ function UserMenu({ online }: UserMenuProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const [spentToast, setSpentToast] = useState<number | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,63 +128,98 @@ function UserMenu({ online }: UserMenuProps) {
 
   if (!user) return null;
 
+  // Avatar: URL or initials
+  const initials = user.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+
   return (
-    <div ref={ref} className="relative">
-      {spentToast !== null && (
-        <div
-          key={spentToast + Date.now()}
-          className="absolute right-full mr-3 top-1/2 -translate-y-1/2 pointer-events-none whitespace-nowrap z-50"
-          style={{ animation: "creditsSpentFade 3s ease-out forwards" }}
-        >
-          <span className="text-xs font-medium text-red-400 bg-panel border border-border rounded-full px-2.5 py-1 shadow-lg">
-            −{spentToast.toFixed(3)} кр.
-          </span>
-        </div>
-      )}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
-      >
-        <Coins size={14} className="text-accent" />
-        <span className="font-medium">{Number(user.credits_balance).toFixed(3)}</span>
-        <div className="w-px h-4 bg-border mx-0.5" />
-        <User size={14} className="text-muted" />
-        <span className="text-muted max-w-[100px] truncate">{user.name}</span>
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${online ? "bg-green-400" : "bg-gray-600"}`} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-panel border border-border rounded-xl shadow-xl min-w-[200px] py-1">
-          <div className="px-4 py-2 border-b border-border">
-            <div className="text-white text-sm font-medium truncate">{user.name}</div>
-            <div className="text-muted text-xs truncate">{user.email}</div>
-            <div className="flex items-center gap-1 mt-1">
-              <Coins size={12} className="text-accent" />
-              <span className="text-sm text-white font-medium">{Number(user.credits_balance).toFixed(3)}</span>
-              <span className="text-xs text-muted">кредитов</span>
-            </div>
+    <>
+      <div ref={ref} className="relative">
+        {spentToast !== null && (
+          <div
+            key={spentToast + Date.now()}
+            className="absolute right-full mr-3 top-1/2 -translate-y-1/2 pointer-events-none whitespace-nowrap z-50"
+            style={{ animation: "creditsSpentFade 3s ease-out forwards" }}
+          >
+            <span className="text-xs font-medium text-red-400 bg-panel border border-border rounded-full px-2.5 py-1 shadow-lg">
+              −{spentToast.toFixed(3)} кр.
+            </span>
           </div>
+        )}
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
+        >
+          <Coins size={14} className="text-accent" />
+          <span className="font-medium">{Number(user.credits_balance).toFixed(3)}</span>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          {/* Avatar */}
+          <div className="w-6 h-6 rounded-full overflow-hidden bg-accent flex items-center justify-center flex-shrink-0">
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-[10px] font-bold text-white">{initials}</span>
+            )}
+          </div>
+          <span className="text-muted max-w-[90px] truncate">{user.name}</span>
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${online ? "bg-green-400" : "bg-gray-600"}`} />
+        </button>
 
-          {user.role === "admin" && (
+        {open && (
+          <div className="absolute right-0 top-full mt-1 z-50 bg-panel border border-border rounded-xl shadow-xl min-w-[220px] py-1">
+            {/* User info header */}
+            <div className="px-4 py-3 border-b border-border flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-accent flex items-center justify-center flex-shrink-0">
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-sm font-bold text-white">{initials}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-white text-sm font-medium truncate">{user.name}</div>
+                <div className="text-muted text-xs truncate">{user.email}</div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Coins size={11} className="text-accent" />
+                  <span className="text-xs text-white font-medium">{Number(user.credits_balance).toFixed(3)}</span>
+                  <span className="text-[11px] text-muted">кр.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings */}
             <button
-              onClick={() => { navigate("/admin"); setOpen(false); }}
+              onClick={() => { setShowSettings(true); setOpen(false); }}
               className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
             >
-              <ShieldCheck size={14} />
-              Панель администратора
+              <Settings size={14} />
+              Настройки
             </button>
-          )}
 
-          <button
-            onClick={() => { logout(); setOpen(false); }}
-            className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
-          >
-            <LogOut size={14} />
-            Выйти
-          </button>
-        </div>
-      )}
-    </div>
+            {user.role === "admin" && (
+              <button
+                onClick={() => { navigate("/admin"); setOpen(false); }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
+              >
+                <ShieldCheck size={14} />
+                Панель администратора
+              </button>
+            )}
+
+            <div className="border-t border-border mt-1 pt-1">
+              <button
+                onClick={() => { logout(); setOpen(false); }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
+              >
+                <LogOut size={14} />
+                Выйти
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+    </>
   );
 }
 
@@ -244,7 +280,7 @@ export default function TopNav({ online }: TopNavProps) {
         ))}
       </div>
 
-      {/* System */}
+      {/* Files */}
       <div className="flex items-center gap-0.5 shrink-0">
         <div className="w-px h-6 bg-border mx-2" />
         {sysItems.map(item => (

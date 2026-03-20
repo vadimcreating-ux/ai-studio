@@ -16,6 +16,7 @@ export type JwtPayload = {
   email: string;
   name: string;
   role: "admin" | "user";
+  jwtVersion?: number;
 };
 
 // We attach our user payload to request under a custom key to avoid collision

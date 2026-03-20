@@ -11,7 +11,6 @@ import VideoPage from "./pages/VideoPage";
 import AudioPage from "./pages/AudioPage";
 import AvatarPage from "./pages/AvatarPage";
 import FilesPage from "./pages/FilesPage";
-import SettingsPage from "./pages/SettingsPage";
 import AdminPage from "./pages/AdminPage";
 import DashboardPage from "./pages/DashboardPage";
 
@@ -57,7 +56,7 @@ export default function App() {
         <Route path="/audio" element={<AudioPage />} />
         <Route path="/avatar" element={<AvatarPage />} />
         <Route path="/files" element={<FilesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings" element={<Navigate to="/dashboard" replace />} />
         <Route
           path="/admin"
           element={
