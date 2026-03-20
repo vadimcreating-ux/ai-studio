@@ -1,7 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
-import { authenticate, requireAdmin, type JwtPayload } from "../lib/auth.js";
-import { AdminAddCreditsSchema, AdminUpdateUserSchema, AdminUpdateCreditPriceSchema, AdminUpdateStorageSchema } from "../lib/validation.js";
+import { authenticate, requireAdmin, hashPassword } from "../lib/auth.js";
+import {
+  AdminAddCreditsSchema,
+  AdminUpdateUserSchema,
+  AdminUpdateCreditPriceSchema,
+  AdminUpdateStorageSchema,
+  AdminCreateUserSchema,
+  AdminResetPasswordSchema,
+} from "../lib/validation.js";
 
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -17,6 +24,27 @@ export async function adminRoutes(app: FastifyInstance) {
       "SELECT id, email, name, role, is_active, credits_balance, storage_quota_mb, storage_used_mb, created_at FROM users ORDER BY created_at DESC"
     );
     return reply.send({ ok: true, data: result.rows });
+  });
+
+  // POST /api/admin/users — create a new user (or admin)
+  app.post("/api/admin/users", async (req, reply) => {
+    const parsed = AdminCreateUserSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    }
+    const { email, password, name, role, credits_balance } = parsed.data;
+
+    const existing = await dbQuery("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
+    if (existing.rows.length > 0) {
+      return reply.status(409).send({ ok: false, error: "Пользователь с таким email уже существует" });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const result = await dbQuery(
+      "INSERT INTO users (email, password_hash, name, role, credits_balance) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, name, role, is_active, credits_balance, storage_quota_mb, storage_used_mb, created_at",
+      [email.toLowerCase(), passwordHash, name, role, credits_balance]
+    );
+    return reply.status(201).send({ ok: true, data: result.rows[0] });
   });
 
   // GET /api/admin/users/:id
@@ -52,11 +80,39 @@ export async function adminRoutes(app: FastifyInstance) {
     values.push(id);
 
     const result = await dbQuery(
-      `UPDATE users SET ${fields.join(", ")} WHERE id = $${i} RETURNING id, email, name, role, is_active, credits_balance`,
+      `UPDATE users SET ${fields.join(", ")} WHERE id = $${i} RETURNING id, email, name, role, is_active, credits_balance, storage_quota_mb, storage_used_mb, created_at`,
       values
     );
     if (!result.rows[0]) return reply.status(404).send({ ok: false, error: "Пользователь не найден" });
     return reply.send({ ok: true, data: result.rows[0] });
+  });
+
+  // DELETE /api/admin/users/:id — delete user (cannot delete self)
+  app.delete("/api/admin/users/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (id === req.authUser!.userId) {
+      return reply.status(400).send({ ok: false, error: "Нельзя удалить собственный аккаунт" });
+    }
+    const result = await dbQuery("DELETE FROM users WHERE id = $1 RETURNING id", [id]);
+    if (!result.rows[0]) return reply.status(404).send({ ok: false, error: "Пользователь не найден" });
+    return reply.send({ ok: true, data: null });
+  });
+
+  // PATCH /api/admin/users/:id/password — reset user password
+  app.patch("/api/admin/users/:id/password", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = AdminResetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    }
+    const newHash = await hashPassword(parsed.data.new_password);
+    // Increment jwt_version to invalidate all sessions for that user
+    const result = await dbQuery(
+      "UPDATE users SET password_hash = $1, jwt_version = jwt_version + 1 WHERE id = $2 RETURNING id",
+      [newHash, id]
+    );
+    if (!result.rows[0]) return reply.status(404).send({ ok: false, error: "Пользователь не найден" });
+    return reply.send({ ok: true, data: null });
   });
 
   // POST /api/admin/users/:id/credits — add/remove credits
@@ -69,7 +125,6 @@ export async function adminRoutes(app: FastifyInstance) {
     const { amount, description } = parsed.data;
     const adminUser = req.authUser!;
 
-    // Update balance + record transaction atomically
     await dbQuery(
       "UPDATE users SET credits_balance = credits_balance + $1 WHERE id = $2",
       [amount, id]
@@ -162,11 +217,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // GET /api/admin/stats
   app.get("/api/admin/stats", async (_req, reply) => {
-    const [users, chats, files, credits] = await Promise.all([
+    const [users, chats, files, balances, messages, spent] = await Promise.all([
       dbQuery("SELECT COUNT(*) as count FROM users"),
       dbQuery("SELECT COUNT(*) as count FROM chats"),
       dbQuery("SELECT COUNT(*) as count FROM files"),
       dbQuery("SELECT COALESCE(SUM(credits_balance), 0) as total FROM users"),
+      dbQuery("SELECT COUNT(*) as count FROM chat_messages"),
+      dbQuery("SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM credit_transactions WHERE amount < 0"),
     ]);
     return reply.send({
       ok: true,
@@ -174,7 +231,9 @@ export async function adminRoutes(app: FastifyInstance) {
         total_users: Number(users.rows[0].count),
         total_chats: Number(chats.rows[0].count),
         total_files: Number(files.rows[0].count),
-        total_credits_issued: Number(credits.rows[0].total),
+        total_credits_balance: Number(balances.rows[0].total),
+        total_messages: Number(messages.rows[0].count),
+        total_credits_spent: Number(spent.rows[0].total),
       },
     });
   });

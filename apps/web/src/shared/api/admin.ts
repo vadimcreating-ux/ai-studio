@@ -6,7 +6,9 @@ export type AdminStats = {
   total_users: number;
   total_chats: number;
   total_files: number;
-  total_credits_issued: number;
+  total_credits_balance: number;
+  total_messages: number;
+  total_credits_spent: number;
 };
 
 export const adminApi = {
@@ -16,8 +18,17 @@ export const adminApi = {
   users: () =>
     api.get<{ ok: boolean; data: User[] }>("/api/admin/users"),
 
+  createUser: (data: { email: string; password: string; name: string; role: "admin" | "user"; credits_balance?: number }) =>
+    api.post<{ ok: boolean; data: User }>("/api/admin/users", data),
+
   updateUser: (id: string, data: Partial<Pick<User, "name" | "role" | "is_active" | "credits_balance">>) =>
     api.patch<{ ok: boolean; data: User }>(`/api/admin/users/${id}`, data),
+
+  deleteUser: (id: string) =>
+    api.delete<{ ok: boolean; data: null }>(`/api/admin/users/${id}`),
+
+  resetPassword: (id: string, new_password: string) =>
+    api.patch<{ ok: boolean; data: null }>(`/api/admin/users/${id}/password`, { new_password }),
 
   addCredits: (userId: string, amount: number, description?: string) =>
     api.post<{ ok: boolean; data: { credits_balance: number } }>(
