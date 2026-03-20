@@ -160,7 +160,7 @@ async function callKieAI({
       return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
     }
     const raw = await res.text();
-    log.info({ kieRawResponse: raw }, "kie.ai claude full response");
+    log.info(`kie.ai claude full response: ${raw}`);
     const data = JSON.parse(raw) as Record<string, unknown>;
 
     if (typeof data.code === "number" && data.code !== 200) {
@@ -221,7 +221,7 @@ async function callKieAI({
       return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
     }
     const raw = await res.text();
-    log.info({ kieRawResponse: raw }, `kie.ai ${module} full response`);
+    log.info(`kie.ai ${module} full response: ${raw}`);
     const data = JSON.parse(raw) as Record<string, unknown>;
 
     if (typeof data.code === "number" && data.code !== 200) {
