@@ -3,19 +3,15 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
-// Charge KIE credits × markup. Falls back to credit_prices.credits when kieCredits=0.
+// Charge actual KIE credits × markup. Returns 0 if KIE didn't report credits.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
-  let effectiveCredits = kieCredits;
+  if (kieCredits <= 0) return 0;
   let markupPercent = 0;
   try {
-    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+    const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
     markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-    if (effectiveCredits <= 0) {
-      effectiveCredits = Number(priceRes.rows[0]?.credits ?? 0);
-    }
-  } catch { /* columns might not exist yet */ }
-  if (effectiveCredits <= 0) return 0;
-  const amount = Math.round(effectiveCredits * (1 + markupPercent / 100) * 10000) / 10000;
+  } catch { /* column might not exist yet */ }
+  const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
@@ -167,7 +163,8 @@ export async function videoRoutes(app: FastifyInstance) {
         const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
 
-        // KIE returns actual credits in data.credits
+        // Log full KIE data to see what credit field is returned
+        app.log.info({ taskId, kieData }, "KIE video success data");
         const kieCredits = typeof kieData.credits === "number" ? kieData.credits : 0;
         app.log.info({ taskId, kieCredits }, "KIE video credits consumed");
 
