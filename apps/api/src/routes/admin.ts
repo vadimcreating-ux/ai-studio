@@ -87,7 +87,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // GET /api/admin/credit-prices
   app.get("/api/admin/credit-prices", async (_req, reply) => {
-    const result = await dbQuery("SELECT operation, credits FROM credit_prices ORDER BY operation");
+    const result = await dbQuery("SELECT operation, credits, markup_percent FROM credit_prices ORDER BY operation");
     return reply.send({ ok: true, data: result.rows });
   });
 
@@ -98,11 +98,13 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
     }
+    const { credits, markup_percent = 0 } = parsed.data;
     await dbQuery(
-      "INSERT INTO credit_prices (operation, credits) VALUES ($1, $2) ON CONFLICT (operation) DO UPDATE SET credits = $2",
-      [operation, parsed.data.credits]
+      `INSERT INTO credit_prices (operation, credits, markup_percent) VALUES ($1, $2, $3)
+       ON CONFLICT (operation) DO UPDATE SET credits = $2, markup_percent = $3`,
+      [operation, credits, markup_percent]
     );
-    return reply.send({ ok: true, data: { operation, credits: parsed.data.credits } });
+    return reply.send({ ok: true, data: { operation, credits, markup_percent } });
   });
 
   // ─── Transactions ─────────────────────────────────────────────────────────

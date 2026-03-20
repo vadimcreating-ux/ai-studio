@@ -194,7 +194,7 @@ function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQu
   );
 }
 
-type PriceRow = { operation: string; credits: number };
+type PriceRow = { operation: string; credits: number; markup_percent: number };
 const OPERATION_LABELS: Record<string, string> = {
   chat_claude: "Чат Claude",
   chat_chatgpt: "Чат ChatGPT",
@@ -205,52 +205,67 @@ const OPERATION_LABELS: Record<string, string> = {
 };
 
 function PricesTab({ prices, qc }: { prices: PriceRow[]; qc: ReturnType<typeof useQueryClient> }) {
-  const [editing, setEditing] = useState<Record<string, string>>({});
+  const [editingCredits, setEditingCredits] = useState<Record<string, string>>({});
+  const [editingMarkup, setEditingMarkup] = useState<Record<string, string>>({});
 
   const updatePrice = useMutation({
-    mutationFn: ({ operation, credits }: { operation: string; credits: number }) =>
-      adminApi.updateCreditPrice(operation, credits),
+    mutationFn: ({ operation, credits, markup_percent }: { operation: string; credits: number; markup_percent: number }) =>
+      adminApi.updateCreditPrice(operation, credits, markup_percent),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "credit-prices"] }),
   });
 
   return (
-    <div className="space-y-2 max-w-lg">
+    <div className="space-y-2 max-w-xl">
       <p className="text-sm text-muted mb-4">
-        Количество внутренних кредитов, списываемых за каждую операцию.
+        Наценка применяется к фактической стоимости, которую вернул KIE. Например: KIE списал 1 кредит, наценка 10% → списывается 1.1 кредита.
       </p>
-      {prices.map((p) => (
-        <div key={p.operation} className="bg-panel border border-border rounded-xl p-4 flex items-center justify-between gap-4">
-          <div>
-            <div className="text-white text-sm font-medium">
-              {OPERATION_LABELS[p.operation] ?? p.operation}
+      {prices.map((p) => {
+        const credits = Number(editingCredits[p.operation] ?? p.credits);
+        const markup = Number(editingMarkup[p.operation] ?? p.markup_percent);
+        const unchanged = credits === p.credits && markup === p.markup_percent;
+        return (
+          <div key={p.operation} className="bg-panel border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-white text-sm font-medium">
+                  {OPERATION_LABELS[p.operation] ?? p.operation}
+                </div>
+                <div className="text-xs text-muted mt-0.5 font-mono">{p.operation}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-xs text-muted">Наценка %</span>
+                  <input
+                    type="number"
+                    value={editingMarkup[p.operation] ?? p.markup_percent}
+                    onChange={(e) => setEditingMarkup((prev) => ({ ...prev, [p.operation]: e.target.value }))}
+                    className="w-20 bg-surface border border-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-accent text-center"
+                    min="0"
+                    max="1000"
+                    step="0.1"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    updatePrice.mutate({ operation: p.operation, credits, markup_percent: markup });
+                    setEditingCredits((prev) => ({ ...prev, [p.operation]: String(credits) }));
+                    setEditingMarkup((prev) => ({ ...prev, [p.operation]: String(markup) }));
+                  }}
+                  disabled={updatePrice.isPending || unchanged}
+                  className="px-3 py-1 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white rounded text-sm transition-colors self-end mb-0.5"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-            <div className="text-xs text-muted mt-0.5 font-mono">{p.operation}</div>
+            {p.markup_percent > 0 && (
+              <div className="mt-2 text-xs text-muted">
+                KIE вернёт X → спишется X × {(1 + p.markup_percent / 100).toFixed(3)}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={editing[p.operation] ?? p.credits}
-              onChange={(e) => setEditing((prev) => ({ ...prev, [p.operation]: e.target.value }))}
-              className="w-20 bg-surface border border-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-accent text-center"
-              min="0"
-            />
-            <button
-              onClick={() => {
-                const val = Number(editing[p.operation] ?? p.credits);
-                updatePrice.mutate({ operation: p.operation, credits: val });
-                setEditing((prev) => ({ ...prev, [p.operation]: String(val) }));
-              }}
-              disabled={
-                updatePrice.isPending ||
-                Number(editing[p.operation] ?? p.credits) === p.credits
-              }
-              className="px-3 py-1 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white rounded text-sm transition-colors"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

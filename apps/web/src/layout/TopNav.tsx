@@ -101,6 +101,19 @@ function UserMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [spentToast, setSpentToast] = useState<number | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function handleCreditsSpent(e: Event) {
+      const amount = (e as CustomEvent<{ amount: number }>).detail.amount;
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setSpentToast(amount);
+      toastTimerRef.current = setTimeout(() => setSpentToast(null), 3000);
+    }
+    window.addEventListener("creditsSpent", handleCreditsSpent);
+    return () => window.removeEventListener("creditsSpent", handleCreditsSpent);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -115,6 +128,17 @@ function UserMenu() {
 
   return (
     <div ref={ref} className="relative">
+      {spentToast !== null && (
+        <div
+          key={spentToast + Date.now()}
+          className="absolute -top-8 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap"
+          style={{ animation: "creditsSpentFade 3s ease-out forwards" }}
+        >
+          <span className="text-xs font-medium text-red-400 bg-panel border border-border rounded-full px-2.5 py-1 shadow-lg">
+            −{spentToast.toFixed(4)} кр.
+          </span>
+        </div>
+      )}
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"

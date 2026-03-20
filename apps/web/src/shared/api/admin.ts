@@ -38,6 +38,6 @@ export const adminApi = {
   creditPrices: () =>
     api.get<{ ok: boolean; data: CreditPrice[] }>("/api/admin/credit-prices"),
 
-  updateCreditPrice: (operation: string, credits: number) =>
-    api.put<{ ok: boolean; data: CreditPrice }>(`/api/admin/credit-prices/${operation}`, { credits }),
+  updateCreditPrice: (operation: string, credits: number, markup_percent?: number) =>
+    api.put<{ ok: boolean; data: CreditPrice }>(`/api/admin/credit-prices/${operation}`, { credits, markup_percent }),
 };

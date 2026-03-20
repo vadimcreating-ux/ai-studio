@@ -99,7 +99,12 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
 
   const regenerateMsg = useMutation({
     mutationFn: (messageId: string) => chatApi.regenerate(chat!.id, messageId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["messages", chat?.id] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["messages", chat?.id] });
+      if (data.credits_spent) {
+        window.dispatchEvent(new CustomEvent("creditsSpent", { detail: { amount: data.credits_spent } }));
+      }
+    },
   });
 
   const sendMessage = useMutation({
@@ -127,9 +132,12 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       };
       setOptimisticMessages((prev) => [...prev, opt]);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setOptimisticMessages([]);
       qc.invalidateQueries({ queryKey: ["messages", chat?.id] });
+      if (data.credits_spent) {
+        window.dispatchEvent(new CustomEvent("creditsSpent", { detail: { amount: data.credits_spent } }));
+      }
     },
     onError: () => setOptimisticMessages([]),
   });

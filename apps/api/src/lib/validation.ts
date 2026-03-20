@@ -105,4 +105,5 @@ export const AdminUpdateUserSchema = z.object({
 
 export const AdminUpdateCreditPriceSchema = z.object({
   credits: z.number().int().min(0).max(10_000),
+  markup_percent: z.number().min(0).max(1000).optional(),
 });

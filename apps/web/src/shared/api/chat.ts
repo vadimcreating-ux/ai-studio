@@ -39,7 +39,7 @@ export const chatApi = {
     api.get<{ ok: true; messages: Message[] }>(`/api/chat/${chatId}/messages`),
 
   send: (chatId: string, message: string, files?: Array<{ dataUrl: string; mimeType: string; name: string }>, webSearch?: boolean) =>
-    api.post<{ ok: true; reply: string }>(`/api/chat/${chatId}/send`, { message, files, webSearch }),
+    api.post<{ ok: true; reply: string; credits_spent: number }>(`/api/chat/${chatId}/send`, { message, files, webSearch }),
 
   updateModel: (chatId: string, model: string) =>
     api.patch<{ ok: true; chat: Chat }>(`/api/chat/${chatId}`, { model }),
@@ -60,5 +60,5 @@ export const chatApi = {
     api.delete<{ ok: true }>(`/api/chat/${chatId}/messages/${messageId}`),
 
   regenerate: (chatId: string, messageId: string) =>
-    api.post<{ ok: true; reply: string }>(`/api/chat/${chatId}/messages/${messageId}/regenerate`, {}),
+    api.post<{ ok: true; reply: string; credits_spent: number }>(`/api/chat/${chatId}/messages/${messageId}/regenerate`, {}),
 };

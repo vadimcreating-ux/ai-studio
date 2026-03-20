@@ -21,9 +21,16 @@ async function checkCredits(userId: string, reply: FastifyReply): Promise<boolea
   return true;
 }
 
-// Deduct exact amount returned by KIE and record transaction.
-async function spendCredits(userId: string, amount: number, operation: string): Promise<void> {
-  if (amount <= 0) return;
+// Deduct exact amount returned by KIE (with admin markup) and record transaction.
+// Returns the actual amount deducted (rounded to 4 decimal places).
+async function spendCredits(userId: string, kieAmount: number, operation: string): Promise<number> {
+  if (kieAmount <= 0) return 0;
+  const priceRes = await dbQuery(
+    "SELECT markup_percent FROM credit_prices WHERE operation = $1",
+    [operation]
+  );
+  const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+  const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
@@ -32,6 +39,7 @@ async function spendCredits(userId: string, amount: number, operation: string): 
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
     [userId, -amount, operation, `Запрос к ${operation}`]
   );
+  return amount;
 }
 
 const KIE_BASE_URL = "https://api.kie.ai";
@@ -436,14 +444,14 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    await Promise.all([
+    const [, creditsSpent] = await Promise.all([
       dbQuery(
         `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
         [chatId, result.reply]
       ),
       spendCredits(user.userId, result.creditsConsumed, regenOperation),
     ]);
-    return { ok: true, reply: result.reply };
+    return { ok: true, reply: result.reply, credits_spent: creditsSpent };
   });
 
   // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
@@ -515,7 +523,7 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    await Promise.all([
+    const [, creditsSpent] = await Promise.all([
       dbQuery(
         `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
         [chatId, result.reply]
@@ -523,6 +531,6 @@ export async function chatRoutes(app: FastifyInstance) {
       spendCredits(user.userId, result.creditsConsumed, operation),
     ]);
 
-    return { ok: true, reply: result.reply };
+    return { ok: true, reply: result.reply, credits_spent: creditsSpent };
   });
 }

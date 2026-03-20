@@ -12,6 +12,7 @@ export type CreditTransaction = {
 export type CreditPrice = {
   operation: string;
   credits: number;
+  markup_percent: number;
 };
 
 export const creditsApi = {

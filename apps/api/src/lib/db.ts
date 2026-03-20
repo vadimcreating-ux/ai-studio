@@ -54,6 +54,10 @@ export async function ensureCreditPricesTable() {
     )
   `);
 
+  await dbQuery(`
+    ALTER TABLE credit_prices ADD COLUMN markup_percent NUMERIC(6,2) NOT NULL DEFAULT 0
+  `).catch(() => {});
+
   // Seed default prices if table is empty
   await dbQuery(`
     INSERT INTO credit_prices (operation, credits) VALUES
