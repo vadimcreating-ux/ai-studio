@@ -10,25 +10,28 @@ import {
 } from "../lib/validation.js";
 
 
-// Atomic credit check + deduction. Returns false and sends error if insufficient.
-async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
-  const priceRes = await dbQuery("SELECT credits FROM credit_prices WHERE operation = $1", [operation]);
-  const cost = Number(priceRes.rows[0]?.credits ?? 0);
-  if (cost === 0) return true;
-
-  const result = await dbQuery(
-    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance",
-    [cost, userId]
-  );
-  if (result.rows.length === 0) {
+// Check balance > 0 before KIE call. Returns false and sends error if insufficient.
+async function checkCredits(userId: string, reply: FastifyReply): Promise<boolean> {
+  const result = await dbQuery("SELECT credits_balance FROM users WHERE id = $1", [userId]);
+  const balance = Number(result.rows[0]?.credits_balance ?? 0);
+  if (balance <= 0) {
     reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
     return false;
   }
+  return true;
+}
+
+// Deduct exact amount returned by KIE and record transaction.
+async function spendCredits(userId: string, amount: number, operation: string): Promise<void> {
+  if (amount <= 0) return;
+  await dbQuery(
+    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
+    [amount, userId]
+  );
   await dbQuery(
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -cost, operation, `Запрос к ${operation}`]
+    [userId, -amount, operation, `Запрос к ${operation}`]
   );
-  return true;
 }
 
 const KIE_BASE_URL = "https://api.kie.ai";
@@ -109,7 +112,7 @@ async function callKieAI({
   webSearch?: boolean;
   apiKey: string;
   log: FastifyInstance["log"];
-}): Promise<{ reply: string } | { error: string; status: number }> {
+}): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
 
   if (module === "claude") {
     // ── Anthropic Messages API ──────────────────────────────────────────────
@@ -178,7 +181,8 @@ async function callKieAI({
       log.error(`kie.ai claude empty. Full: ${raw.slice(0, 2000)}`);
       return { error: "Пустой ответ от kie.ai", status: 502 };
     }
-    return { reply };
+    const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+    return { reply, creditsConsumed };
 
   } else {
     // ── OpenAI Chat Completions API (chatgpt / gemini) ──────────────────────
@@ -233,7 +237,8 @@ async function callKieAI({
       log.error(`kie.ai ${module} empty. Full: ${raw.slice(0, 2000)}`);
       return { error: "Пустой ответ от kie.ai", status: 502 };
     }
-    return { reply };
+    const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+    return { reply, creditsConsumed };
   }
 }
 
@@ -413,9 +418,8 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const lastUserMsg = history[history.length - 1];
 
-    // Check and deduct credits for regeneration
     const regenOperation = `chat_${chat.module}`;
-    const creditsOk = await deductCredits(user.userId, regenOperation, reply);
+    const creditsOk = await checkCredits(user.userId, reply);
     if (!creditsOk) return;
 
     const result = await callKieAI({
@@ -432,10 +436,13 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    await dbQuery(
-      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, result.reply]
-    );
+    await Promise.all([
+      dbQuery(
+        `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
+        [chatId, result.reply]
+      ),
+      spendCredits(user.userId, result.creditsConsumed, regenOperation),
+    ]);
     return { ok: true, reply: result.reply };
   });
 
@@ -459,9 +466,8 @@ export async function chatRoutes(app: FastifyInstance) {
     }
     const chat = chatRes.rows[0] as { module: string; model: string };
 
-    // Check and deduct credits before calling KIE
-    const operation = `chat_${chat.module}` as string;
-    const ok = await deductCredits(user.userId, operation, reply);
+    const operation = `chat_${chat.module}`;
+    const ok = await checkCredits(user.userId, reply);
     if (!ok) return;
 
     const [settingsRes, historyRes] = await Promise.all([
@@ -509,10 +515,13 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    await dbQuery(
-      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, result.reply]
-    );
+    await Promise.all([
+      dbQuery(
+        `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
+        [chatId, result.reply]
+      ),
+      spendCredits(user.userId, result.creditsConsumed, operation),
+    ]);
 
     return { ok: true, reply: result.reply };
   });
