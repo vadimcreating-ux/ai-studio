@@ -1,7 +1,6 @@
 import { test as setup } from "@playwright/test";
-import path from "path";
 
-export const AUTH_FILE = path.join(import.meta.dirname, "../.auth/user.json");
+const AUTH_FILE = "apps/tests/.auth/user.json";
 
 /**
  * Global auth setup — логинится один раз и сохраняет cookies.
