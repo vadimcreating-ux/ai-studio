@@ -44,7 +44,6 @@ function ChatDropdown() {
     if (!open) return;
     function handleClick(e: MouseEvent) {
       if (btnRef.current && !btnRef.current.contains(e.target as Node)) {
-        // check if click is inside the portal dropdown
         const dropdown = document.getElementById("chat-dropdown-portal");
         if (dropdown && dropdown.contains(e.target as Node)) return;
         setOpen(false);
@@ -96,7 +95,9 @@ function ChatDropdown() {
   );
 }
 
-function UserMenu() {
+type UserMenuProps = { online: boolean };
+
+function UserMenu({ online }: UserMenuProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -131,23 +132,24 @@ function UserMenu() {
       {spentToast !== null && (
         <div
           key={spentToast + Date.now()}
-          className="absolute -top-8 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap"
+          className="absolute top-full mt-2 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap z-50"
           style={{ animation: "creditsSpentFade 3s ease-out forwards" }}
         >
           <span className="text-xs font-medium text-red-400 bg-panel border border-border rounded-full px-2.5 py-1 shadow-lg">
-            −{spentToast.toFixed(4)} кр.
+            −{spentToast.toFixed(3)} кр.
           </span>
         </div>
       )}
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
       >
         <Coins size={14} className="text-accent" />
-        <span className="font-medium">{user.credits_balance.toLocaleString()}</span>
-        <div className="w-px h-4 bg-border" />
+        <span className="font-medium">{user.credits_balance.toFixed(3)}</span>
+        <div className="w-px h-4 bg-border mx-0.5" />
         <User size={14} className="text-muted" />
         <span className="text-muted max-w-[100px] truncate">{user.name}</span>
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${online ? "bg-green-400" : "bg-gray-600"}`} />
       </button>
 
       {open && (
@@ -157,7 +159,7 @@ function UserMenu() {
             <div className="text-muted text-xs truncate">{user.email}</div>
             <div className="flex items-center gap-1 mt-1">
               <Coins size={12} className="text-accent" />
-              <span className="text-sm text-white font-medium">{user.credits_balance.toLocaleString()}</span>
+              <span className="text-sm text-white font-medium">{user.credits_balance.toFixed(3)}</span>
               <span className="text-xs text-muted">кредитов</span>
             </div>
           </div>
@@ -185,7 +187,9 @@ function UserMenu() {
   );
 }
 
-export default function TopNav() {
+type TopNavProps = { online: boolean };
+
+export default function TopNav({ online }: TopNavProps) {
   return (
     <header className="flex items-center h-[72px] border-b border-border bg-panel shrink-0 px-5 gap-1">
 
@@ -246,7 +250,7 @@ export default function TopNav() {
       <div className="flex-1" />
 
       {/* User menu */}
-      <UserMenu />
+      <UserMenu online={online} />
     </header>
   );
 }
