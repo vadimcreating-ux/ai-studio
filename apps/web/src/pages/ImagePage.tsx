@@ -813,9 +813,6 @@ export default function ImagePage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-muted/70 whitespace-nowrap">
-                        <span className="text-[#58a6ff] font-medium">{imageGenerateCost ?? GENERATION_COST_FALLBACK[resolution] ?? 18}</span> кред.
-                      </span>
                       <button onClick={() => generate.mutate()}
                         disabled={!prompt.trim() || generate.isPending}
                         className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
@@ -1060,6 +1057,22 @@ export default function ImagePage() {
                 {deleteTemplate.isPending ? "Удаление..." : "Удалить"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generation progress overlay */}
+      {generate.isPending && (
+        <div className="fixed inset-0 flex items-center justify-center z-40 pointer-events-none">
+          <div className="bg-panel border border-border rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-2xl w-[340px] pointer-events-auto">
+            <div className="flex items-center gap-2">
+              <Loader2 size={16} className="text-accent animate-spin" />
+              <span className="text-[14px] text-white font-medium">{statusText || "Генерация..."}</span>
+            </div>
+            <div className="w-full h-1.5 bg-surface rounded-full overflow-hidden">
+              <div className="h-full w-full bg-accent rounded-full animate-pulse" />
+            </div>
+            <div className="text-[11px] text-muted">Обычно занимает 10–30 секунд</div>
           </div>
         </div>
       )}

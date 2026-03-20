@@ -196,6 +196,7 @@ export default function VideoPage() {
   // UI state
   const [results, setResults] = useState<GeneratedVideo[]>([]);
   const [statusText, setStatusText] = useState("");
+  const [generationProgress, setGenerationProgress] = useState(0);
   const [historySearch, setHistorySearch] = useState("");
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -385,6 +386,7 @@ export default function VideoPage() {
         const status = await api.get<{ ok: boolean; status: string; videoUrl: string; progress: number; errorMessage: string }>(
           `/api/video/status?taskId=${encodeURIComponent(taskId)}`
         );
+        setGenerationProgress(status.progress > 0 ? status.progress : 0);
         setStatusText(status.progress > 0 ? `Генерация... ${status.progress}%` : `Генерация (${activeModel.label})...`);
         if (status.status === "SUCCESS" && status.videoUrl) return { taskId, videoUrl: status.videoUrl, prompt: finalPrompt };
         if (status.status === "FAILED") throw new Error(status.errorMessage || "Генерация завершилась с ошибкой");
@@ -394,9 +396,10 @@ export default function VideoPage() {
     onSuccess: (result) => {
       setResults((prev) => [result, ...prev]);
       setStatusText("");
+      setGenerationProgress(0);
       queryClient.invalidateQueries({ queryKey: ["video-history"] });
     },
-    onError: () => setStatusText(""),
+    onError: () => { setStatusText(""); setGenerationProgress(0); },
   });
 
   const downloadVideo = (url: string, taskId: string) => {
@@ -704,9 +707,6 @@ export default function VideoPage() {
                   {generate.isError && <span className="text-[11px] text-red-400 ml-2">{generate.error?.message ?? "Ошибка"}</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted/70 whitespace-nowrap">
-                    <span className="text-[#58a6ff] font-medium">~{activeModel.cost}</span> кред.
-                  </span>
                   <button onClick={() => generate.mutate()} disabled={!prompt.trim() || generate.isPending}
                     className="flex items-center gap-2 px-5 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     {generate.isPending ? <><Loader2 size={14} className="animate-spin" />Генерация...</> : <><Film size={14} />Сгенерировать</>}
@@ -750,6 +750,33 @@ export default function VideoPage() {
           </div>
         </div>
       </div>
+
+      {/* Generation progress overlay */}
+      {generate.isPending && (
+        <div className="fixed inset-0 flex items-center justify-center z-40 pointer-events-none">
+          <div className="bg-panel border border-border rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-2xl w-[340px] pointer-events-auto">
+            <div className="flex items-center gap-2">
+              <Loader2 size={16} className="text-accent animate-spin" />
+              <span className="text-[14px] text-white font-medium">{statusText || "Генерация видео..."}</span>
+            </div>
+            <div className="w-full h-1.5 bg-surface rounded-full overflow-hidden">
+              {generationProgress > 0 ? (
+                <div
+                  className="h-full bg-accent rounded-full transition-all duration-500"
+                  style={{ width: `${generationProgress}%` }}
+                />
+              ) : (
+                <div className="h-full w-full bg-accent rounded-full animate-pulse" />
+              )}
+            </div>
+            {generationProgress > 0 ? (
+              <div className="text-[11px] text-muted">{generationProgress}% завершено</div>
+            ) : (
+              <div className="text-[11px] text-muted">{activeModel.label} занимает 2–5 минут</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Video lightbox */}
       {lightboxUrl && <VideoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
