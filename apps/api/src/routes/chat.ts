@@ -196,6 +196,7 @@ async function callKieAIOnce({
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
       body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!res.ok) {
@@ -205,7 +206,17 @@ async function callKieAIOnce({
     }
     const raw = await res.text();
     log.info(`kie.ai claude full response: ${raw}`);
-    const data = JSON.parse(raw) as Record<string, unknown>;
+    if (!raw.trim()) {
+      log.error("kie.ai claude empty response body");
+      return { error: "Пустой ответ от kie.ai", status: 502 };
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch (e) {
+      log.error(`kie.ai claude JSON parse error: ${e}. Raw: ${raw.slice(0, 500)}`);
+      return { error: "Неверный формат ответа от kie.ai", status: 502 };
+    }
 
     if (typeof data.code === "number" && data.code !== 200) {
       return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
@@ -258,6 +269,7 @@ async function callKieAIOnce({
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
       body: JSON.stringify({ messages, stream: false }),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!res.ok) {
@@ -267,7 +279,17 @@ async function callKieAIOnce({
     }
     const raw = await res.text();
     log.info(`kie.ai ${module} full response: ${raw}`);
-    const data = JSON.parse(raw) as Record<string, unknown>;
+    if (!raw.trim()) {
+      log.error(`kie.ai ${module} empty response body`);
+      return { error: "Пустой ответ от kie.ai", status: 502 };
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch (e) {
+      log.error(`kie.ai ${module} JSON parse error: ${e}. Raw: ${raw.slice(0, 500)}`);
+      return { error: "Неверный формат ответа от kie.ai", status: 502 };
+    }
 
     if (typeof data.code === "number" && data.code !== 200) {
       return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
