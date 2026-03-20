@@ -473,15 +473,17 @@ export async function chatRoutes(app: FastifyInstance) {
       log: app.log,
     });
 
-    if ("error" in result) {
-      return reply.status(result.status).send({ ok: false, error: result.error });
-    }
-
-    // Always save assistant message first — credits failure must not break history
+    const regenReply = "error" in result
+      ? "Не удалось соединиться с сервером ИИ. Пожалуйста, повторите запрос."
+      : result.reply;
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, result.reply]
+      [chatId, regenReply]
     );
+    if ("error" in result) {
+      app.log.error(`kie.ai regenerate failed after retries: ${result.error}`);
+      return { ok: true, reply: regenReply, credits_spent: 0 };
+    }
     let creditsSpent = 0;
     try {
       creditsSpent = await spendCredits(user.userId, result.creditsConsumed, regenOperation);
@@ -556,15 +558,17 @@ export async function chatRoutes(app: FastifyInstance) {
       log: app.log,
     });
 
-    if ("error" in result) {
-      return reply.status(result.status).send({ ok: false, error: result.error });
-    }
-
-    // Always save assistant message first — credits failure must not break history
+    const sendReply = "error" in result
+      ? "Не удалось соединиться с сервером ИИ. Пожалуйста, повторите запрос."
+      : result.reply;
     await dbQuery(
       `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, result.reply]
+      [chatId, sendReply]
     );
+    if ("error" in result) {
+      app.log.error(`kie.ai send failed after retries: ${result.error}`);
+      return { ok: true, reply: sendReply, credits_spent: 0 };
+    }
     let creditsSpent = 0;
     try {
       creditsSpent = await spendCredits(user.userId, result.creditsConsumed, operation);
@@ -572,6 +576,6 @@ export async function chatRoutes(app: FastifyInstance) {
       app.log.error({ err }, "spendCredits failed on send");
     }
 
-    return { ok: true, reply: result.reply, credits_spent: creditsSpent };
+    return { ok: true, reply: sendReply, credits_spent: creditsSpent };
   });
 }
