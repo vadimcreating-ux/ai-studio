@@ -1,16 +1,14 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useQuery as useAuthQuery } from "@tanstack/react-query";
 import {
   Zap, Cpu, Bot, Sparkles, Image, Video, Music,
   HardDrive, FolderOpen, MessageSquare, TrendingDown,
   TrendingUp, Clock, ArrowRight, Play,
 } from "lucide-react";
-import { authApi } from "../shared/api/auth";
+import { useAuth } from "../contexts/AuthContext";
 import { creditsApi } from "../shared/api/credits";
 import { api } from "../shared/api/client";
 import { chatApi } from "../shared/api/chat";
-import type { Chat } from "../shared/api/chat";
 
 type FileItem = {
   id: string;
@@ -23,14 +21,16 @@ type FileItem = {
 
 type CreditTx = {
   id: string;
-  amount: number;
+  amount: number | string;
   operation: string;
   description: string;
   created_at: string;
 };
 
-function formatDate(iso: string) {
+function formatDate(iso: string | null | undefined) {
+  if (!iso) return "";
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMin = Math.floor(diffMs / 60000);
@@ -51,22 +51,18 @@ const ENGINE_META = {
 };
 
 const OP_LABELS: Record<string, string> = {
-  chat_claude:      "Чат Claude",
-  chat_chatgpt:     "Чат ChatGPT",
-  chat_gemini:      "Чат Gemini",
-  image_generate:   "Генерация изображения",
-  video_generate:   "Генерация видео",
-  prompt_improve:   "Улучшение промпта",
-  credits_added:    "Пополнение",
+  chat_claude:    "Чат Claude",
+  chat_chatgpt:   "Чат ChatGPT",
+  chat_gemini:    "Чат Gemini",
+  image_generate: "Генерация изображения",
+  video_generate: "Генерация видео",
+  prompt_improve: "Улучшение промпта",
+  credits_added:  "Пополнение",
 };
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-
-  const { data: me } = useAuthQuery({
-    queryKey: ["auth", "me"],
-    queryFn: () => authApi.me().then((r) => r.data),
-  });
+  const { user } = useAuth();
 
   const { data: filesData } = useQuery({
     queryKey: ["dashboard-files"],
@@ -97,10 +93,10 @@ export default function DashboardPage() {
 
   const files = filesData?.files ?? [];
   const totalFiles = filesData?.total ?? 0;
-  const txList: CreditTx[] = txData?.data?.items ?? [];
+  const txList: CreditTx[] = (txData as { ok: boolean; data: { items: CreditTx[]; total: number } } | undefined)?.data?.items ?? [];
 
-  const usedMb = Number(me?.storage_used_mb ?? 0);
-  const quotaMb = Number(me?.storage_quota_mb ?? 500);
+  const usedMb = Number(user?.storage_used_mb ?? 0);
+  const quotaMb = Number(user?.storage_quota_mb ?? 500);
   const storagePct = quotaMb > 0 ? Math.min(100, (usedMb / quotaMb) * 100) : 0;
   const storageColor = storagePct >= 90 ? "bg-red-500" : storagePct >= 70 ? "bg-yellow-500" : "bg-accent";
 
@@ -131,13 +127,13 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">
-              {greeting()}{me?.name ? `, ${me.name.split(" ")[0]}` : ""}
+              {greeting()}{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
             </h1>
             <p className="text-muted mt-1 text-sm">Что создаём сегодня?</p>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 bg-panel border border-border rounded-xl">
             <Zap size={16} className="text-accent" fill="currentColor" />
-            <span className="text-white font-semibold text-lg">{Number(me?.credits_balance ?? 0).toFixed(1)}</span>
+            <span className="text-white font-semibold text-lg">{Number(user?.credits_balance ?? 0).toFixed(1)}</span>
             <span className="text-muted text-sm">кредитов</span>
           </div>
         </div>
@@ -175,7 +171,7 @@ export default function DashboardPage() {
               <span className="text-xs text-muted uppercase tracking-wide">Баланс</span>
               <Zap size={15} className="text-accent" />
             </div>
-            <div className="text-2xl font-bold text-white">{Number(me?.credits_balance ?? 0).toFixed(1)}</div>
+            <div className="text-2xl font-bold text-white">{Number(user?.credits_balance ?? 0).toFixed(1)}</div>
             <div className="text-xs text-muted mt-1">кредитов</div>
           </div>
 
@@ -287,26 +283,29 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {txList.map((tx) => (
-                  <div key={tx.id} className="flex items-center justify-between gap-2 py-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${tx.amount > 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
-                        {tx.amount > 0
-                          ? <TrendingUp size={12} className="text-green-400" />
-                          : <TrendingDown size={12} className="text-red-400" />}
+                {txList.map((tx) => {
+                  const amt = Number(tx.amount);
+                  return (
+                    <div key={tx.id} className="flex items-center justify-between gap-2 py-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${amt > 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                          {amt > 0
+                            ? <TrendingUp size={12} className="text-green-400" />
+                            : <TrendingDown size={12} className="text-red-400" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-white truncate">
+                            {OP_LABELS[tx.operation] ?? tx.operation}
+                          </p>
+                          <p className="text-[10px] text-muted">{formatDate(tx.created_at)}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-xs text-white truncate">
-                          {OP_LABELS[tx.operation] ?? tx.operation}
-                        </p>
-                        <p className="text-[10px] text-muted">{formatDate(tx.created_at)}</p>
-                      </div>
+                      <span className={`text-xs font-mono font-medium flex-shrink-0 ${amt > 0 ? "text-green-400" : "text-red-400"}`}>
+                        {amt > 0 ? "+" : ""}{amt.toFixed(2)}
+                      </span>
                     </div>
-                    <span className={`text-xs font-mono font-medium flex-shrink-0 ${tx.amount > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {tx.amount > 0 ? "+" : ""}{tx.amount.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
