@@ -7,6 +7,7 @@ import {
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { FilesQuerySchema } from "../lib/validation.js";
+import { uploadToS3, isS3Configured } from "../lib/s3.js";
 
 
 const KIE_BASE_URL = "https://api.kie.ai";
@@ -100,8 +101,23 @@ export async function imageRoutes(app: FastifyInstance) {
         if (body?.quality) input.quality = body.quality;
       } else {
         if (body?.image_input?.length) {
-          // KIE expects full data URLs (e.g. data:image/png;base64,...) — do NOT strip the prefix
-          input.image_input = body.image_input;
+          // KIE requires HTTP URLs for image_input (not data URIs).
+          // Upload data URLs to S3 and pass the resulting HTTP URLs.
+          if (!isS3Configured()) {
+            return reply.status(400).send({ ok: false, error: "Загрузка референс-изображений требует настройки S3-хранилища" });
+          }
+          const uploadedUrls = await Promise.all(
+            body.image_input.map(async (dataUrl: string, idx: number) => {
+              const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+              if (!match) throw new Error(`image_input[${idx}]: не data URL`);
+              const [, mimeType, b64] = match;
+              const ext = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+              const key = `ref-images/${Date.now()}-${idx}.${ext}`;
+              const buffer = Buffer.from(b64, "base64");
+              return uploadToS3(buffer, key, mimeType);
+            })
+          );
+          input.image_input = uploadedUrls;
         }
         if (body?.resolution) input.resolution = body.resolution;
         if (body?.output_format) input.output_format = body.output_format;
