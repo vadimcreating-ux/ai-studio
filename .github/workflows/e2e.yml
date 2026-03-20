@@ -43,10 +43,17 @@ jobs:
         run: mkdir -p apps/tests/.auth && echo '{"cookies":[],"origins":[]}' > apps/tests/.auth/user.json
 
       - name: Run E2E tests
-        run: TEST_URL=https://vadimcreating-ux-ai-studio-775d.twc1.net npm run test:e2e
         env:
+          TEST_URL: https://vadimcreating-ux-ai-studio-775d.twc1.net
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+        run: |
+          if [ -z "$TEST_EMAIL" ] || [ -z "$TEST_PASSWORD" ]; then
+            echo "⚠️  E2E auth tests SKIPPED — TEST_EMAIL / TEST_PASSWORD not configured."
+            echo "    To enable: Settings → Secrets and variables → Actions → New repository secret"
+            exit 0
+          fi
+          npm run test:e2e
 
       - name: Upload report
         if: always()
