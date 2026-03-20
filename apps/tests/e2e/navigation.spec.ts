@@ -1,20 +1,21 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Routing", () => {
-  test("корень / редиректит на /claude", async ({ page }) => {
+  test("корень / редиректит на /dashboard", async ({ page }) => {
     await page.goto("/");
-    // С авторизацией / → /claude, без авторизации / → /login
-    await expect(page).toHaveURL(/\/(claude|login)/);
-    // Если залогинены — должен быть /claude
+    // С авторизацией / → /dashboard, без авторизации / → /login
+    await expect(page).toHaveURL(/\/(dashboard|login)/);
+    // Если залогинены — должен быть /dashboard
     const url = page.url();
     if (!url.includes("/login")) {
-      await expect(page).toHaveURL(/\/claude/);
+      await expect(page).toHaveURL(/\/dashboard/);
     }
   });
 
-  test("/dashboard редиректит на /claude", async ({ page }) => {
+  test("/dashboard открывает Dashboard страницу", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/claude/);
+    // Если не залогинен — редирект на /login, если залогинен — остаётся на /dashboard
+    await expect(page).toHaveURL(/\/(dashboard|login)/);
   });
 });
 
@@ -27,11 +28,11 @@ test.describe("TopNav", () => {
     }
   });
 
-  test("клик по логотипу открывает /claude", async ({ page }) => {
+  test("клик по логотипу открывает /dashboard", async ({ page }) => {
     await page.goto("/image");
     await page.waitForLoadState("load");
     await page.getByText(/AI Studio/i).first().click();
-    await expect(page).toHaveURL(/\/claude/);
+    await expect(page).toHaveURL(/\/dashboard/);
   });
 });
 
