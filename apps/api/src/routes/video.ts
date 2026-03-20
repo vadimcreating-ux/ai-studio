@@ -133,13 +133,13 @@ export async function videoRoutes(app: FastifyInstance) {
       const statusData = await statusResponse.json() as {
         code?: number;
         message?: string;
+        credits_consumed?: number;
         data?: {
           taskId?: string;
           state?: string;
           resultJson?: string;
           failMsg?: string;
           progress?: number;
-          credits?: number;
         };
       };
 
@@ -169,7 +169,7 @@ export async function videoRoutes(app: FastifyInstance) {
       if (state === "success" && videoUrl) {
         const resolvedTaskId = data.taskId ?? taskId;
         const userId = request.authUser?.userId;
-        const kieCredits = typeof data.credits === "number" ? data.credits : 0;
+        const kieCredits = typeof statusData.credits_consumed === "number" ? statusData.credits_consumed : 0;
         try {
           const { isNew } = await saveVideoToFiles({
             taskId: resolvedTaskId,
@@ -182,6 +182,11 @@ export async function videoRoutes(app: FastifyInstance) {
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
+          } else if (!isNew && kieCredits > 0) {
+            await dbQuery(
+              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
+              [kieCredits, resolvedTaskId]
+            );
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {

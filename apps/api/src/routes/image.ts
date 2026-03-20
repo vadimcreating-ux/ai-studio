@@ -186,6 +186,7 @@ export async function imageRoutes(app: FastifyInstance) {
       const statusData = await statusResponse.json() as {
         code?: number;
         message?: string;
+        credits_consumed?: number;
         data?: {
           taskId?: string;
           model?: string;
@@ -193,7 +194,6 @@ export async function imageRoutes(app: FastifyInstance) {
           resultJson?: string;
           failCode?: number;
           failMsg?: string;
-          credits?: number;
         };
       };
 
@@ -232,7 +232,7 @@ export async function imageRoutes(app: FastifyInstance) {
         const userId = request.authUser?.userId;
         // Log raw KIE data to debug credits field names
         app.log.info({ kieStatusData: data }, "KIE image status success");
-        const kieCredits = typeof data.credits === "number" ? data.credits : 0;
+        const kieCredits = typeof statusData.credits_consumed === "number" ? statusData.credits_consumed : 0;
         try {
           const { isNew } = await saveImageToFiles({
             taskId: resolvedTaskId,
