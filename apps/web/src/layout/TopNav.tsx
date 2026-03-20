@@ -132,7 +132,7 @@ function UserMenu({ online }: UserMenuProps) {
       {spentToast !== null && (
         <div
           key={spentToast + Date.now()}
-          className="absolute top-full mt-2 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap z-50"
+          className="absolute right-full mr-3 top-1/2 -translate-y-1/2 pointer-events-none whitespace-nowrap z-50"
           style={{ animation: "creditsSpentFade 3s ease-out forwards" }}
         >
           <span className="text-xs font-medium text-red-400 bg-panel border border-border rounded-full px-2.5 py-1 shadow-lg">
