@@ -208,6 +208,11 @@ export async function imageRoutes(app: FastifyInstance) {
       const data = statusData.data;
       const state = data.state ?? "waiting";
 
+      // Log non-terminal states at debug level to trace stuck tasks
+      if (state !== "success" && state !== "fail") {
+        app.log.info({ taskId, state, rawData: data }, "KIE image status poll");
+      }
+
       // Parse resultJson string to get image URLs
       let resultImageUrl = "";
       if (data.resultJson) {
@@ -253,21 +258,20 @@ export async function imageRoutes(app: FastifyInstance) {
         imagePromptStore.delete(taskId);
       }
 
-      const statusMap: Record<string, string> = {
-        waiting: "GENERATING",
-        queuing: "GENERATING",
-        generating: "GENERATING",
-        success: "SUCCESS",
-        fail: "FAILED",
-      };
+      const generatingStates = new Set(["waiting", "queuing", "generating"]);
+      const mappedStatus = state === "success"
+        ? "SUCCESS"
+        : generatingStates.has(state)
+        ? "GENERATING"
+        : "FAILED"; // unknown/error/failed/cancelled → treat as failure
 
       return {
         ok: true,
         taskId: data.taskId ?? taskId,
         state,
-        status: statusMap[state] ?? "GENERATING",
+        status: mappedStatus,
         imageUrl: resultImageUrl,
-        errorMessage: data.failMsg || "",
+        errorMessage: data.failMsg || (mappedStatus === "FAILED" ? `Задача завершилась со статусом: ${state}` : ""),
       };
     } catch {
       return reply.status(500).send({ ok: false, error: "Не удалось проверить статус в KIE" });
