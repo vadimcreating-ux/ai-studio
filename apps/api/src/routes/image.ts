@@ -202,11 +202,19 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       if (state === "success" && resultImageUrl) {
-        await saveImageToFiles({
-          taskId: data.taskId ?? taskId,
-          url: resultImageUrl,
-          prompt: imagePromptStore.get(taskId) || undefined,
-        });
+        try {
+          await saveImageToFiles({
+            taskId: data.taskId ?? taskId,
+            url: resultImageUrl,
+            prompt: imagePromptStore.get(taskId) || undefined,
+            userId: request.authUser?.userId,
+          });
+        } catch (err: any) {
+          if (err.message?.includes("хранилище")) {
+            return reply.status(507).send({ ok: false, error: err.message });
+          }
+          console.error("saveImageToFiles failed:", err.message);
+        }
         imagePromptStore.delete(taskId);
       }
 
@@ -262,7 +270,8 @@ export async function imageRoutes(app: FastifyInstance) {
     const parsed = FilesQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные параметры" });
     const { limit, offset } = parsed.data;
-    const { files, total } = await getFiles(limit, offset);
+    const userId = request.authUser?.userId;
+    const { files, total } = await getFiles(limit, offset, userId);
     return { ok: true, files, total, limit, offset };
   });
 
@@ -389,7 +398,7 @@ Rules:
       return reply.status(400).send({ ok: false, error: "Не передан id файла" });
     }
 
-    const deleted = await deleteFileById(id);
+    const deleted = await deleteFileById(id, request.authUser?.userId);
     if (!deleted) {
       return reply.status(404).send({ ok: false, error: "Файл не найден" });
     }

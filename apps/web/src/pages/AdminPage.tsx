@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi } from "../shared/api/admin";
-import { Users, Coins, BarChart3, History, ChevronRight, Plus, Minus } from "lucide-react";
+import { Users, Coins, BarChart3, History, ChevronRight, Plus, Minus, HardDrive } from "lucide-react";
 
 type Tab = "stats" | "users" | "prices" | "transactions";
 
@@ -87,11 +87,44 @@ function StatsTab({ stats }: { stats: { total_users: number; total_chats: number
   );
 }
 
-type UserRow = { id: string; email: string; name: string; role: string; is_active: boolean; credits_balance: number; created_at: string };
+type UserRow = {
+  id: string; email: string; name: string; role: string; is_active: boolean;
+  credits_balance: number; storage_quota_mb: number; storage_used_mb: number; created_at: string;
+};
+
+type EditMode = "credits" | "storage" | null;
+
+function StorageBar({ used, quota }: { used: number; quota: number }) {
+  const pct = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
+  const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-accent";
+  return (
+    <div className="mt-1.5">
+      <div className="flex justify-between text-xs text-muted mb-1">
+        <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" /> Хранилище</span>
+        <span>{used.toFixed(1)} / {quota} MB</span>
+      </div>
+      <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQueryClient> }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState<EditMode>(null);
   const [addAmount, setAddAmount] = useState<Record<string, string>>({});
+  const [quotaInput, setQuotaInput] = useState<Record<string, string>>({});
+
+  function openEdit(id: string, mode: EditMode) {
+    if (editingId === id && editMode === mode) {
+      setEditingId(null);
+      setEditMode(null);
+    } else {
+      setEditingId(id);
+      setEditMode(mode);
+    }
+  }
 
   const toggleActive = useMutation({
     mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
@@ -109,12 +142,22 @@ function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQu
     },
   });
 
+  const updateStorage = useMutation({
+    mutationFn: ({ id, storage_quota_mb }: { id: string; storage_quota_mb: number }) =>
+      adminApi.updateStorage(id, storage_quota_mb),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      setEditingId(null);
+      setQuotaInput({});
+    },
+  });
+
   return (
     <div className="space-y-2">
       {users.map((u) => (
         <div key={u.id} className="bg-panel border border-border rounded-xl p-4">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-white font-medium truncate">{u.name}</span>
                 <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -130,14 +173,22 @@ function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQu
               <div className="text-sm text-white mt-1">
                 Кредитов: <span className="font-medium">{u.credits_balance.toLocaleString()}</span>
               </div>
+              <StorageBar used={Number(u.storage_used_mb ?? 0)} quota={u.storage_quota_mb ?? 500} />
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => setEditingId(editingId === u.id ? null : u.id)}
+                onClick={() => openEdit(u.id, "credits")}
                 className="flex items-center gap-1 px-2 py-1 bg-surface hover:bg-border rounded text-xs text-muted hover:text-white transition-colors"
               >
                 <Coins className="w-3 h-3" />
                 Кредиты
+              </button>
+              <button
+                onClick={() => openEdit(u.id, "storage")}
+                className="flex items-center gap-1 px-2 py-1 bg-surface hover:bg-border rounded text-xs text-muted hover:text-white transition-colors"
+              >
+                <HardDrive className="w-3 h-3" />
+                Диск
               </button>
               <button
                 onClick={() => toggleActive.mutate({ id: u.id, is_active: !u.is_active })}
@@ -152,7 +203,7 @@ function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQu
             </div>
           </div>
 
-          {editingId === u.id && (
+          {editingId === u.id && editMode === "credits" && (
             <div className="mt-3 pt-3 border-t border-border flex items-center gap-2">
               <div className="flex items-center gap-1">
                 <button
@@ -186,6 +237,34 @@ function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQu
                 {addCredits.isPending ? "..." : "Начислить"}
               </button>
               <span className="text-xs text-muted">кредитов</span>
+            </div>
+          )}
+
+          {editingId === u.id && editMode === "storage" && (
+            <div className="mt-3 pt-3 border-t border-border flex items-center gap-2">
+              <HardDrive className="w-3.5 h-3.5 text-muted flex-shrink-0" />
+              <span className="text-xs text-muted">Квота (MB):</span>
+              <input
+                type="number"
+                value={quotaInput[u.id] ?? u.storage_quota_mb}
+                onChange={(e) => setQuotaInput((q) => ({ ...q, [u.id]: e.target.value }))}
+                className="w-24 bg-surface border border-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-accent text-center"
+                min="0"
+                step="100"
+              />
+              <button
+                onClick={() => {
+                  const mb = Number(quotaInput[u.id]);
+                  if (mb >= 0) updateStorage.mutate({ id: u.id, storage_quota_mb: mb });
+                }}
+                disabled={updateStorage.isPending}
+                className="px-3 py-1 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded text-sm transition-colors"
+              >
+                {updateStorage.isPending ? "..." : "Сохранить"}
+              </button>
+              <span className="text-xs text-muted">
+                Сейчас: {Number(u.storage_used_mb ?? 0).toFixed(1)} MB занято
+              </span>
             </div>
           )}
         </div>

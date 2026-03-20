@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 import { authenticate, requireAdmin, type JwtPayload } from "../lib/auth.js";
-import { AdminAddCreditsSchema, AdminUpdateUserSchema, AdminUpdateCreditPriceSchema } from "../lib/validation.js";
+import { AdminAddCreditsSchema, AdminUpdateUserSchema, AdminUpdateCreditPriceSchema, AdminUpdateStorageSchema } from "../lib/validation.js";
 
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -14,7 +14,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // GET /api/admin/users
   app.get("/api/admin/users", async (_req, reply) => {
     const result = await dbQuery(
-      "SELECT id, email, name, role, is_active, credits_balance, created_at FROM users ORDER BY created_at DESC"
+      "SELECT id, email, name, role, is_active, credits_balance, storage_quota_mb, storage_used_mb, created_at FROM users ORDER BY created_at DESC"
     );
     return reply.send({ ok: true, data: result.rows });
   });
@@ -23,7 +23,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get("/api/admin/users/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const result = await dbQuery(
-      "SELECT id, email, name, role, is_active, credits_balance, created_at FROM users WHERE id = $1",
+      "SELECT id, email, name, role, is_active, credits_balance, storage_quota_mb, storage_used_mb, created_at FROM users WHERE id = $1",
       [id]
     );
     if (!result.rows[0]) return reply.status(404).send({ ok: false, error: "Пользователь не найден" });
@@ -81,6 +81,22 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const result = await dbQuery("SELECT credits_balance FROM users WHERE id = $1", [id]);
     return reply.send({ ok: true, data: { credits_balance: result.rows[0]?.credits_balance } });
+  });
+
+  // PATCH /api/admin/users/:id/storage — set storage quota
+  app.patch("/api/admin/users/:id/storage", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = AdminUpdateStorageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
+    }
+    const { storage_quota_mb } = parsed.data;
+    const result = await dbQuery(
+      "UPDATE users SET storage_quota_mb = $1 WHERE id = $2 RETURNING id, storage_quota_mb, storage_used_mb",
+      [storage_quota_mb, id]
+    );
+    if (!result.rows[0]) return reply.status(404).send({ ok: false, error: "Пользователь не найден" });
+    return reply.send({ ok: true, data: result.rows[0] });
   });
 
   // ─── Credit prices ────────────────────────────────────────────────────────

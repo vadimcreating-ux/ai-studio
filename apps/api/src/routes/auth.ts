@@ -90,7 +90,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const result = await dbQuery(
-      "SELECT id, email, name, role, is_active, credits_balance FROM users WHERE id = $1",
+      "SELECT id, email, name, role, is_active, credits_balance, storage_quota_mb, storage_used_mb FROM users WHERE id = $1",
       [payload.userId]
     );
     const user = result.rows[0];
@@ -99,7 +99,7 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ ok: false, error: "Аккаунт не найден или отключён" });
     }
 
-    return reply.send({ ok: true, data: { id: user.id, email: user.email, name: user.name, role: user.role, credits_balance: user.credits_balance } });
+    return reply.send({ ok: true, data: { id: user.id, email: user.email, name: user.name, role: user.role, credits_balance: user.credits_balance, storage_quota_mb: user.storage_quota_mb, storage_used_mb: Number(user.storage_used_mb) } });
   });
 
   // ─── Google OAuth ─────────────────────────────────────────────────────────

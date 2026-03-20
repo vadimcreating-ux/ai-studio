@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { randomUUID } from "node:crypto";
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
+import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
 
 async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
@@ -27,28 +27,6 @@ const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const videoPromptStore = new Map<string, string>();
-
-async function saveVideoToFiles(data: {
-  taskId: string;
-  url: string;
-  prompt?: string;
-}) {
-  const existing = await dbQuery(
-    `SELECT id FROM files WHERE task_id = $1 LIMIT 1`,
-    [data.taskId]
-  );
-  if (existing.rows[0]) return;
-
-  const id = randomUUID();
-  const name = `video-${Date.now()}.mp4`;
-
-  await dbQuery(
-    `INSERT INTO files (id, task_id, type, name, url, created_at, source, prompt)
-     VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)
-     ON CONFLICT (task_id) DO NOTHING`,
-    [id, data.taskId, "video", name, data.url, "kie", data.prompt || null]
-  );
-}
 
 export async function videoRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
@@ -192,11 +170,19 @@ export async function videoRoutes(app: FastifyInstance) {
       }
 
       if (state === "success" && videoUrl) {
-        await saveVideoToFiles({
-          taskId: data.taskId ?? taskId,
-          url: videoUrl,
-          prompt: videoPromptStore.get(taskId),
-        });
+        try {
+          await saveVideoToFiles({
+            taskId: data.taskId ?? taskId,
+            url: videoUrl,
+            prompt: videoPromptStore.get(taskId),
+            userId: request.authUser?.userId,
+          });
+        } catch (err: any) {
+          if (err.message?.includes("хранилище")) {
+            return reply.status(507).send({ ok: false, error: err.message });
+          }
+          console.error("saveVideoToFiles failed:", err.message);
+        }
         videoPromptStore.delete(taskId);
       }
 
@@ -249,10 +235,18 @@ export async function videoRoutes(app: FastifyInstance) {
   });
 
   // История видео
-  app.get("/api/video/history", async () => {
+  app.get("/api/video/history", async (request) => {
+    const userId = request.authUser?.userId;
+    const whereParts = ["type = 'video'"];
+    const params: unknown[] = [];
+    if (userId) {
+      whereParts.push(`user_id = $${params.length + 1}`);
+      params.push(userId);
+    }
     const result = await dbQuery(
-      `SELECT id, task_id, type, name, url, created_at, source, prompt
-       FROM files WHERE type = 'video' ORDER BY created_at DESC`
+      `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes
+       FROM files WHERE ${whereParts.join(" AND ")} ORDER BY created_at DESC`,
+      params
     );
     return {
       ok: true,
@@ -261,10 +255,11 @@ export async function videoRoutes(app: FastifyInstance) {
         taskId: row.task_id,
         type: row.type,
         name: row.name,
-        url: row.url,
+        url: row.storage_url ?? row.url,
         createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
         source: row.source,
         prompt: row.prompt ?? null,
+        fileSizeBytes: row.file_size_bytes ? Number(row.file_size_bytes) : null,
       })),
     };
   });
@@ -272,8 +267,8 @@ export async function videoRoutes(app: FastifyInstance) {
   // Удаление видео из истории
   app.delete("/api/video/history/:id", async (request, reply) => {
     const params = request.params as { id: string };
-    const result = await dbQuery(`DELETE FROM files WHERE id = $1 AND type = 'video'`, [params.id]);
-    if ((result.rowCount ?? 0) === 0) {
+    const deleted = await deleteFileById(params.id, request.authUser?.userId);
+    if (!deleted) {
       return reply.status(404).send({ ok: false, error: "Файл не найден" });
     }
     return { ok: true };

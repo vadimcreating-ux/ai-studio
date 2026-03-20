@@ -25,6 +25,12 @@ export const adminApi = {
       { amount, description }
     ),
 
+  updateStorage: (userId: string, storage_quota_mb: number) =>
+    api.patch<{ ok: boolean; data: { id: string; storage_quota_mb: number; storage_used_mb: number } }>(
+      `/api/admin/users/${userId}/storage`,
+      { storage_quota_mb }
+    ),
+
   transactions: (params?: { limit?: number; offset?: number; user_id?: string }) => {
     const q = new URLSearchParams();
     if (params?.limit) q.set("limit", String(params.limit));

@@ -7,6 +7,8 @@ export type User = {
   role: "admin" | "user";
   is_active: boolean;
   credits_balance: number;
+  storage_quota_mb: number;
+  storage_used_mb: number;
   created_at: string;
 };
 
