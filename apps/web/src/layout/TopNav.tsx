@@ -7,6 +7,7 @@ import {
   Coins, LogOut, ShieldCheck, User,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useBackendStatus } from "./AppLayout";
 
 const chatRoutes = [
   { to: "/claude",  label: "Claude",  icon: <Cpu      size={16} /> },
@@ -103,6 +104,8 @@ function UserMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const [spentToast, setSpentToast] = useState<number | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { data, isError } = useBackendStatus();
+  const online = !!data?.ok && !isError;
 
   useEffect(() => {
     function handleCreditsSpent(e: Event) {
@@ -131,23 +134,24 @@ function UserMenu() {
       {spentToast !== null && (
         <div
           key={spentToast + Date.now()}
-          className="absolute -top-8 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap"
+          className="absolute top-full mt-2 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap z-50"
           style={{ animation: "creditsSpentFade 3s ease-out forwards" }}
         >
           <span className="text-xs font-medium text-red-400 bg-panel border border-border rounded-full px-2.5 py-1 shadow-lg">
-            −{spentToast.toFixed(4)} кр.
+            −{spentToast.toFixed(3)} кр.
           </span>
         </div>
       )}
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
       >
         <Coins size={14} className="text-accent" />
-        <span className="font-medium">{user.credits_balance.toLocaleString()}</span>
-        <div className="w-px h-4 bg-border" />
+        <span className="font-medium">{user.credits_balance.toFixed(3)}</span>
+        <div className="w-px h-4 bg-border mx-0.5" />
         <User size={14} className="text-muted" />
         <span className="text-muted max-w-[100px] truncate">{user.name}</span>
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${online ? "bg-green-400" : "bg-gray-600"}`} />
       </button>
 
       {open && (
@@ -157,7 +161,7 @@ function UserMenu() {
             <div className="text-muted text-xs truncate">{user.email}</div>
             <div className="flex items-center gap-1 mt-1">
               <Coins size={12} className="text-accent" />
-              <span className="text-sm text-white font-medium">{user.credits_balance.toLocaleString()}</span>
+              <span className="text-sm text-white font-medium">{user.credits_balance.toFixed(3)}</span>
               <span className="text-xs text-muted">кредитов</span>
             </div>
           </div>
