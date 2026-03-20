@@ -204,19 +204,25 @@ async function runChatTests(module: string, model: string) {
   let replyText: string | null = null;
 
   await test(`POST /api/chat/${chatId}/send — отправить сообщение → KIE`, async () => {
-    // Retry once — KIE sometimes returns transient 500
-    let data: Record<string, unknown>;
-    try {
-      data = await api("POST", `/api/chat/${chatId}/send`, {
-        message: "Ответь ровно одним словом: тест",
-      });
-    } catch (firstErr) {
-      console.log(`     ↻ KIE ошибка (retry): ${firstErr instanceof Error ? firstErr.message : firstErr}`);
-      await new Promise((r) => setTimeout(r, 3000));
-      data = await api("POST", `/api/chat/${chatId}/send`, {
-        message: "Ответь ровно одним словом: тест",
-      });
+    // Retry up to 3 times — KIE Claude sometimes returns transient 500
+    let data: Record<string, unknown> | undefined;
+    const delays = [5000, 10000, 15000];
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        data = await api("POST", `/api/chat/${chatId}/send`, {
+          message: "Ответь ровно одним словом: тест",
+        });
+        break;
+      } catch (err) {
+        if (attempt < delays.length) {
+          console.log(`     ↻ KIE ошибка (retry ${attempt + 1}/${delays.length}): ${err instanceof Error ? err.message : err}`);
+          await new Promise((r) => setTimeout(r, delays[attempt]));
+        } else {
+          throw err;
+        }
+      }
     }
+    data = data!;
     assert(data.ok === true, "ok !== true");
     assert(typeof data.reply === "string" && (data.reply as string).length > 0, "пустой reply");
     // Also verify credits_spent is returned
