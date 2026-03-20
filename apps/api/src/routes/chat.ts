@@ -25,11 +25,17 @@ async function checkCredits(userId: string, reply: FastifyReply): Promise<boolea
 // Returns the actual amount deducted (rounded to 4 decimal places).
 async function spendCredits(userId: string, kieAmount: number, operation: string): Promise<number> {
   if (kieAmount <= 0) return 0;
-  const priceRes = await dbQuery(
-    "SELECT markup_percent FROM credit_prices WHERE operation = $1",
-    [operation]
-  );
-  const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+  // Graceful fallback if markup_percent column is not yet migrated on prod
+  let markupPercent = 0;
+  try {
+    const priceRes = await dbQuery(
+      "SELECT markup_percent FROM credit_prices WHERE operation = $1",
+      [operation]
+    );
+    markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+  } catch {
+    // column might not exist yet — proceed with 0% markup
+  }
   const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
@@ -444,13 +450,17 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    const [, creditsSpent] = await Promise.all([
-      dbQuery(
-        `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-        [chatId, result.reply]
-      ),
-      spendCredits(user.userId, result.creditsConsumed, regenOperation),
-    ]);
+    // Always save assistant message first — credits failure must not break history
+    await dbQuery(
+      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
+      [chatId, result.reply]
+    );
+    let creditsSpent = 0;
+    try {
+      creditsSpent = await spendCredits(user.userId, result.creditsConsumed, regenOperation);
+    } catch (err) {
+      app.log.error({ err }, "spendCredits failed on regenerate");
+    }
     return { ok: true, reply: result.reply, credits_spent: creditsSpent };
   });
 
@@ -523,13 +533,17 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(result.status).send({ ok: false, error: result.error });
     }
 
-    const [, creditsSpent] = await Promise.all([
-      dbQuery(
-        `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-        [chatId, result.reply]
-      ),
-      spendCredits(user.userId, result.creditsConsumed, operation),
-    ]);
+    // Always save assistant message first — credits failure must not break history
+    await dbQuery(
+      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
+      [chatId, result.reply]
+    );
+    let creditsSpent = 0;
+    try {
+      creditsSpent = await spendCredits(user.userId, result.creditsConsumed, operation);
+    } catch (err) {
+      app.log.error({ err }, "spendCredits failed on send");
+    }
 
     return { ok: true, reply: result.reply, credits_spent: creditsSpent };
   });
