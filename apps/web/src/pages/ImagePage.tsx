@@ -120,8 +120,8 @@ const RESOLUTIONS = [
   { value: "4K", label: "4K" },
 ];
 
-// Стоимость генерации в кредитах KIE по разрешению
-const GENERATION_COST: Record<string, number> = {
+// Fallback стоимость (используется до загрузки цен с сервера)
+const GENERATION_COST_FALLBACK: Record<string, number> = {
   "1K": 18,
   "2K": 18,
   "4K": 24,
@@ -252,6 +252,13 @@ export default function ImagePage() {
       setDeleteTplConfirm(null);
     },
   });
+
+  const { data: pricesData } = useQuery({
+    queryKey: ["credits-prices"],
+    queryFn: () => api.get<{ ok: boolean; data: Array<{ operation: string; credits: number }> }>("/api/credits/prices"),
+    staleTime: 5 * 60 * 1000,
+  });
+  const imageGenerateCost = pricesData?.data?.find((p) => p.operation === "image_generate")?.credits;
 
   const { data: filesData } = useQuery({
     queryKey: ["files"],
@@ -806,7 +813,7 @@ export default function ImagePage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-muted/70 whitespace-nowrap">
-                        <span className="text-[#58a6ff] font-medium">{GENERATION_COST[resolution] ?? 18}</span> кред.
+                        <span className="text-[#58a6ff] font-medium">{imageGenerateCost ?? GENERATION_COST_FALLBACK[resolution] ?? 18}</span> кред.
                       </span>
                       <button onClick={() => generate.mutate()}
                         disabled={!prompt.trim() || generate.isPending}

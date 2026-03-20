@@ -31,9 +31,13 @@ export async function creditsRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, data: { items: rows.rows, total: Number(total.rows[0].count) } });
   });
 
-  // GET /api/credits/prices — public list of operation costs
+  // GET /api/credits/prices — public list of operation costs (with markup applied)
   app.get("/api/credits/prices", async (_req, reply) => {
-    const result = await dbQuery("SELECT operation, credits FROM credit_prices ORDER BY operation");
-    return reply.send({ ok: true, data: result.rows });
+    const result = await dbQuery("SELECT operation, credits, markup_percent FROM credit_prices ORDER BY operation");
+    const data = result.rows.map((r: any) => ({
+      operation: r.operation,
+      credits: Math.round(Number(r.credits) * (1 + Number(r.markup_percent ?? 0) / 100) * 10000) / 10000,
+    }));
+    return reply.send({ ok: true, data });
   });
 }

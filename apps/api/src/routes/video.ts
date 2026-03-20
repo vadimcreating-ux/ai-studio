@@ -5,9 +5,11 @@ import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
 
 async function deductCredits(userId: string, operation: string, reply: FastifyReply): Promise<boolean> {
-  const priceRes = await dbQuery("SELECT credits FROM credit_prices WHERE operation = $1", [operation]);
-  const cost = Number(priceRes.rows[0]?.credits ?? 0);
-  if (cost === 0) return true;
+  const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+  const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
+  if (baseCredits === 0) return true;
+  const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+  const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
   const result = await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance",
     [cost, userId]
