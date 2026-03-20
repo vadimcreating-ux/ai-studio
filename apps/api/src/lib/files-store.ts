@@ -168,23 +168,19 @@ export async function getFiles(
   offset = 0,
   userId?: string
 ): Promise<{ files: FileItem[]; total: number }> {
-  const whereParts: string[] = [];
-  const params: unknown[] = [limit, offset];
-
-  if (userId) {
-    whereParts.push(`user_id = $${params.length + 1}`);
-    params.push(userId);
-  }
-
-  const where = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+  const where = userId ? "WHERE user_id = $1" : "";
+  const countParams = userId ? [userId] : [];
+  const listParams = userId ? [userId, limit, offset] : [limit, offset];
+  const limitIdx = userId ? "$2" : "$1";
+  const offsetIdx = userId ? "$3" : "$2";
 
   const [result, countResult] = await Promise.all([
     dbQuery(
       `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes
-       FROM files ${where} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-      params
+       FROM files ${where} ORDER BY created_at DESC LIMIT ${limitIdx} OFFSET ${offsetIdx}`,
+      listParams
     ),
-    dbQuery(`SELECT COUNT(*) FROM files ${where}`, userId ? params.slice(2) : []),
+    dbQuery(`SELECT COUNT(*) FROM files ${where}`, countParams),
   ]);
 
   return {
