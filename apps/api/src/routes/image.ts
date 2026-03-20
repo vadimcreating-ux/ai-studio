@@ -222,6 +222,8 @@ export async function imageRoutes(app: FastifyInstance) {
       if (state === "success" && resultImageUrl) {
         const resolvedTaskId = data.taskId ?? taskId;
         const userId = request.authUser?.userId;
+        // Log raw KIE data to debug credits field names
+        app.log.info({ kieStatusData: data }, "KIE image status success");
         const kieCredits = typeof data.credits === "number" ? data.credits : 0;
         try {
           const { isNew } = await saveImageToFiles({
@@ -235,6 +237,12 @@ export async function imageRoutes(app: FastifyInstance) {
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
+          } else if (!isNew && kieCredits > 0) {
+            // Credits weren't available on first poll — update display if still null (no double charge)
+            await dbQuery(
+              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
+              [kieCredits, resolvedTaskId]
+            );
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
