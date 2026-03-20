@@ -673,7 +673,7 @@ export default function ImagePage() {
                       </button>
                     )}
                   </div>
-                  <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp"
+                  <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png"
                     className="hidden" onChange={(e) => handleFileAdd(e.target.files)} />
                 </div>
               </div>
