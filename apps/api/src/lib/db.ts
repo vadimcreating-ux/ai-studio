@@ -26,10 +26,15 @@ export async function ensureUsersTable() {
       name TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL DEFAULT 'user',
       is_active BOOLEAN NOT NULL DEFAULT true,
-      credits_balance INTEGER NOT NULL DEFAULT 0,
+      credits_balance NUMERIC(12,4) NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+
+  // Migrate INTEGER → NUMERIC(12,4) on existing prod DB (safe, no data loss)
+  await dbQuery(`
+    ALTER TABLE users ALTER COLUMN credits_balance TYPE NUMERIC(12,4)
+  `).catch(() => {});
 }
 
 export async function ensureCreditTransactionsTable() {
@@ -37,13 +42,18 @@ export async function ensureCreditTransactionsTable() {
     CREATE TABLE IF NOT EXISTS credit_transactions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      amount INTEGER NOT NULL,
+      amount NUMERIC(12,4) NOT NULL,
       type TEXT NOT NULL,
       operation TEXT NOT NULL DEFAULT '',
       description TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+
+  // Migrate INTEGER → NUMERIC(12,4) on existing prod DB (safe, no data loss)
+  await dbQuery(`
+    ALTER TABLE credit_transactions ALTER COLUMN amount TYPE NUMERIC(12,4)
+  `).catch(() => {});
 }
 
 export async function ensureCreditPricesTable() {
