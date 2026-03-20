@@ -13,15 +13,20 @@ import { uploadToS3, isS3Configured } from "../lib/s3.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map<string, string>();
 
-// Charge based on KIE's actual consumption × markup (same pattern as chat's spendCredits)
+// Charge based on KIE's actual consumption × markup (same pattern as chat's spendCredits).
+// If KIE didn't report credits (kieCredits = 0), falls back to configured price in credit_prices table.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
-  if (kieCredits <= 0) return 0;
+  let effectiveCredits = kieCredits;
   let markupPercent = 0;
   try {
-    const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
     markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-  } catch { /* column might not exist yet */ }
-  const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    if (effectiveCredits <= 0) {
+      effectiveCredits = Number(priceRes.rows[0]?.credits ?? 0);
+    }
+  } catch { /* columns might not exist yet */ }
+  if (effectiveCredits <= 0) return 0;
+  const amount = Math.round(effectiveCredits * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
@@ -245,12 +250,21 @@ export async function imageRoutes(app: FastifyInstance) {
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
-          } else if (!isNew && kieCredits > 0) {
-            // Credits weren't available on first poll — update display if still null (no double charge)
-            await dbQuery(
-              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
-              [kieCredits, resolvedTaskId]
-            );
+          } else if (!isNew) {
+            // File already existed — update credits_spent for display if still null (no double charge to user)
+            const priceRes = await dbQuery(
+              "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
+              ["image_generate"]
+            ).catch(() => ({ rows: [] as Array<{ credits: number; markup_percent: number }> }));
+            const price = Number(priceRes.rows[0]?.credits ?? 0);
+            const markup = Number(priceRes.rows[0]?.markup_percent ?? 0);
+            const displayAmount = Math.round(price * (1 + markup / 100) * 10000) / 10000;
+            if (displayAmount > 0) {
+              await dbQuery(
+                "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
+                [displayAmount, resolvedTaskId]
+              );
+            }
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {

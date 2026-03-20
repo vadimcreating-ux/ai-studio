@@ -3,15 +3,20 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
-// Charge based on KIE's actual consumption × markup
+// Charge based on KIE's actual consumption × markup.
+// If KIE didn't report credits (kieCredits = 0), falls back to configured price in credit_prices table.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
-  if (kieCredits <= 0) return 0;
+  let effectiveCredits = kieCredits;
   let markupPercent = 0;
   try {
-    const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
     markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-  } catch { /* column might not exist yet */ }
-  const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    if (effectiveCredits <= 0) {
+      effectiveCredits = Number(priceRes.rows[0]?.credits ?? 0);
+    }
+  } catch { /* columns might not exist yet */ }
+  if (effectiveCredits <= 0) return 0;
+  const amount = Math.round(effectiveCredits * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
@@ -182,11 +187,21 @@ export async function videoRoutes(app: FastifyInstance) {
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
-          } else if (!isNew && kieCredits > 0) {
-            await dbQuery(
-              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
-              [kieCredits, resolvedTaskId]
-            );
+          } else if (!isNew) {
+            // File already existed — update credits_spent for display if still null (no double charge)
+            const priceRes = await dbQuery(
+              "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
+              ["video_generate"]
+            ).catch(() => ({ rows: [] as Array<{ credits: number; markup_percent: number }> }));
+            const price = Number(priceRes.rows[0]?.credits ?? 0);
+            const markup = Number(priceRes.rows[0]?.markup_percent ?? 0);
+            const displayAmount = Math.round(price * (1 + markup / 100) * 10000) / 10000;
+            if (displayAmount > 0) {
+              await dbQuery(
+                "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
+                [displayAmount, resolvedTaskId]
+              );
+            }
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
