@@ -11,9 +11,35 @@ import { uploadToS3, isS3Configured } from "../lib/s3.js";
 
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const imagePromptStore = new Map<string, string>();
 
-// Charge actual KIE credits × markup. Returns 0 if KIE didn't report credits.
+type TaskMeta = { prompt?: string; balanceBefore?: number };
+const imageTaskStore = new Map<string, TaskMeta>();
+
+// Fetch KIE account balance. Returns null if unavailable.
+async function getKieBalance(apiKey: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${KIE_BASE_URL}/api/v1/chat/credit`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { code?: number; data?: unknown };
+    if (data.code !== 200) return null;
+    const d = data.data;
+    // data.data might be a number directly, or an object with a balance field
+    if (typeof d === "number") return d;
+    if (d && typeof d === "object") {
+      const obj = d as Record<string, unknown>;
+      for (const key of ["balance", "credits", "total", "credit", "amount"]) {
+        if (typeof obj[key] === "number") return obj[key] as number;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Charge kieCredits × markup against user balance. Returns 0 if kieCredits <= 0.
 async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
   if (kieCredits <= 0) return 0;
   let markupPercent = 0;
@@ -125,6 +151,10 @@ export async function imageRoutes(app: FastifyInstance) {
     }
 
     try {
+      // Snapshot KIE balance BEFORE creating the task — used later to compute credits consumed
+      const balanceBefore = await getKieBalance(apiKey);
+      app.log.info({ model, balanceBefore }, "KIE balance before image task");
+
       const createResponse = await fetch(
         `${KIE_BASE_URL}/api/v1/jobs/createTask`,
         {
@@ -153,7 +183,10 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       const taskId = createData.data.taskId;
-      if (prompt) imagePromptStore.set(taskId, prompt);
+      imageTaskStore.set(taskId, {
+        prompt: prompt || undefined,
+        balanceBefore: balanceBefore ?? undefined,
+      });
 
       return { ok: true, taskId };
     } catch {
@@ -186,7 +219,14 @@ export async function imageRoutes(app: FastifyInstance) {
       const statusData = await statusResponse.json() as {
         code?: number;
         message?: string;
-        data?: Record<string, unknown>;
+        data?: {
+          taskId?: string;
+          state?: string;
+          resultJson?: string;
+          failCode?: string;
+          failMsg?: string;
+          costTime?: number;
+        };
       };
 
       const kieData = statusData.data;
@@ -198,13 +238,13 @@ export async function imageRoutes(app: FastifyInstance) {
         });
       }
 
-      const state = (kieData.state as string | undefined) ?? "waiting";
+      const state = kieData.state ?? "waiting";
 
       // Parse resultJson string to get image URLs
       let resultImageUrl = "";
       if (kieData.resultJson) {
         try {
-          const parsed = JSON.parse(kieData.resultJson as string) as { resultUrls?: string[] };
+          const parsed = JSON.parse(kieData.resultJson) as { resultUrls?: string[] };
           resultImageUrl = parsed.resultUrls?.[0] ?? "";
         } catch {
           // ignore parse error
@@ -212,32 +252,40 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       if (state === "success" && resultImageUrl) {
-        const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
+        const resolvedTaskId = kieData.taskId ?? taskId;
         const userId = request.authUser?.userId;
-
-        // Log full KIE data to see what credit field is returned
-        app.log.info({ taskId, kieData }, "KIE image success data");
-        const kieCredits = typeof kieData.credits === "number" ? kieData.credits : 0;
-        app.log.info({ taskId, kieCredits }, "KIE image credits consumed");
+        const meta = imageTaskStore.get(taskId) ?? {};
 
         try {
           const { isNew } = await saveImageToFiles({
             taskId: resolvedTaskId,
             url: resultImageUrl,
-            prompt: imagePromptStore.get(taskId) || undefined,
+            prompt: meta.prompt,
             userId,
           });
+
           if (isNew && userId) {
+            // Compute actual KIE credits consumed via balance diff
+            let kieCredits = 0;
+            if (meta.balanceBefore != null) {
+              const balanceAfter = await getKieBalance(apiKey);
+              if (balanceAfter != null) {
+                kieCredits = Math.max(0, meta.balanceBefore - balanceAfter);
+                app.log.info(
+                  { taskId, balanceBefore: meta.balanceBefore, balanceAfter, kieCredits },
+                  "KIE image credits consumed (balance diff)"
+                );
+              } else {
+                app.log.warn({ taskId }, "KIE balance unavailable after image task — credits not charged");
+              }
+            } else {
+              app.log.warn({ taskId }, "KIE balance before not recorded — credits not charged");
+            }
+
             const spent = await chargeKieCredits(userId, kieCredits, "image_generate");
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
-          } else if (!isNew && kieCredits > 0) {
-            // File already saved but credits_spent not yet set (e.g. first poll charged but didn't update)
-            await dbQuery(
-              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
-              [kieCredits, resolvedTaskId]
-            );
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -245,7 +293,7 @@ export async function imageRoutes(app: FastifyInstance) {
           }
           console.error("saveImageToFiles failed:", err.message);
         }
-        imagePromptStore.delete(taskId);
+        imageTaskStore.delete(taskId);
       }
 
       const generatingStates = new Set(["waiting", "queuing", "generating"]);
@@ -253,15 +301,15 @@ export async function imageRoutes(app: FastifyInstance) {
         ? "SUCCESS"
         : generatingStates.has(state)
         ? "GENERATING"
-        : "FAILED"; // unknown/error/failed/cancelled → treat as failure
+        : "FAILED";
 
       return {
         ok: true,
-        taskId: (kieData.taskId as string | undefined) ?? taskId,
+        taskId: kieData.taskId ?? taskId,
         state,
         status: mappedStatus,
         imageUrl: resultImageUrl,
-        errorMessage: (kieData.failMsg as string | undefined) || (mappedStatus === "FAILED" ? `Задача завершилась со статусом: ${state}` : ""),
+        errorMessage: kieData.failMsg || (mappedStatus === "FAILED" ? `Задача завершилась со статусом: ${state}` : ""),
       };
     } catch {
       return reply.status(500).send({ ok: false, error: "Не удалось проверить статус в KIE" });
