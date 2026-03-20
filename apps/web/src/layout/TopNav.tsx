@@ -145,7 +145,7 @@ function UserMenu({ online }: UserMenuProps) {
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
       >
         <Coins size={14} className="text-accent" />
-        <span className="font-medium">{user.credits_balance.toFixed(3)}</span>
+        <span className="font-medium">{Number(user.credits_balance).toFixed(3)}</span>
         <div className="w-px h-4 bg-border mx-0.5" />
         <User size={14} className="text-muted" />
         <span className="text-muted max-w-[100px] truncate">{user.name}</span>
@@ -159,7 +159,7 @@ function UserMenu({ online }: UserMenuProps) {
             <div className="text-muted text-xs truncate">{user.email}</div>
             <div className="flex items-center gap-1 mt-1">
               <Coins size={12} className="text-accent" />
-              <span className="text-sm text-white font-medium">{user.credits_balance.toFixed(3)}</span>
+              <span className="text-sm text-white font-medium">{Number(user.credits_balance).toFixed(3)}</span>
               <span className="text-xs text-muted">кредитов</span>
             </div>
           </div>
