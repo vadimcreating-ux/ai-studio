@@ -1,5 +1,35 @@
 import { dbQuery } from "../lib/db.js";
+import { authenticate } from "../lib/auth.js";
 import { CreateChatSchema, UpdateChatSchema, SendMessageSchema, EditMessageSchema, ChatListQuerySchema, } from "../lib/validation.js";
+// Check balance > 0 before KIE call. Returns false and sends error if insufficient.
+async function checkCredits(userId, reply) {
+    const result = await dbQuery("SELECT credits_balance FROM users WHERE id = $1", [userId]);
+    const balance = Number(result.rows[0]?.credits_balance ?? 0);
+    if (balance <= 0) {
+        reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
+        return false;
+    }
+    return true;
+}
+// Deduct exact amount returned by KIE (with admin markup) and record transaction.
+// Returns the actual amount deducted (rounded to 4 decimal places).
+async function spendCredits(userId, kieAmount, operation) {
+    if (kieAmount <= 0)
+        return 0;
+    // Graceful fallback if markup_percent column is not yet migrated on prod
+    let markupPercent = 0;
+    try {
+        const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+        markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+    }
+    catch {
+        // column might not exist yet — proceed with 0% markup
+    }
+    const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
+    await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2", [amount, userId]);
+    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Запрос к ${operation}`]);
+    return amount;
+}
 const KIE_BASE_URL = "https://api.kie.ai";
 const DEFAULT_MODEL = {
     claude: "claude-sonnet-4-5",
@@ -53,6 +83,21 @@ function extractUrls(text) {
     return [...new Set(text.match(URL_REGEX) ?? [])];
 }
 async function callKieAI({ module, model, systemText, history, userText, files, webSearch, apiKey, log, }) {
+    // Retry up to 2 extra times on transient KIE 500
+    const KIE_RETRY_DELAYS = [3000, 6000];
+    let lastResult = null;
+    for (let attempt = 0; attempt <= KIE_RETRY_DELAYS.length; attempt++) {
+        lastResult = await callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, apiKey, log });
+        if (!("error" in lastResult))
+            return lastResult; // success
+        if (attempt < KIE_RETRY_DELAYS.length) {
+            log.warn(`kie.ai transient error (retry ${attempt + 1}/${KIE_RETRY_DELAYS.length}): ${lastResult.error}`);
+            await new Promise((r) => setTimeout(r, KIE_RETRY_DELAYS[attempt]));
+        }
+    }
+    return lastResult;
+}
+async function callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, apiKey, log, }) {
     if (module === "claude") {
         const messages = history.map((r) => ({ role: r.role, content: r.content }));
         // Build current user content block (text + optional files)
@@ -92,6 +137,7 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
             body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(120000),
         });
         if (!res.ok) {
             const err = await res.text();
@@ -99,8 +145,19 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
             return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
         }
         const raw = await res.text();
-        log.info(`kie.ai claude response: ${raw.slice(0, 1000)}`);
-        const data = JSON.parse(raw);
+        log.info(`kie.ai claude full response: ${raw}`);
+        if (!raw.trim()) {
+            log.error("kie.ai claude empty response body");
+            return { error: "Пустой ответ от kie.ai", status: 502 };
+        }
+        let data;
+        try {
+            data = JSON.parse(raw);
+        }
+        catch (e) {
+            log.error(`kie.ai claude JSON parse error: ${e}. Raw: ${raw.slice(0, 500)}`);
+            return { error: "Неверный формат ответа от kie.ai", status: 502 };
+        }
         if (typeof data.code === "number" && data.code !== 200) {
             return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
         }
@@ -116,7 +173,8 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
             log.error(`kie.ai claude empty. Full: ${raw.slice(0, 2000)}`);
             return { error: "Пустой ответ от kie.ai", status: 502 };
         }
-        return { reply };
+        const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+        return { reply, creditsConsumed };
     }
     else {
         const messages = [];
@@ -148,6 +206,7 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
             body: JSON.stringify({ messages, stream: false }),
+            signal: AbortSignal.timeout(120000),
         });
         if (!res.ok) {
             const err = await res.text();
@@ -155,8 +214,19 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
             return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
         }
         const raw = await res.text();
-        log.info(`kie.ai ${module} response: ${raw.slice(0, 1000)}`);
-        const data = JSON.parse(raw);
+        log.info(`kie.ai ${module} full response: ${raw}`);
+        if (!raw.trim()) {
+            log.error(`kie.ai ${module} empty response body`);
+            return { error: "Пустой ответ от kie.ai", status: 502 };
+        }
+        let data;
+        try {
+            data = JSON.parse(raw);
+        }
+        catch (e) {
+            log.error(`kie.ai ${module} JSON parse error: ${e}. Raw: ${raw.slice(0, 500)}`);
+            return { error: "Неверный формат ответа от kie.ai", status: 502 };
+        }
         if (typeof data.code === "number" && data.code !== 200) {
             return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
         }
@@ -166,37 +236,44 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
             log.error(`kie.ai ${module} empty. Full: ${raw.slice(0, 2000)}`);
             return { error: "Пустой ответ от kie.ai", status: 502 };
         }
-        return { reply };
+        const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+        return { reply, creditsConsumed };
     }
 }
 // ─── Routes ─────────────────────────────────────────────────────────────────
 export async function chatRoutes(app) {
+    app.addHook("preHandler", authenticate);
     app.post("/api/chat/new", async (request, reply) => {
+        const user = request.authUser;
         const parsed = CreateChatSchema.safeParse(request.body);
         if (!parsed.success)
             return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
         const body = parsed.data;
         const module = body.module ?? "claude";
-        const result = await dbQuery(`INSERT INTO chats (module, model, title, project_id) VALUES ($1, $2, $3, $4) RETURNING *`, [
+        const result = await dbQuery(`INSERT INTO chats (module, model, title, project_id, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *`, [
             module,
             body.model ?? DEFAULT_MODEL[module] ?? DEFAULT_MODEL.claude,
             body.title ?? "Новый чат",
             body.project_id ?? null,
+            user.userId,
         ]);
         return { ok: true, chat: result.rows[0] };
     });
     app.get("/api/chat/list", async (request, reply) => {
+        const user = request.authUser;
         const parsed = ChatListQuerySchema.safeParse(request.query);
         if (!parsed.success)
             return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные параметры" });
         const { module, project_id, limit, offset } = parsed.data;
         const mod = module ?? "claude";
+        // Admin sees all chats; regular users see only their own (+ legacy null user_id chats)
+        const userFilter = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
         const result = project_id
-            ? await dbQuery(`SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`, [mod, project_id, limit, offset])
-            : await dbQuery(`SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [mod, limit, offset]);
+            ? await dbQuery(`SELECT * FROM chats WHERE module = $1 AND project_id = $2 ${userFilter} ORDER BY created_at DESC LIMIT $3 OFFSET $4`, [mod, project_id, limit, offset])
+            : await dbQuery(`SELECT * FROM chats WHERE module = $1 ${userFilter} ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [mod, limit, offset]);
         const totalResult = project_id
-            ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2`, [mod, project_id])
-            : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1`, [mod]);
+            ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2 ${userFilter}`, [mod, project_id])
+            : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 ${userFilter}`, [mod]);
         return {
             ok: true,
             chats: result.rows,
@@ -263,6 +340,7 @@ export async function chatRoutes(app) {
     });
     // Regenerate: delete target message + all after it, then re-call KIE
     app.post("/api/chat/:chatId/messages/:messageId/regenerate", async (request, reply) => {
+        const user = request.authUser;
         const { chatId, messageId } = request.params;
         const apiKey = process.env.KIE_API_KEY;
         if (!apiKey)
@@ -293,6 +371,10 @@ export async function chatRoutes(app) {
         if (settings?.memory?.trim())
             systemParts.push(`Память:\n${settings.memory.trim()}`);
         const lastUserMsg = history[history.length - 1];
+        const regenOperation = `chat_${chat.module}`;
+        const creditsOk = await checkCredits(user.userId, reply);
+        if (!creditsOk)
+            return;
         const result = await callKieAI({
             module: chat.module,
             model: chat.model,
@@ -302,14 +384,26 @@ export async function chatRoutes(app) {
             apiKey,
             log: app.log,
         });
+        const regenReply = "error" in result
+            ? "Не удалось соединиться с сервером ИИ. Пожалуйста, повторите запрос."
+            : result.reply;
+        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`, [chatId, regenReply]);
         if ("error" in result) {
-            return reply.status(result.status).send({ ok: false, error: result.error });
+            app.log.error(`kie.ai regenerate failed after retries: ${result.error}`);
+            return { ok: true, reply: regenReply, credits_spent: 0 };
         }
-        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`, [chatId, result.reply]);
-        return { ok: true, reply: result.reply };
+        let creditsSpent = 0;
+        try {
+            creditsSpent = await spendCredits(user.userId, result.creditsConsumed, regenOperation);
+        }
+        catch (err) {
+            app.log.error({ err }, "spendCredits failed on regenerate");
+        }
+        return { ok: true, reply: result.reply, credits_spent: creditsSpent };
     });
     // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
     app.post("/api/chat/:chatId/send", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+        const user = request.authUser;
         const { chatId } = request.params;
         const parsed = SendMessageSchema.safeParse(request.body);
         if (!parsed.success)
@@ -324,6 +418,10 @@ export async function chatRoutes(app) {
             return reply.status(404).send({ ok: false, error: "Чат не найден" });
         }
         const chat = chatRes.rows[0];
+        const operation = `chat_${chat.module}`;
+        const ok = await checkCredits(user.userId, reply);
+        if (!ok)
+            return;
         const [settingsRes, historyRes] = await Promise.all([
             dbQuery(`SELECT * FROM engine_settings WHERE engine = $1`, [chat.module]),
             dbQuery(`SELECT role, content FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`, [chatId]),
@@ -358,10 +456,21 @@ export async function chatRoutes(app) {
             apiKey,
             log: app.log,
         });
+        const sendReply = "error" in result
+            ? "Не удалось соединиться с сервером ИИ. Пожалуйста, повторите запрос."
+            : result.reply;
+        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`, [chatId, sendReply]);
         if ("error" in result) {
-            return reply.status(result.status).send({ ok: false, error: result.error });
+            app.log.error(`kie.ai send failed after retries: ${result.error}`);
+            return { ok: true, reply: sendReply, credits_spent: 0 };
         }
-        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`, [chatId, result.reply]);
-        return { ok: true, reply: result.reply };
+        let creditsSpent = 0;
+        try {
+            creditsSpent = await spendCredits(user.userId, result.creditsConsumed, operation);
+        }
+        catch (err) {
+            app.log.error({ err }, "spendCredits failed on send");
+        }
+        return { ok: true, reply: sendReply, credits_spent: creditsSpent };
     });
 }

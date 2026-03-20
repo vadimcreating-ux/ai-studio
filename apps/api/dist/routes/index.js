@@ -4,9 +4,14 @@ import { videoRoutes } from "./video.js";
 import { chatRoutes } from "./chat.js";
 import { projectRoutes } from "./projects.js";
 import { engineSettingsRoutes } from "./engine-settings.js";
-// rootRoutes removed — React frontend handles all UI routing now
+import { authRoutes } from "./auth.js";
+import { adminRoutes } from "./admin.js";
+import { creditsRoutes } from "./credits.js";
 export async function registerRoutes(app) {
     await app.register(healthRoutes);
+    await app.register(authRoutes);
+    await app.register(creditsRoutes);
+    await app.register(adminRoutes);
     await app.register(imageRoutes);
     await app.register(videoRoutes);
     await app.register(chatRoutes);

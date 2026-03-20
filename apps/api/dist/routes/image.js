@@ -1,11 +1,35 @@
 import { saveImageToFiles, getFiles, deleteFileById, } from "../lib/files-store.js";
 import { dbQuery } from "../lib/db.js";
+import { authenticate } from "../lib/auth.js";
 import { FilesQuerySchema } from "../lib/validation.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map();
+const imageCostStore = new Map();
+// Returns cost deducted (>= 0) on success, or false on failure (reply already sent)
+async function deductCredits(userId, operation, reply) {
+    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+    const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
+    if (baseCredits === 0)
+        return 0;
+    const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+    const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    const result = await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance", [cost, userId]);
+    if (result.rows.length === 0) {
+        reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
+        return false;
+    }
+    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -cost, operation, `Запрос к ${operation}`]);
+    return cost;
+}
 export async function imageRoutes(app) {
+    app.addHook("preHandler", authenticate);
     // Генерация изображения — 10 запросов в минуту (дорогая операция)
     app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+        const user = request.authUser;
+        const creditsResult = await deductCredits(user.userId, "image_generate", reply);
+        if (creditsResult === false)
+            return;
+        const creditsSpent = creditsResult;
         const body = request.body;
         const apiKey = process.env.KIE_API_KEY;
         if (!apiKey) {
@@ -83,6 +107,8 @@ export async function imageRoutes(app) {
             const taskId = createData.data.taskId;
             if (prompt)
                 imagePromptStore.set(taskId, prompt);
+            if (creditsSpent > 0)
+                imageCostStore.set(taskId, creditsSpent);
             return { ok: true, taskId };
         }
         catch {
@@ -126,12 +152,24 @@ export async function imageRoutes(app) {
                 }
             }
             if (state === "success" && resultImageUrl) {
-                await saveImageToFiles({
-                    taskId: data.taskId ?? taskId,
-                    url: resultImageUrl,
-                    prompt: imagePromptStore.get(taskId) || undefined,
-                });
+                const resolvedTaskId = data.taskId ?? taskId;
+                try {
+                    await saveImageToFiles({
+                        taskId: resolvedTaskId,
+                        url: resultImageUrl,
+                        prompt: imagePromptStore.get(taskId) || undefined,
+                        userId: request.authUser?.userId,
+                        creditsSpent: imageCostStore.get(taskId),
+                    });
+                }
+                catch (err) {
+                    if (err.message?.includes("хранилище")) {
+                        return reply.status(507).send({ ok: false, error: err.message });
+                    }
+                    console.error("saveImageToFiles failed:", err.message);
+                }
                 imagePromptStore.delete(taskId);
+                imageCostStore.delete(taskId);
             }
             const statusMap = {
                 waiting: "GENERATING",
@@ -183,7 +221,8 @@ export async function imageRoutes(app) {
         if (!parsed.success)
             return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные параметры" });
         const { limit, offset } = parsed.data;
-        const { files, total } = await getFiles(limit, offset);
+        const userId = request.authUser?.userId;
+        const { files, total } = await getFiles(limit, offset, userId);
         return { ok: true, files, total, limit, offset };
     });
     // Улучшение промпта через GPT
@@ -283,7 +322,7 @@ Rules:
         if (!id) {
             return reply.status(400).send({ ok: false, error: "Не передан id файла" });
         }
-        const deleted = await deleteFileById(id);
+        const deleted = await deleteFileById(id, request.authUser?.userId);
         if (!deleted) {
             return reply.status(404).send({ ok: false, error: "Файл не найден" });
         }

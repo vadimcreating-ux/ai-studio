@@ -59,3 +59,31 @@ export const FilesQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
     offset: z.coerce.number().int().min(0).default(0),
 });
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+export const RegisterSchema = z.object({
+    email: z.string().trim().email().max(255),
+    password: z.string().min(8).max(128),
+    name: z.string().trim().min(1).max(100),
+});
+export const LoginSchema = z.object({
+    email: z.string().trim().email().max(255),
+    password: z.string().min(1).max(128),
+});
+// ─── Admin ────────────────────────────────────────────────────────────────────
+export const AdminAddCreditsSchema = z.object({
+    amount: z.number().int().min(1).max(1_000_000),
+    description: z.string().trim().max(500).optional(),
+});
+export const AdminUpdateUserSchema = z.object({
+    name: z.string().trim().min(1).max(100).optional(),
+    role: z.enum(["admin", "user"]).optional(),
+    is_active: z.boolean().optional(),
+    credits_balance: z.number().int().min(0).optional(),
+});
+export const AdminUpdateCreditPriceSchema = z.object({
+    credits: z.number().int().min(0).max(10_000),
+    markup_percent: z.number().min(0).max(1000).optional(),
+});
+export const AdminUpdateStorageSchema = z.object({
+    storage_quota_mb: z.number().int().min(0).max(100_000),
+});

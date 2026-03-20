@@ -12,6 +12,70 @@ export const pool = new Pool({
 export async function dbQuery(text, params = []) {
     return pool.query(text, params);
 }
+export async function ensureUsersTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT,
+      google_id TEXT UNIQUE,
+      name TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT 'user',
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      credits_balance NUMERIC(12,4) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+    // Migrate INTEGER → NUMERIC(12,4) on existing prod DB (safe, no data loss)
+    await dbQuery(`
+    ALTER TABLE users ALTER COLUMN credits_balance TYPE NUMERIC(12,4)
+  `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE users ADD COLUMN storage_quota_mb INTEGER NOT NULL DEFAULT 500
+  `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE users ADD COLUMN storage_used_mb NUMERIC(12,4) NOT NULL DEFAULT 0
+  `).catch(() => { });
+}
+export async function ensureCreditTransactionsTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      amount NUMERIC(12,4) NOT NULL,
+      type TEXT NOT NULL,
+      operation TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+    // Migrate INTEGER → NUMERIC(12,4) on existing prod DB (safe, no data loss)
+    await dbQuery(`
+    ALTER TABLE credit_transactions ALTER COLUMN amount TYPE NUMERIC(12,4)
+  `).catch(() => { });
+}
+export async function ensureCreditPricesTable() {
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS credit_prices (
+      operation TEXT PRIMARY KEY,
+      credits INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+    await dbQuery(`
+    ALTER TABLE credit_prices ADD COLUMN markup_percent NUMERIC(6,2) NOT NULL DEFAULT 0
+  `).catch(() => { });
+    // Seed default prices if table is empty
+    await dbQuery(`
+    INSERT INTO credit_prices (operation, credits) VALUES
+      ('chat_claude', 10),
+      ('chat_chatgpt', 8),
+      ('chat_gemini', 5),
+      ('image_generate', 50),
+      ('video_generate', 200),
+      ('prompt_improve', 2)
+    ON CONFLICT (operation) DO NOTHING
+  `);
+}
 export async function ensureChatsTable() {
     await dbQuery(`
     CREATE TABLE IF NOT EXISTS chats (
@@ -31,6 +95,10 @@ export async function ensureChatsTable() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+    // Add user_id to chats (nullable for backwards compat with existing data)
+    await dbQuery(`
+    ALTER TABLE chats ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL
+  `).catch(() => { });
 }
 export async function ensureProjectsTable() {
     await dbQuery(`
@@ -51,6 +119,10 @@ export async function ensureProjectsTable() {
   `).catch(() => { });
     await dbQuery(`
     ALTER TABLE projects ADD COLUMN context_files JSONB DEFAULT '[]'
+  `).catch(() => { });
+    // Add user_id to projects (nullable for backwards compat)
+    await dbQuery(`
+    ALTER TABLE projects ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL
   `).catch(() => { });
 }
 export async function ensureImageTemplatesTable() {
@@ -108,4 +180,20 @@ export async function ensureFilesTable() {
   `).catch(() => {
         // колонка уже существует — это нормально
     });
+    // Add user_id to files (nullable for backwards compat)
+    await dbQuery(`
+    ALTER TABLE files ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL
+  `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE files ADD COLUMN file_size_bytes BIGINT
+  `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE files ADD COLUMN storage_url TEXT
+  `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE files ADD COLUMN s3_key TEXT
+  `).catch(() => { });
+    await dbQuery(`
+    ALTER TABLE files ADD COLUMN credits_spent NUMERIC(12,4)
+  `).catch(() => { });
 }

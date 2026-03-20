@@ -1,21 +1,34 @@
-import { randomUUID } from "node:crypto";
 import { dbQuery } from "../lib/db.js";
+import { authenticate } from "../lib/auth.js";
+import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
+async function deductCredits(userId, operation, reply) {
+    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+    const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
+    if (baseCredits === 0)
+        return 0;
+    const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+    const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    const result = await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance", [cost, userId]);
+    if (result.rows.length === 0) {
+        reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
+        return false;
+    }
+    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -cost, operation, `Запрос к ${operation}`]);
+    return cost;
+}
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 const KIE_BASE_URL = "https://api.kie.ai";
 const videoPromptStore = new Map();
-async function saveVideoToFiles(data) {
-    const existing = await dbQuery(`SELECT id FROM files WHERE task_id = $1 LIMIT 1`, [data.taskId]);
-    if (existing.rows[0])
-        return;
-    const id = randomUUID();
-    const name = `video-${Date.now()}.mp4`;
-    await dbQuery(`INSERT INTO files (id, task_id, type, name, url, created_at, source, prompt)
-     VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)
-     ON CONFLICT (task_id) DO NOTHING`, [id, data.taskId, "video", name, data.url, "kie", data.prompt || null]);
-}
+const videoCostStore = new Map();
 export async function videoRoutes(app) {
+    app.addHook("preHandler", authenticate);
     // Генерация видео — 5 запросов в минуту (очень дорогая операция)
     app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+        const user = request.authUser;
+        const creditsResult = await deductCredits(user.userId, "video_generate", reply);
+        if (creditsResult === false)
+            return;
+        const creditsSpent = creditsResult;
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
@@ -73,6 +86,8 @@ export async function videoRoutes(app) {
             const taskId = createData.data.taskId;
             if (taskId)
                 videoPromptStore.set(taskId, prompt ?? "");
+            if (taskId && creditsSpent > 0)
+                videoCostStore.set(taskId, creditsSpent);
             return { ok: true, taskId };
         }
         catch {
@@ -112,12 +127,23 @@ export async function videoRoutes(app) {
                 }
             }
             if (state === "success" && videoUrl) {
-                await saveVideoToFiles({
-                    taskId: data.taskId ?? taskId,
-                    url: videoUrl,
-                    prompt: videoPromptStore.get(taskId),
-                });
+                try {
+                    await saveVideoToFiles({
+                        taskId: data.taskId ?? taskId,
+                        url: videoUrl,
+                        prompt: videoPromptStore.get(taskId),
+                        userId: request.authUser?.userId,
+                        creditsSpent: videoCostStore.get(taskId),
+                    });
+                }
+                catch (err) {
+                    if (err.message?.includes("хранилище")) {
+                        return reply.status(507).send({ ok: false, error: err.message });
+                    }
+                    console.error("saveVideoToFiles failed:", err.message);
+                }
                 videoPromptStore.delete(taskId);
+                videoCostStore.delete(taskId);
             }
             const statusMap = {
                 waiting: "GENERATING",
@@ -165,9 +191,16 @@ export async function videoRoutes(app) {
         }
     });
     // История видео
-    app.get("/api/video/history", async () => {
-        const result = await dbQuery(`SELECT id, task_id, type, name, url, created_at, source, prompt
-       FROM files WHERE type = 'video' ORDER BY created_at DESC`);
+    app.get("/api/video/history", async (request) => {
+        const userId = request.authUser?.userId;
+        const whereParts = ["type = 'video'"];
+        const params = [];
+        if (userId) {
+            whereParts.push(`user_id = $${params.length + 1}`);
+            params.push(userId);
+        }
+        const result = await dbQuery(`SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes
+       FROM files WHERE ${whereParts.join(" AND ")} ORDER BY created_at DESC`, params);
         return {
             ok: true,
             files: result.rows.map((row) => ({
@@ -175,18 +208,19 @@ export async function videoRoutes(app) {
                 taskId: row.task_id,
                 type: row.type,
                 name: row.name,
-                url: row.url,
+                url: row.storage_url ?? row.url,
                 createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
                 source: row.source,
                 prompt: row.prompt ?? null,
+                fileSizeBytes: row.file_size_bytes ? Number(row.file_size_bytes) : null,
             })),
         };
     });
     // Удаление видео из истории
     app.delete("/api/video/history/:id", async (request, reply) => {
         const params = request.params;
-        const result = await dbQuery(`DELETE FROM files WHERE id = $1 AND type = 'video'`, [params.id]);
-        if ((result.rowCount ?? 0) === 0) {
+        const deleted = await deleteFileById(params.id, request.authUser?.userId);
+        if (!deleted) {
             return reply.status(404).send({ ok: false, error: "Файл не найден" });
         }
         return { ok: true };

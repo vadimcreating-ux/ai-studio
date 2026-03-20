@@ -1,6 +1,8 @@
 import { dbQuery } from "../lib/db.js";
+import { authenticate, requireAdmin } from "../lib/auth.js";
 import { VALID_ENGINES, UpdateEngineSettingsSchema } from "../lib/validation.js";
 export async function engineSettingsRoutes(app) {
+    app.addHook("preHandler", authenticate);
     app.get("/api/engine-settings/:engine", async (request, reply) => {
         const { engine } = request.params;
         if (!VALID_ENGINES.includes(engine)) {
@@ -12,7 +14,7 @@ export async function engineSettingsRoutes(app) {
         }
         return { ok: true, settings: result.rows[0] };
     });
-    app.put("/api/engine-settings/:engine", async (request, reply) => {
+    app.put("/api/engine-settings/:engine", { preHandler: [requireAdmin] }, async (request, reply) => {
         const { engine } = request.params;
         if (!VALID_ENGINES.includes(engine)) {
             return reply.status(400).send({ ok: false, error: "Неизвестный движок" });
