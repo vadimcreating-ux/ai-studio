@@ -7,7 +7,7 @@ const AUTH_FILE = "apps/tests/.auth/user.json";
  * Требует переменных: TEST_EMAIL, TEST_PASSWORD
  * По умолчанию использует первого зарегистрированного пользователя (admin).
  */
-setup("authenticate", async ({ page, request }) => {
+setup("authenticate", async ({ request }) => {
   const email = process.env.TEST_EMAIL;
   const password = process.env.TEST_PASSWORD;
 
@@ -27,6 +27,6 @@ setup("authenticate", async ({ page, request }) => {
     throw new Error(`Логин упал (${res.status()}): ${body.error ?? "неизвестная ошибка"}`);
   }
 
-  // Сохранить cookies для всех остальных тестов
-  await page.context().storageState({ path: AUTH_FILE });
+  // Сохранить cookies из request-контекста (именно там они после POST /api/auth/login)
+  await request.storageState({ path: AUTH_FILE });
 });
