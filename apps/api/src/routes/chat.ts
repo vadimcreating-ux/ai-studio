@@ -50,7 +50,7 @@ async function spendCredits(userId: string, kieAmount: number, operation: string
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const DEFAULT_MODEL: Record<string, string> = {
-  claude:  "claude-sonnet-4-5",
+  claude:  "claude-sonnet-4-6",
   chatgpt: "gpt-5-2",
   gemini:  "gemini-2.5-pro",
 };
