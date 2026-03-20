@@ -1,34 +1,28 @@
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
-async function deductCredits(userId, operation, reply) {
-    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
-    const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
-    if (baseCredits === 0)
+// Charge based on KIE's actual consumption × markup
+async function chargeKieCredits(userId, kieCredits, operation) {
+    if (kieCredits <= 0)
         return 0;
-    const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-    const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
-    const result = await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance", [cost, userId]);
-    if (result.rows.length === 0) {
-        reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
-        return false;
+    let markupPercent = 0;
+    try {
+        const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+        markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
     }
-    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -cost, operation, `Запрос к ${operation}`]);
-    return cost;
+    catch { /* column might not exist yet */ }
+    const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2", [amount, userId]);
+    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Генерация ${operation}`]);
+    return amount;
 }
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 const KIE_BASE_URL = "https://api.kie.ai";
 const videoPromptStore = new Map();
-const videoCostStore = new Map();
 export async function videoRoutes(app) {
     app.addHook("preHandler", authenticate);
     // Генерация видео — 5 запросов в минуту (очень дорогая операция)
     app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
-        const user = request.authUser;
-        const creditsResult = await deductCredits(user.userId, "video_generate", reply);
-        if (creditsResult === false)
-            return;
-        const creditsSpent = creditsResult;
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
@@ -86,8 +80,6 @@ export async function videoRoutes(app) {
             const taskId = createData.data.taskId;
             if (taskId)
                 videoPromptStore.set(taskId, prompt ?? "");
-            if (taskId && creditsSpent > 0)
-                videoCostStore.set(taskId, creditsSpent);
             return { ok: true, taskId };
         }
         catch {
@@ -127,14 +119,22 @@ export async function videoRoutes(app) {
                 }
             }
             if (state === "success" && videoUrl) {
+                const resolvedTaskId = data.taskId ?? taskId;
+                const userId = request.authUser?.userId;
+                const kieCredits = typeof data.credits === "number" ? data.credits : 0;
                 try {
-                    await saveVideoToFiles({
-                        taskId: data.taskId ?? taskId,
+                    const { isNew } = await saveVideoToFiles({
+                        taskId: resolvedTaskId,
                         url: videoUrl,
                         prompt: videoPromptStore.get(taskId),
-                        userId: request.authUser?.userId,
-                        creditsSpent: videoCostStore.get(taskId),
+                        userId,
                     });
+                    if (isNew && userId) {
+                        const spent = await chargeKieCredits(userId, kieCredits, "video_generate");
+                        if (spent > 0) {
+                            await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
+                        }
+                    }
                 }
                 catch (err) {
                     if (err.message?.includes("хранилище")) {
@@ -143,7 +143,6 @@ export async function videoRoutes(app) {
                     console.error("saveVideoToFiles failed:", err.message);
                 }
                 videoPromptStore.delete(taskId);
-                videoCostStore.delete(taskId);
             }
             const statusMap = {
                 waiting: "GENERATING",

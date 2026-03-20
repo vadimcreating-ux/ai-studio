@@ -76,14 +76,14 @@ export async function saveFileToStorage(data: {
   prompt?: string;
   userId?: string;
   creditsSpent?: number;
-}): Promise<FileItem> {
+}): Promise<{ file: FileItem; isNew: boolean }> {
   // Return existing record if already saved
   const existing = await dbQuery(
     `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
      FROM files WHERE task_id = $1 LIMIT 1`,
     [data.taskId]
   );
-  if (existing.rows[0]) return mapRowToFileItem(existing.rows[0]);
+  if (existing.rows[0]) return { file: mapRowToFileItem(existing.rows[0]), isNew: false };
 
   const id = randomUUID();
   const ext = data.type === "video" ? "mp4" : "png";
@@ -136,14 +136,14 @@ export async function saveFileToStorage(data: {
     );
   }
 
-  if (inserted.rows[0]) return mapRowToFileItem(inserted.rows[0]);
+  if (inserted.rows[0]) return { file: mapRowToFileItem(inserted.rows[0]), isNew: true };
 
   const fallback = await dbQuery(
     `SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
      FROM files WHERE task_id = $1 LIMIT 1`,
     [data.taskId]
   );
-  return mapRowToFileItem(fallback.rows[0]);
+  return { file: mapRowToFileItem(fallback.rows[0]), isNew: false };
 }
 
 // Legacy alias for image
@@ -153,7 +153,7 @@ export async function saveImageToFiles(data: {
   prompt?: string;
   userId?: string;
   creditsSpent?: number;
-}): Promise<FileItem> {
+}): Promise<{ file: FileItem; isNew: boolean }> {
   return saveFileToStorage({ ...data, type: "image" });
 }
 
@@ -164,8 +164,8 @@ export async function saveVideoToFiles(data: {
   prompt?: string;
   userId?: string;
   creditsSpent?: number;
-}): Promise<void> {
-  await saveFileToStorage({ ...data, type: "video" });
+}): Promise<{ file: FileItem; isNew: boolean }> {
+  return saveFileToStorage({ ...data, type: "video" });
 }
 
 export async function getFiles(

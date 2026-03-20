@@ -4,32 +4,25 @@ import { authenticate } from "../lib/auth.js";
 import { FilesQuerySchema } from "../lib/validation.js";
 const KIE_BASE_URL = "https://api.kie.ai";
 const imagePromptStore = new Map();
-const imageCostStore = new Map();
-// Returns cost deducted (>= 0) on success, or false on failure (reply already sent)
-async function deductCredits(userId, operation, reply) {
-    const priceRes = await dbQuery("SELECT credits, markup_percent FROM credit_prices WHERE operation = $1", [operation]);
-    const baseCredits = Number(priceRes.rows[0]?.credits ?? 0);
-    if (baseCredits === 0)
+// Charge based on KIE's actual consumption × markup (same pattern as chat's spendCredits)
+async function chargeKieCredits(userId, kieCredits, operation) {
+    if (kieCredits <= 0)
         return 0;
-    const markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-    const cost = Math.round(baseCredits * (1 + markupPercent / 100) * 10000) / 10000;
-    const result = await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2 AND credits_balance >= $1 RETURNING credits_balance", [cost, userId]);
-    if (result.rows.length === 0) {
-        reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
-        return false;
+    let markupPercent = 0;
+    try {
+        const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
+        markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
     }
-    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -cost, operation, `Запрос к ${operation}`]);
-    return cost;
+    catch { /* column might not exist yet */ }
+    const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2", [amount, userId]);
+    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Генерация ${operation}`]);
+    return amount;
 }
 export async function imageRoutes(app) {
     app.addHook("preHandler", authenticate);
     // Генерация изображения — 10 запросов в минуту (дорогая операция)
     app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
-        const user = request.authUser;
-        const creditsResult = await deductCredits(user.userId, "image_generate", reply);
-        if (creditsResult === false)
-            return;
-        const creditsSpent = creditsResult;
         const body = request.body;
         const apiKey = process.env.KIE_API_KEY;
         if (!apiKey) {
@@ -107,8 +100,6 @@ export async function imageRoutes(app) {
             const taskId = createData.data.taskId;
             if (prompt)
                 imagePromptStore.set(taskId, prompt);
-            if (creditsSpent > 0)
-                imageCostStore.set(taskId, creditsSpent);
             return { ok: true, taskId };
         }
         catch {
@@ -153,14 +144,21 @@ export async function imageRoutes(app) {
             }
             if (state === "success" && resultImageUrl) {
                 const resolvedTaskId = data.taskId ?? taskId;
+                const userId = request.authUser?.userId;
+                const kieCredits = typeof data.credits === "number" ? data.credits : 0;
                 try {
-                    await saveImageToFiles({
+                    const { isNew } = await saveImageToFiles({
                         taskId: resolvedTaskId,
                         url: resultImageUrl,
                         prompt: imagePromptStore.get(taskId) || undefined,
-                        userId: request.authUser?.userId,
-                        creditsSpent: imageCostStore.get(taskId),
+                        userId,
                     });
+                    if (isNew && userId) {
+                        const spent = await chargeKieCredits(userId, kieCredits, "image_generate");
+                        if (spent > 0) {
+                            await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
+                        }
+                    }
                 }
                 catch (err) {
                     if (err.message?.includes("хранилище")) {
@@ -169,7 +167,6 @@ export async function imageRoutes(app) {
                     console.error("saveImageToFiles failed:", err.message);
                 }
                 imagePromptStore.delete(taskId);
-                imageCostStore.delete(taskId);
             }
             const statusMap = {
                 waiting: "GENERATING",

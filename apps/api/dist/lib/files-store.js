@@ -44,7 +44,7 @@ export async function saveFileToStorage(data) {
     const existing = await dbQuery(`SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
      FROM files WHERE task_id = $1 LIMIT 1`, [data.taskId]);
     if (existing.rows[0])
-        return mapRowToFileItem(existing.rows[0]);
+        return { file: mapRowToFileItem(existing.rows[0]), isNew: false };
     const id = randomUUID();
     const ext = data.type === "video" ? "mp4" : "png";
     const name = `${data.type}-${Date.now()}.${ext}`;
@@ -86,10 +86,10 @@ export async function saveFileToStorage(data) {
         await dbQuery("UPDATE users SET storage_used_mb = storage_used_mb + $1 WHERE id = $2", [mbUsed, data.userId]);
     }
     if (inserted.rows[0])
-        return mapRowToFileItem(inserted.rows[0]);
+        return { file: mapRowToFileItem(inserted.rows[0]), isNew: true };
     const fallback = await dbQuery(`SELECT id, task_id, type, name, url, storage_url, created_at, source, prompt, file_size_bytes, credits_spent
      FROM files WHERE task_id = $1 LIMIT 1`, [data.taskId]);
-    return mapRowToFileItem(fallback.rows[0]);
+    return { file: mapRowToFileItem(fallback.rows[0]), isNew: false };
 }
 // Legacy alias for image
 export async function saveImageToFiles(data) {
@@ -97,7 +97,7 @@ export async function saveImageToFiles(data) {
 }
 // Legacy alias for video
 export async function saveVideoToFiles(data) {
-    await saveFileToStorage({ ...data, type: "video" });
+    return saveFileToStorage({ ...data, type: "video" });
 }
 export async function getFiles(limit = 50, offset = 0, userId) {
     const where = userId ? "WHERE user_id = $1" : "";
