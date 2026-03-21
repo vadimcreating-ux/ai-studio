@@ -91,7 +91,6 @@ PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD / PGSSLMODE
 PORT              # default 3000
 NODE_ENV          # "production" в проде (влияет на логи и CORS)
 FRONTEND_URL      # опционально — для CORS если фронт на отдельном домене
-HTTPS_PROXY       # опционально, для обхода гео-блокировки
 
 # Timeweb Object Storage (S3-совместимый)
 TIMEWEB_S3_ENDPOINT    # https://s3.timeweb.cloud
