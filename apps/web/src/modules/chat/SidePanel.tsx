@@ -49,6 +49,8 @@ export default function SidePanel({
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null);
+  const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
+  const [renameProjectValue, setRenameProjectValue] = useState("");
   const [deleteChatConfirm, setDeleteChatConfirm] = useState<string | null>(null);
   const [renameChatId, setRenameChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -117,6 +119,15 @@ export default function SidePanel({
       setExpandedProjects((prev) => new Set([...prev, data.project.id]));
       setNewProjectName("");
       setShowNewProject(false);
+    },
+  });
+
+  const renameProject = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      projectsApi.update(id, { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects", engine] });
+      setRenameProjectId(null);
     },
   });
 
@@ -319,6 +330,7 @@ export default function SidePanel({
                 onToggle={() => toggleProject(project.id)}
                 onSelect={() => onSelectProject(selectedProjectId === project.id ? null : project.id)}
                 onDelete={() => setDeleteProjectConfirm(project.id)}
+                onRename={() => { setRenameProjectId(project.id); setRenameProjectValue(project.name); }}
                 onDragOver={(e) => handleDragOver(e, project.id)}
                 onDrop={(e) => handleDrop(e, project.id)}
                 onDragLeave={() => setDragOverProjectId(null as unknown as null)}
@@ -406,6 +418,35 @@ export default function SidePanel({
 
       {showMemory && (
         <GlobalMemoryModal engine={engine} engineLabel={engineLabel} onClose={() => setShowMemory(false)} />
+      )}
+
+      {/* Rename project */}
+      {renameProjectId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setRenameProjectId(null)}>
+          <div className="bg-[#161b22] border border-border rounded-xl p-5 w-[320px] flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[14px] font-semibold text-white">Переименовать проект</div>
+            <input
+              autoFocus
+              value={renameProjectValue}
+              onChange={(e) => setRenameProjectValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && renameProjectValue.trim()) renameProject.mutate({ id: renameProjectId, name: renameProjectValue.trim() });
+                if (e.key === "Escape") setRenameProjectId(null);
+              }}
+              className="input-field text-[13px] py-2"
+              placeholder="Название проекта"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setRenameProjectId(null)} className="px-3 py-1.5 rounded-lg border border-border text-[13px] text-muted hover:text-white transition-colors">Отмена</button>
+              <button
+                onClick={() => renameProjectValue.trim() && renameProject.mutate({ id: renameProjectId, name: renameProjectValue.trim() })}
+                disabled={!renameProjectValue.trim() || renameProject.isPending}
+                className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-[13px] text-white transition-colors disabled:opacity-50">
+                {renameProject.isPending ? "Сохранение..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete project */}
@@ -535,7 +576,7 @@ export default function SidePanel({
 
 function ProjectRow({
   project, isExpanded, hasActiveChild, isDragTarget, isActiveProject,
-  onToggle, onSelect, onDelete, onDragOver, onDrop, onDragLeave,
+  onToggle, onSelect, onDelete, onRename, onDragOver, onDrop, onDragLeave,
 }: {
   project: Project;
   isExpanded: boolean;
@@ -545,6 +586,7 @@ function ProjectRow({
   onToggle: () => void;
   onSelect: () => void;
   onDelete: () => void;
+  onRename: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onDragLeave: () => void;
@@ -613,6 +655,13 @@ function ProjectRow({
         </button>
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 z-50 w-[160px] bg-[#161b22] border border-border rounded-lg shadow-xl overflow-hidden">
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onRename(); }}
+              className="w-full text-left px-3 py-2 text-[12px] text-[#c9d1d9] hover:bg-[#21262d] hover:text-white transition-colors"
+            >
+              Переименовать
+            </button>
+            <div className="border-t border-border" />
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
               className="w-full text-left px-3 py-2 text-[12px] text-red-400 hover:bg-red-500/10 transition-colors"
