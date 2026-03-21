@@ -79,13 +79,7 @@ export default function CreditsPage() {
             <div className="text-xs text-muted mt-1">{creditStats?.tx_count ?? 0} операций</div>
           </div>
 
-          <div className="bg-panel border border-border rounded-xl p-5">
-            <div className="text-xs text-muted uppercase tracking-wide mb-2">Возвращено (30д)</div>
-            <div className="text-2xl font-bold text-green-400">{(creditStats?.total_refunded ?? 0).toFixed(1)}</div>
-            <div className="text-xs text-muted mt-1">рефанды</div>
-          </div>
-
-          <div className="bg-panel border border-border rounded-xl p-5">
+<div className="bg-panel border border-border rounded-xl p-5">
             <div className="text-xs text-muted uppercase tracking-wide mb-2">Пополнено (30д)</div>
             <div className="text-2xl font-bold text-accent">{(creditStats?.total_added ?? 0).toFixed(1)}</div>
             <div className="text-xs text-muted mt-1">начислено</div>
