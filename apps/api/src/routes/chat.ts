@@ -185,7 +185,7 @@ async function callKieAIOnce({
       messages.push({ role: "user", content: userText });
     }
 
-    const requestBody: Record<string, unknown> = { model: activeModel, messages, max_tokens: 8096, stream: false };
+    const requestBody: Record<string, unknown> = { model: activeModel, messages, max_tokens: 16000, stream: false };
     if (systemText) requestBody.system = systemText;
     if (webSearch) {
       requestBody.tools = [{
@@ -199,7 +199,7 @@ async function callKieAIOnce({
       }];
     }
 
-    log.info({ model: activeModel, msgCount: messages.length, hasSystem: !!systemText, systemLen: systemText?.length ?? 0, webSearch: !!webSearch, keys: Object.keys(requestBody) }, "kie.ai claude request");
+    log.info(`kie.ai claude request: model=${activeModel} msgs=${messages.length} sysLen=${systemText?.length ?? 0} keys=${Object.keys(requestBody).join(",")}`);
     const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
