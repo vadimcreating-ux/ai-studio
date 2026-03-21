@@ -193,9 +193,6 @@ export default function CreditsPage() {
                         {tx.kie_amount > 0 && (
                           <span className="text-[11px] text-muted">KIE: {Number(tx.kie_amount).toFixed(4)}</span>
                         )}
-                        {tx.markup_percent > 0 && (
-                          <span className="text-[11px] text-muted">наценка {Number(tx.markup_percent).toFixed(0)}%</span>
-                        )}
                         <span className="text-[11px] text-muted">{formatDate(tx.created_at)}</span>
                       </div>
                     </div>
