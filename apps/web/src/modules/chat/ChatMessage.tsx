@@ -1,8 +1,8 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, Trash2, RefreshCw } from "lucide-react";
-import type { Message } from "../../shared/api/chat";
+import { Copy, Check, Pencil, Trash2, RefreshCw, Paperclip } from "lucide-react";
+import type { Message, AttachedFile } from "../../shared/api/chat";
 
 type Props = {
   message: Message;
@@ -135,6 +135,26 @@ export default function ChatMessage({ message, engineLabel, onEdit, onDelete, on
     return (
       <div className="group flex flex-col items-end mb-5">
         <span className="text-[10px] font-semibold tracking-widest text-blue-400 mb-1.5 pr-1">ВЫ</span>
+        {message.attached_files && message.attached_files.length > 0 && (
+          <div className="max-w-[62%] mb-1.5 flex flex-col gap-1.5 items-end">
+            {message.attached_files.map((f: AttachedFile, i: number) =>
+              f.dataUrl ? (
+                <img
+                  key={i}
+                  src={f.dataUrl}
+                  alt={f.name}
+                  title={f.name}
+                  className="max-w-full max-h-64 rounded-xl object-cover border border-white/10"
+                />
+              ) : (
+                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 bg-[#1d4ed8]/60 border border-white/20 rounded-lg text-[12px] text-white/80">
+                  <Paperclip size={11} className="shrink-0" />
+                  <span className="max-w-[200px] truncate">{f.name}</span>
+                </div>
+              )
+            )}
+          </div>
+        )}
         <div className="max-w-[62%] bg-[#1d4ed8] rounded-2xl rounded-br-sm px-4 py-3 text-[13px] text-white leading-relaxed">
           <span className="whitespace-pre-wrap">{message.content}</span>
         </div>

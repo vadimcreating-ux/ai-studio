@@ -125,13 +125,21 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       );
       return chatApi.send(chatId, message, converted.length > 0 ? converted : undefined, webSearch || undefined);
     },
-    onMutate: ({ message }) => {
+    onMutate: ({ message, files }) => {
+      const attachedFiles = files && files.length > 0
+        ? files.map((f) => ({
+            name: f.name,
+            mimeType: f.type,
+            dataUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
+          }))
+        : null;
       const opt: Message = {
         id: `opt-${Date.now()}`,
         chat_id: chat?.id ?? "",
         role: "user",
         content: message,
         created_at: new Date().toISOString(),
+        attached_files: attachedFiles,
       };
       setOptimisticMessages((prev) => [...prev, opt]);
     },

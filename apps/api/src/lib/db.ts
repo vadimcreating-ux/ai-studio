@@ -170,6 +170,11 @@ export async function ensureChatsTable() {
     ALTER TABLE chats ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL
   `).catch(() => {});
 
+  // Add attached_files to chat_messages (stores image dataUrls and file metadata)
+  await dbQuery(`
+    ALTER TABLE chat_messages ADD COLUMN attached_files JSONB DEFAULT NULL
+  `).catch(() => {});
+
   // Migrate stale claude-sonnet-4-6 chats to the stable claude-sonnet-4-5
   await dbQuery(`
     UPDATE chats SET model = 'claude-sonnet-4-5' WHERE module = 'claude' AND model = 'claude-sonnet-4-6'

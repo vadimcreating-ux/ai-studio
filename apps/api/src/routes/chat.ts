@@ -584,9 +584,18 @@ export async function chatRoutes(app: FastifyInstance) {
       systemParts.push(`Содержимое URL из промпта:\n\n${fetched.join("\n\n")}`);
     }
 
+    // Store file metadata (images as dataUrl, others as name+mimeType only)
+    const attachedFiles = files && files.length > 0
+      ? files.map((f: { dataUrl: string; mimeType: string; name: string }) => ({
+          name: f.name,
+          mimeType: f.mimeType,
+          dataUrl: f.mimeType.startsWith("image/") ? f.dataUrl : null,
+        }))
+      : null;
+
     await dbQuery(
-      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'user', $2)`,
-      [chatId, userText]
+      `INSERT INTO chat_messages (chat_id, role, content, attached_files) VALUES ($1, 'user', $2, $3)`,
+      [chatId, userText, attachedFiles ? JSON.stringify(attachedFiles) : null]
     );
 
     const result = await callKieAI({

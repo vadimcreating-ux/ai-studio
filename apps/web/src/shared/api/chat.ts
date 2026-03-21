@@ -9,12 +9,19 @@ export type Chat = {
   created_at: string;
 };
 
+export type AttachedFile = {
+  name: string;
+  mimeType: string;
+  dataUrl: string | null; // present for images, null for text/other files
+};
+
 export type Message = {
   id: string;
   chat_id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  attached_files?: AttachedFile[] | null;
 };
 
 export type ChatListResponse = {
