@@ -199,6 +199,7 @@ async function callKieAIOnce({
       }];
     }
 
+    log.info({ model: activeModel, msgCount: messages.length, hasSystem: !!systemText, systemLen: systemText?.length ?? 0, webSearch: !!webSearch, keys: Object.keys(requestBody) }, "kie.ai claude request");
     const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
