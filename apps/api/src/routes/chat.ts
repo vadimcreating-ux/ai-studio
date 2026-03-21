@@ -182,7 +182,7 @@ async function callKieAIOnce({
       messages.push({ role: "user", content: userText });
     }
 
-    const requestBody: Record<string, unknown> = { model, messages, stream: false };
+    const requestBody: Record<string, unknown> = { model, messages, max_tokens: 8096, stream: false };
     if (systemText) requestBody.system = systemText;
     if (webSearch) {
       requestBody.tools = [{

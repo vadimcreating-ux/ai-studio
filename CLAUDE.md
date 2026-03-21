@@ -163,11 +163,12 @@ await dbQuery(`
 
 #### Claude — Anthropic Messages API
 ```json
-// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages, stream
+// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages, max_tokens, stream
 {
   "model": "claude-sonnet-4-5",
   "messages": [...],
   "system": "...",
+  "max_tokens": 8096,
   "stream": false
 }
 // Ответ
@@ -176,7 +177,8 @@ await dbQuery(`
 
 > **⚠️ Критически важно:**
 > - Рабочая стабильная модель: `claude-sonnet-4-5`. Модель `claude-sonnet-4-6` нестабильна на стороне KIE.
-> - `max_tokens` — **НЕ передавать**: KIE docs не включают этот параметр, он вызывает `code 500`.
+> - `max_tokens: 8096` — **обязательный** параметр. KIE возвращает `{"code":500}` если он отсутствует (несмотря на то, что в их docs-примерах он не показан).
+> - **❌ НЕ убирать** `max_tokens` — сломает все claude-чаты с ошибкой code 500.
 > - **❌ НЕ менять** формат на OpenAI Chat Completions — сломает все claude-чаты.
 
 #### ChatGPT / Gemini — OpenAI Chat Completions

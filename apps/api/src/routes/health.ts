@@ -15,7 +15,7 @@ export async function healthRoutes(app: FastifyInstance) {
       const res = await fetch("https://api.kie.ai/claude/v1/messages", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-5", messages: [{ role: "user", content: "hi" }], stream: false }),
+        body: JSON.stringify({ model: "claude-sonnet-4-5", messages: [{ role: "user", content: "hi" }], max_tokens: 8096, stream: false }),
         signal: AbortSignal.timeout(30000),
       });
       const text = await res.text();
