@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Zap, Cpu, Bot, Sparkles, Image, Video, Music,
+  Zap, Sparkles, Image, Video, Music,
   HardDrive, FolderOpen, MessageSquare,
   ArrowRight, Play, BarChart2,
 } from "lucide-react";
+import { ClaudeIcon, ChatGPTIcon, GeminiIcon } from "../shared/AiLogos";
 import { useAuth } from "../contexts/AuthContext";
 import { creditsApi, type CreditStatGroup } from "../shared/api/credits";
 import { api } from "../shared/api/client";
@@ -40,9 +41,9 @@ function formatDate(iso: string | null | undefined) {
 }
 
 const ENGINE_META = {
-  claude:  { label: "Claude",  icon: <Cpu size={14} />,      color: "text-orange-400",  bg: "bg-orange-500/10" },
-  chatgpt: { label: "ChatGPT", icon: <Bot size={14} />,      color: "text-green-400",   bg: "bg-green-500/10" },
-  gemini:  { label: "Gemini",  icon: <Sparkles size={14} />, color: "text-purple-400",  bg: "bg-purple-500/10" },
+  claude:  { label: "Claude",  icon: <ClaudeIcon  size={14} />, color: "text-orange-400",  bg: "bg-orange-500/10" },
+  chatgpt: { label: "ChatGPT", icon: <ChatGPTIcon size={14} />, color: "text-green-400",   bg: "bg-green-500/10" },
+  gemini:  { label: "Gemini",  icon: <GeminiIcon  size={14} />, color: "text-purple-400",  bg: "bg-purple-500/10" },
 };
 
 
@@ -147,9 +148,9 @@ export default function DashboardPage() {
         {/* ── Quick actions ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
-            { label: "Claude", desc: "Sonnet 4.5", icon: <Cpu size={20} />, color: "hover:border-orange-500/40 hover:bg-orange-500/5", iconColor: "text-orange-400 bg-orange-500/10", to: "/claude" },
-            { label: "ChatGPT", desc: "GPT-5 / 4o", icon: <Bot size={20} />, color: "hover:border-green-500/40 hover:bg-green-500/5", iconColor: "text-green-400 bg-green-500/10", to: "/chatgpt" },
-            { label: "Gemini", desc: "2.5 Pro", icon: <Sparkles size={20} />, color: "hover:border-purple-500/40 hover:bg-purple-500/5", iconColor: "text-purple-400 bg-purple-500/10", to: "/gemini" },
+            { label: "Claude", desc: "Sonnet 4.5", icon: <ClaudeIcon size={20} />, color: "hover:border-orange-500/40 hover:bg-orange-500/5", iconColor: "text-orange-400 bg-orange-500/10", to: "/claude" },
+            { label: "ChatGPT", desc: "GPT-5 / 4o", icon: <ChatGPTIcon size={20} />, color: "hover:border-green-500/40 hover:bg-green-500/5", iconColor: "text-green-400 bg-green-500/10", to: "/chatgpt" },
+            { label: "Gemini", desc: "2.5 Pro", icon: <GeminiIcon size={20} />, color: "hover:border-purple-500/40 hover:bg-purple-500/5", iconColor: "text-purple-400 bg-purple-500/10", to: "/gemini" },
             { label: "Image", desc: "7 моделей", icon: <Image size={20} />, color: "hover:border-blue-500/40 hover:bg-blue-500/5", iconColor: "text-blue-400 bg-blue-500/10", to: "/image" },
             { label: "Video", desc: "Sora / Kling", icon: <Video size={20} />, color: "hover:border-pink-500/40 hover:bg-pink-500/5", iconColor: "text-pink-400 bg-pink-500/10", to: "/video" },
           ].map((item) => (
