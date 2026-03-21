@@ -279,10 +279,16 @@ async function callKieAIOnce({
       messages.push({ role: "user", content: [{ type: "text", text: userText }] });
     }
 
+    const reqBody: Record<string, unknown> = { messages, stream: false };
+    if (thinking && model === "gemini-3.1-pro") {
+      reqBody.include_thoughts = true;
+      reqBody.reasoning_effort = "high";
+    }
+
     const res = await fetch(`${KIE_BASE_URL}/${model}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ messages, stream: false }),
+      body: JSON.stringify(reqBody),
       signal: AbortSignal.timeout(120000),
     });
 
