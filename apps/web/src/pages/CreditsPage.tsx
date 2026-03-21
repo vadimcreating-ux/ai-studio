@@ -126,7 +126,6 @@ export default function CreditsPage() {
               {byGroup.map((g: CreditStatGroup) => {
                 const meta = GROUP_META[g.group_name] ?? GROUP_META["Прочее"];
                 const pct = maxGroupSpent > 0 ? (g.total_spent / maxGroupSpent) * 100 : 0;
-                const markupPct = g.total_spent > 0 ? (g.markup_total / g.total_spent) * 100 : 0;
                 return (
                   <div key={g.group_name}>
                     <div className="flex items-center justify-between mb-2">
@@ -134,19 +133,9 @@ export default function CreditsPage() {
                         <span className={`text-sm font-medium ${meta.color}`}>{g.group_name}</span>
                         <span className="text-xs text-muted">{g.tx_count} операций</span>
                       </div>
-                      <div className="flex items-center gap-4 text-right">
-                        <div>
-                          <div className="text-[11px] text-muted">KIE</div>
-                          <div className="text-xs text-white font-mono">{g.kie_total.toFixed(3)}</div>
-                        </div>
-                        <div>
-                          <div className="text-[11px] text-muted">Наценка {markupPct.toFixed(0)}%</div>
-                          <div className="text-xs text-white font-mono">{g.markup_total.toFixed(3)}</div>
-                        </div>
-                        <div>
-                          <div className="text-[11px] text-muted">Итого</div>
-                          <div className="text-sm font-bold text-white font-mono">{g.total_spent.toFixed(2)}</div>
-                        </div>
+                      <div className="text-right">
+                        <div className="text-[11px] text-muted">Итого</div>
+                        <div className="text-sm font-bold text-white font-mono">{g.total_spent.toFixed(2)}</div>
                       </div>
                     </div>
                     <div className="h-2 bg-surface rounded-full overflow-hidden">
@@ -189,9 +178,6 @@ export default function CreditsPage() {
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         {tx.group_name && (
                           <span className={`text-[11px] font-medium ${groupMeta.color}`}>{tx.group_name}</span>
-                        )}
-                        {tx.kie_amount > 0 && (
-                          <span className="text-[11px] text-muted">KIE: {Number(tx.kie_amount).toFixed(4)}</span>
                         )}
                         <span className="text-[11px] text-muted">{formatDate(tx.created_at)}</span>
                       </div>
