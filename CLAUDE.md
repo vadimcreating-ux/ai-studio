@@ -163,12 +163,11 @@ await dbQuery(`
 
 #### Claude — Anthropic Messages API
 ```json
-// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages, max_tokens, stream
+// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages, stream
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-4-5",
   "messages": [...],
   "system": "...",
-  "max_tokens": 8096,
   "stream": false
 }
 // Ответ
@@ -176,10 +175,9 @@ await dbQuery(`
 ```
 
 > **⚠️ Критически важно:**
-> - `max_tokens` — **обязательный** параметр. KIE строго проверяет его наличие и возвращает `code 500` если он отсутствует. Значение: `8096`.
-> - Актуальная модель: `claude-sonnet-4-6`. Модель `claude-sonnet-4-5` устарела на стороне KIE и возвращает `code 500 "Server exception"`.
+> - Рабочая стабильная модель: `claude-sonnet-4-5`. Модель `claude-sonnet-4-6` нестабильна на стороне KIE.
+> - `max_tokens` — **НЕ передавать**: KIE docs не включают этот параметр, он вызывает `code 500`.
 > - **❌ НЕ менять** формат на OpenAI Chat Completions — сломает все claude-чаты.
-> - **❌ НЕ убирать** `max_tokens` — сломает все claude-чаты с ошибкой 500.
 
 #### ChatGPT / Gemini — OpenAI Chat Completions
 ```
@@ -341,7 +339,7 @@ accent-hover:  "#1d4ed8"   // hover blue
 
 ```typescript
 // apps/web/src/modules/chat/PromptsPanel.tsx
-claude:  [{ value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }, { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }]
+claude:  [{ value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }, { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }]
 chatgpt: [{ value: "gpt-5-2", label: "GPT-5" }, { value: "gpt-4o", label: "GPT-4o" }]
 gemini:  [{ value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" }, { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }]
 ```

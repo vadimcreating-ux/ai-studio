@@ -7,6 +7,7 @@ import { formatDate } from "../../shared/utils/date";
 
 const ENGINE_MODELS: Record<string, Array<{ value: string; label: string }>> = {
   claude: [
+    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
     { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
   ],
   chatgpt: [

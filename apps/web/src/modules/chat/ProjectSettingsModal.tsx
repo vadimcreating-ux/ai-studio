@@ -4,6 +4,7 @@ import { X, Paperclip, FileText, Image, Trash2 } from "lucide-react";
 import { projectsApi, type Project, type ProjectFile } from "../../shared/api/projects";
 
 const CLAUDE_MODELS = [
+  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
 ];
 

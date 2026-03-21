@@ -160,9 +160,6 @@ async function callKieAIOnce({
 }): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
 
   if (module === "claude") {
-    // Upgrade deprecated model to current — claude-sonnet-4-5 returns 500 on KIE
-    const activeModel = model === "claude-sonnet-4-5" ? "claude-sonnet-4-6" : model;
-
     // ── Anthropic Messages API ──────────────────────────────────────────────
     type Msg = { role: string; content: string | unknown[] };
     const messages: Msg[] = history.map((r) => ({ role: r.role, content: r.content }));
@@ -185,7 +182,7 @@ async function callKieAIOnce({
       messages.push({ role: "user", content: userText });
     }
 
-    const requestBody: Record<string, unknown> = { model: activeModel, messages, max_tokens: 16000, stream: false };
+    const requestBody: Record<string, unknown> = { model, messages, stream: false };
     if (systemText) requestBody.system = systemText;
     if (webSearch) {
       requestBody.tools = [{
@@ -199,7 +196,7 @@ async function callKieAIOnce({
       }];
     }
 
-    log.info(`kie.ai claude request: model=${activeModel} msgs=${messages.length} sysLen=${systemText?.length ?? 0} keys=${Object.keys(requestBody).join(",")}`);
+    log.info(`kie.ai claude request: model=${model} msgs=${messages.length} sysLen=${systemText?.length ?? 0}`);
     const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },

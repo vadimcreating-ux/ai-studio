@@ -166,10 +166,6 @@ export async function ensureChatsTable() {
     ALTER TABLE chats ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL
   `).catch(() => {});
 
-  // Migrate deprecated model — claude-sonnet-4-5 no longer supported by KIE (returns 500)
-  await dbQuery(`
-    UPDATE chats SET model = 'claude-sonnet-4-6' WHERE model = 'claude-sonnet-4-5'
-  `).catch(() => {});
 }
 
 export async function ensureProjectsTable() {
