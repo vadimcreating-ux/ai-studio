@@ -89,6 +89,36 @@ export async function lookupPrice(keys: string[]): Promise<{
 }
 
 /**
+ * Spend KIE credits × markup after a successful KIE response.
+ * Tries atomic deduction first; if balance ran out in the race window,
+ * force-deducts (creates at most one request worth of debt).
+ */
+export async function spendCredits(userId: string, kieAmount: number, operation: string): Promise<number> {
+  if (kieAmount <= 0) return 0;
+  let markupPercent = 0;
+  try {
+    const priceRes = await dbQuery(
+      "SELECT markup_percent FROM credit_prices WHERE operation = $1",
+      [operation]
+    );
+    markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
+  } catch { /* column might not exist yet */ }
+  const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
+  const deducted = await atomicDeduct(userId, amount, operation, `Запрос к ${operation}`);
+  if (deducted > 0) return deducted;
+  // Balance went to zero in the race window — force-deduct.
+  await dbQuery(
+    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
+    [amount, userId]
+  );
+  await dbQuery(
+    "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
+    [userId, -amount, operation, `Запрос к ${operation} (принудительно)`]
+  );
+  return amount;
+}
+
+/**
  * Non-atomic balance read — use only for UX display, not for gating access.
  */
 export async function getBalance(userId: string): Promise<number> {

@@ -8,7 +8,7 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { FilesQuerySchema } from "../lib/validation.js";
 import { uploadToS3, isS3Configured } from "../lib/s3.js";
-import { atomicDeduct, refundCredits, lookupPrice } from "../lib/credits.js";
+import { atomicDeduct, refundCredits, lookupPrice, spendCredits, getBalance } from "../lib/credits.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
@@ -336,6 +336,12 @@ export async function imageRoutes(app: FastifyInstance) {
     if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
     if (!prompt) return reply.status(400).send({ ok: false, error: "Введите prompt" });
 
+    const userId = request.authUser?.userId;
+    if (userId) {
+      const balance = await getBalance(userId);
+      if (balance <= 0) return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
+    }
+
     const systemMessage = `Ты — эксперт по составлению промптов для генерации изображений с помощью ИИ.
 Твоя задача: взять описание пользователя и превратить его в детальный, профессиональный промпт.
 Правила:
@@ -359,12 +365,17 @@ export async function imageRoutes(app: FastifyInstance) {
       });
       const kieData = await kieResponse.json() as {
         choices?: Array<{ message?: { content?: string } }>;
+        credits_consumed?: number;
         error?: { message?: string };
       };
       const improved = kieData.choices?.[0]?.message?.content?.trim();
       if (!improved) {
         console.error("KIE improve-prompt error:", JSON.stringify(kieData));
         return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
+      }
+      if (userId) {
+        const kieCredits = typeof kieData.credits_consumed === "number" ? kieData.credits_consumed : 0;
+        await spendCredits(userId, kieCredits, "prompt_improve").catch(() => {});
       }
       return { ok: true, improvedPrompt: improved };
     } catch {
