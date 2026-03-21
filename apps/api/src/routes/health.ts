@@ -10,7 +10,8 @@ export async function healthRoutes(app: FastifyInstance) {
   // KIE Claude test — admin only, temporary debug endpoint
   app.get("/api/kie-claude-test", { preHandler: [authenticate, requireAdmin] }, async () => {
     const apiKey = process.env.KIE_API_KEY;
-    if (!apiKey) return { ok: false, error: "no_key" };
+    const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || null;
+    if (!apiKey) return { ok: false, error: "no_key", proxy };
     try {
       const res = await fetch("https://api.kie.ai/claude/v1/messages", {
         method: "POST",
@@ -19,9 +20,9 @@ export async function healthRoutes(app: FastifyInstance) {
         signal: AbortSignal.timeout(30000),
       });
       const text = await res.text();
-      return { ok: true, httpStatus: res.status, body: text };
+      return { ok: true, httpStatus: res.status, body: text, proxy, keyLen: apiKey.length };
     } catch (e: any) {
-      return { ok: false, error: e.message };
+      return { ok: false, error: e.message, proxy };
     }
   });
 
