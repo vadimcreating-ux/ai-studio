@@ -13,6 +13,7 @@ import AvatarPage from "./pages/AvatarPage";
 import FilesPage from "./pages/FilesPage";
 import AdminPage from "./pages/AdminPage";
 import DashboardPage from "./pages/DashboardPage";
+import CreditsPage from "./pages/CreditsPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/audio" element={<AudioPage />} />
         <Route path="/avatar" element={<AvatarPage />} />
         <Route path="/files" element={<FilesPage />} />
+        <Route path="/credits" element={<CreditsPage />} />
         <Route path="/settings" element={<Navigate to="/dashboard" replace />} />
         <Route
           path="/admin"

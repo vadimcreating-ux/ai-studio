@@ -1,4 +1,4 @@
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { NavLink, useNavigate, useLocation, Link } from "react-router-dom";
 import { useState, useRef, useEffect } from "react";
 import ReactDOM from "react-dom";
 import {
@@ -133,7 +133,7 @@ function UserMenu({ online }: UserMenuProps) {
 
   return (
     <>
-      <div ref={ref} className="relative">
+      <div ref={ref} className="relative flex items-center">
         {spentToast !== null && (
           <div
             key={spentToast + Date.now()}
@@ -145,13 +145,22 @@ function UserMenu({ online }: UserMenuProps) {
             </span>
           </div>
         )}
-        <button
-          onClick={() => setOpen(o => !o)}
-          className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface hover:bg-border transition-colors text-sm text-white"
+
+        {/* Credits link — navigates to /credits */}
+        <Link
+          to="/credits"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-l-lg bg-surface hover:bg-border transition-colors text-sm text-white border-r border-border"
+          title="Перейти к кредитам"
         >
           <Coins size={14} className="text-accent" />
           <span className="font-medium">{Number(user.credits_balance).toFixed(3)}</span>
-          <div className="w-px h-4 bg-border mx-0.5" />
+        </Link>
+
+        {/* User button — opens dropdown */}
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-1.5 px-2 py-1.5 rounded-r-lg bg-surface hover:bg-border transition-colors text-sm text-white"
+        >
           {/* Avatar */}
           <div className="w-6 h-6 rounded-full overflow-hidden bg-accent flex items-center justify-center flex-shrink-0">
             {user.avatar_url ? (
@@ -185,6 +194,15 @@ function UserMenu({ online }: UserMenuProps) {
                 </div>
               </div>
             </div>
+
+            {/* Credits */}
+            <button
+              onClick={() => { navigate("/credits"); setOpen(false); }}
+              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted hover:text-white hover:bg-surface transition-colors"
+            >
+              <Coins size={14} />
+              Кредиты
+            </button>
 
             {/* Settings */}
             <button

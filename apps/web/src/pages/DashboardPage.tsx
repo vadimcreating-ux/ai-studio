@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Zap, Cpu, Bot, Sparkles, Image, Video, Music,
@@ -134,11 +134,14 @@ export default function DashboardPage() {
             </h1>
             <p className="text-muted mt-1 text-sm">Что создаём сегодня?</p>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-panel border border-border rounded-xl">
+          <Link
+            to="/credits"
+            className="flex items-center gap-2 px-4 py-2 bg-panel border border-border rounded-xl hover:border-accent/40 transition-colors"
+          >
             <Zap size={16} className="text-accent" fill="currentColor" />
             <span className="text-white font-semibold text-lg">{Number(user?.credits_balance ?? 0).toFixed(1)}</span>
             <span className="text-muted text-sm">кредитов</span>
-          </div>
+          </Link>
         </div>
 
         {/* ── Quick actions ── */}
@@ -169,7 +172,10 @@ export default function DashboardPage() {
         {/* ── Stats row ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Credits */}
-          <div className="bg-panel border border-border rounded-xl p-4">
+          <div
+            className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+            onClick={() => navigate("/credits")}
+          >
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs text-muted uppercase tracking-wide">Баланс</span>
               <Zap size={15} className="text-accent" />
@@ -279,6 +285,9 @@ export default function DashboardPage() {
                 <BarChart2 size={14} className="text-accent" />
                 Расход кредитов
               </h2>
+              <Link to="/credits" className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
+                Подробнее <ArrowRight size={11} />
+              </Link>
             </div>
             {/* Period switcher */}
             <div className="flex gap-1 mb-4">
