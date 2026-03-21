@@ -12,49 +12,46 @@ import { uploadToS3, isS3Configured } from "../lib/s3.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
-type TaskMeta = { prompt?: string; balanceBefore?: number };
+type TaskMeta = { prompt?: string; model: string; resolution: string };
 const imageTaskStore = new Map<string, TaskMeta>();
 
-// Fetch KIE account balance. Returns null if unavailable.
-async function getKieBalance(apiKey: string): Promise<number | null> {
-  try {
-    const res = await fetch(`${KIE_BASE_URL}/api/v1/chat/credit`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { code?: number; data?: unknown };
-    if (data.code !== 200) return null;
-    const d = data.data;
-    // data.data might be a number directly, or an object with a balance field
-    if (typeof d === "number") return d;
-    if (d && typeof d === "object") {
-      const obj = d as Record<string, unknown>;
-      for (const key of ["balance", "credits", "total", "credit", "amount"]) {
-        if (typeof obj[key] === "number") return obj[key] as number;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
+// Sanitize model name for use as DB operation key (replace non-alphanumeric except hyphens with _)
+function sanitizeKey(s: string): string {
+  return s.replace(/[^a-zA-Z0-9\-]/g, "_");
 }
 
-// Charge kieCredits × markup against user balance. Returns 0 if kieCredits <= 0.
-async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
-  if (kieCredits <= 0) return 0;
+// Charge fixed credits from credit_prices using key hierarchy with markup.
+// Lookup order: image_{model}_{resolution} → image_{model} → image_generate
+async function chargeFixed(userId: string, model: string, resolution: string): Promise<number> {
+  const mk = sanitizeKey(model);
+  const rk = sanitizeKey(resolution);
+  const keys = [`image_${mk}_${rk}`, `image_${mk}`, "image_generate"];
+
+  let credits = 0;
   let markupPercent = 0;
   try {
-    const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
-    markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-  } catch { /* column might not exist yet */ }
-  const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    for (const key of keys) {
+      const res = await dbQuery(
+        "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
+        [key]
+      );
+      if (res.rows[0] && Number(res.rows[0].credits) > 0) {
+        credits = Number(res.rows[0].credits);
+        markupPercent = Number(res.rows[0].markup_percent ?? 0);
+        break;
+      }
+    }
+  } catch { /* table might not exist yet */ }
+
+  if (credits <= 0) return 0;
+  const amount = Math.round(credits * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
   );
   await dbQuery(
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -amount, operation, `Генерация ${operation}`]
+    [userId, -amount, `image_${mk}`, `Генерация изображения (${model})`]
   );
   return amount;
 }
@@ -75,19 +72,17 @@ export async function imageRoutes(app: FastifyInstance) {
       output_format?: string;
       quality?: string;        // Seedream: basic | high
       upscale_factor?: string; // Topaz: 1 | 2 | 4 | 8
-      ideogram_image_size?: string;      // Ideogram: square | square_hd | portrait_4_3 | ...
-      ideogram_rendering_speed?: string; // Ideogram: TURBO | BALANCED | QUALITY
-      ideogram_style?: string;           // Ideogram: AUTO | GENERAL | REALISTIC | DESIGN
-      ideogram_num_images?: string;      // Ideogram: 1 | 2 | 3 | 4
+      ideogram_image_size?: string;
+      ideogram_rendering_speed?: string;
+      ideogram_style?: string;
+      ideogram_num_images?: string;
     };
 
     const apiKey = process.env.KIE_API_KEY;
-
-    if (!apiKey) {
-      return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-    }
+    if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
 
     const model = body?.model?.trim() || "nano-banana-pro";
+    const resolution = body?.resolution?.trim() || "1K";
     const isTopaz = model === "topaz/image-upscale";
     const isRecraft = model === "recraft/remove-background";
     const isIdeogram = model === "ideogram/v3-reframe";
@@ -127,8 +122,6 @@ export async function imageRoutes(app: FastifyInstance) {
         if (body?.quality) input.quality = body.quality;
       } else {
         if (body?.image_input?.length) {
-          // KIE requires HTTP URLs for image_input (not data URIs).
-          // Upload data URLs to S3 and pass the resulting HTTP URLs.
           if (!isS3Configured()) {
             return reply.status(400).send({ ok: false, error: "Загрузка референс-изображений требует настройки S3-хранилища" });
           }
@@ -145,27 +138,20 @@ export async function imageRoutes(app: FastifyInstance) {
           );
           input.image_input = uploadedUrls;
         }
-        if (body?.resolution) input.resolution = body.resolution;
+        if (resolution) input.resolution = resolution;
         if (body?.output_format) input.output_format = body.output_format;
       }
     }
 
     try {
-      // Snapshot KIE balance BEFORE creating the task — used later to compute credits consumed
-      const balanceBefore = await getKieBalance(apiKey);
-      app.log.info({ model, balanceBefore }, "KIE balance before image task");
-
-      const createResponse = await fetch(
-        `${KIE_BASE_URL}/api/v1/jobs/createTask`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ model, input }),
-        }
-      );
+      const createResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/createTask`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model, input }),
+      });
 
       const createData = await createResponse.json() as {
         code?: number;
@@ -183,10 +169,7 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       const taskId = createData.data.taskId;
-      imageTaskStore.set(taskId, {
-        prompt: prompt || undefined,
-        balanceBefore: balanceBefore ?? undefined,
-      });
+      imageTaskStore.set(taskId, { prompt: prompt || undefined, model, resolution });
 
       return { ok: true, taskId };
     } catch {
@@ -200,20 +183,13 @@ export async function imageRoutes(app: FastifyInstance) {
     const taskId = query?.taskId?.trim();
     const apiKey = process.env.KIE_API_KEY;
 
-    if (!apiKey) {
-      return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-    }
-
-    if (!taskId) {
-      return reply.status(400).send({ ok: false, error: "Не передан taskId" });
-    }
+    if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+    if (!taskId) return reply.status(400).send({ ok: false, error: "Не передан taskId" });
 
     try {
       const statusResponse = await fetch(
         `${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
-        {
-          headers: { Authorization: `Bearer ${apiKey}` },
-        }
+        { headers: { Authorization: `Bearer ${apiKey}` } }
       );
 
       const statusData = await statusResponse.json() as {
@@ -240,21 +216,18 @@ export async function imageRoutes(app: FastifyInstance) {
 
       const state = kieData.state ?? "waiting";
 
-      // Parse resultJson string to get image URLs
       let resultImageUrl = "";
       if (kieData.resultJson) {
         try {
           const parsed = JSON.parse(kieData.resultJson) as { resultUrls?: string[] };
           resultImageUrl = parsed.resultUrls?.[0] ?? "";
-        } catch {
-          // ignore parse error
-        }
+        } catch { /* ignore */ }
       }
 
       if (state === "success" && resultImageUrl) {
         const resolvedTaskId = kieData.taskId ?? taskId;
         const userId = request.authUser?.userId;
-        const meta = imageTaskStore.get(taskId) ?? {};
+        const meta = imageTaskStore.get(taskId) ?? { model: "unknown", resolution: "1K" };
 
         try {
           const { isNew } = await saveImageToFiles({
@@ -263,29 +236,12 @@ export async function imageRoutes(app: FastifyInstance) {
             prompt: meta.prompt,
             userId,
           });
-
           if (isNew && userId) {
-            // Compute actual KIE credits consumed via balance diff
-            let kieCredits = 0;
-            if (meta.balanceBefore != null) {
-              const balanceAfter = await getKieBalance(apiKey);
-              if (balanceAfter != null) {
-                kieCredits = Math.max(0, meta.balanceBefore - balanceAfter);
-                app.log.info(
-                  { taskId, balanceBefore: meta.balanceBefore, balanceAfter, kieCredits },
-                  "KIE image credits consumed (balance diff)"
-                );
-              } else {
-                app.log.warn({ taskId }, "KIE balance unavailable after image task — credits not charged");
-              }
-            } else {
-              app.log.warn({ taskId }, "KIE balance before not recorded — credits not charged");
-            }
-
-            const spent = await chargeKieCredits(userId, kieCredits, "image_generate");
+            const spent = await chargeFixed(userId, meta.model, meta.resolution);
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
+            app.log.info({ taskId, model: meta.model, resolution: meta.resolution, spent }, "image charged");
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -322,15 +278,11 @@ export async function imageRoutes(app: FastifyInstance) {
     const fileUrl = query?.url?.trim();
     const fileName = (query?.name?.trim() || "generated-image.png").replace(/[^a-zA-Z0-9._-]/g, "_");
 
-    if (!fileUrl) {
-      return reply.status(400).send({ ok: false, error: "Не передан url файла" });
-    }
+    if (!fileUrl) return reply.status(400).send({ ok: false, error: "Не передан url файла" });
 
     try {
       const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) {
-        return reply.status(500).send({ ok: false, error: "Не удалось скачать файл" });
-      }
+      if (!fileResponse.ok) return reply.status(500).send({ ok: false, error: "Не удалось скачать файл" });
       const contentType = fileResponse.headers.get("content-type") || "application/octet-stream";
       const buffer = Buffer.from(await fileResponse.arrayBuffer());
       reply
@@ -357,13 +309,8 @@ export async function imageRoutes(app: FastifyInstance) {
     const body = request.body as { prompt?: string };
     const prompt = body?.prompt?.trim();
     const apiKey = process.env.KIE_API_KEY;
-
-    if (!apiKey) {
-      return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-    }
-    if (!prompt) {
-      return reply.status(400).send({ ok: false, error: "Введите prompt" });
-    }
+    if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+    if (!prompt) return reply.status(400).send({ ok: false, error: "Введите prompt" });
 
     const systemMessage = `Ты — эксперт по составлению промптов для генерации изображений с помощью ИИ.
 Твоя задача: взять описание пользователя и превратить его в детальный, профессиональный промпт.
@@ -375,35 +322,26 @@ export async function imageRoutes(app: FastifyInstance) {
 - Верни ТОЛЬКО текст улучшенного промпта — без пояснений, без заголовков`;
 
     try {
-      const kieResponse = await fetch(
-        `${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: [
-              { role: "system", content: [{ type: "text", text: systemMessage }] },
-              { role: "user", content: [{ type: "text", text: prompt }] },
-            ],
-            stream: false,
-          }),
-        }
-      );
-
+      const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: [{ type: "text", text: systemMessage }] },
+            { role: "user", content: [{ type: "text", text: prompt }] },
+          ],
+          stream: false,
+        }),
+      });
       const kieData = await kieResponse.json() as {
         choices?: Array<{ message?: { content?: string } }>;
         error?: { message?: string };
       };
-
       const improved = kieData.choices?.[0]?.message?.content?.trim();
       if (!improved) {
         console.error("KIE improve-prompt error:", JSON.stringify(kieData));
         return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
       }
-
       return { ok: true, improvedPrompt: improved };
     } catch {
       return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
@@ -415,13 +353,8 @@ export async function imageRoutes(app: FastifyInstance) {
     const body = request.body as { prompt?: string };
     const prompt = body?.prompt?.trim();
     const apiKey = process.env.KIE_API_KEY;
-
-    if (!apiKey) {
-      return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-    }
-    if (!prompt) {
-      return reply.status(400).send({ ok: false, error: "Введите prompt" });
-    }
+    if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
+    if (!prompt) return reply.status(400).send({ ok: false, error: "Введите prompt" });
 
     const systemMessage = `You are a professional translator specializing in AI image generation prompts.
 Translate the given text to English accurately and naturally.
@@ -431,35 +364,26 @@ Rules:
 - Return ONLY the translated text — no explanations, no labels`;
 
     try {
-      const kieResponse = await fetch(
-        `${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: [
-              { role: "system", content: [{ type: "text", text: systemMessage }] },
-              { role: "user", content: [{ type: "text", text: prompt }] },
-            ],
-            stream: false,
-          }),
-        }
-      );
-
+      const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: [{ type: "text", text: systemMessage }] },
+            { role: "user", content: [{ type: "text", text: prompt }] },
+          ],
+          stream: false,
+        }),
+      });
       const kieData = await kieResponse.json() as {
         choices?: Array<{ message?: { content?: string } }>;
         error?: { message?: string };
       };
-
       const translated = kieData.choices?.[0]?.message?.content?.trim();
       if (!translated) {
         console.error("KIE translate-prompt error:", JSON.stringify(kieData));
         return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось перевести промпт" });
       }
-
       return { ok: true, translatedPrompt: translated };
     } catch {
       return reply.status(500).send({ ok: false, error: "Ошибка при обращении к KIE" });
@@ -470,24 +394,15 @@ Rules:
   app.delete("/api/files/:id", async (request, reply) => {
     const params = request.params as { id?: string };
     const id = params?.id?.trim();
-
-    if (!id) {
-      return reply.status(400).send({ ok: false, error: "Не передан id файла" });
-    }
-
+    if (!id) return reply.status(400).send({ ok: false, error: "Не передан id файла" });
     const deleted = await deleteFileById(id, request.authUser?.userId);
-    if (!deleted) {
-      return reply.status(404).send({ ok: false, error: "Файл не найден" });
-    }
-
+    if (!deleted) return reply.status(404).send({ ok: false, error: "Файл не найден" });
     return { ok: true, id };
   });
 
   // Шаблоны промптов для изображений
   app.get("/api/image-templates", async () => {
-    const result = await dbQuery(
-      `SELECT id, title, text, created_at FROM image_prompt_templates ORDER BY created_at DESC`
-    );
+    const result = await dbQuery(`SELECT id, title, text, created_at FROM image_prompt_templates ORDER BY created_at DESC`);
     return { ok: true, templates: result.rows };
   });
 
@@ -495,25 +410,15 @@ Rules:
     const body = request.body as { title?: string; text?: string };
     const title = body?.title?.trim();
     const text = body?.text?.trim();
-    if (!title || !text) {
-      return reply.status(400).send({ ok: false, error: "title и text обязательны" });
-    }
-    const result = await dbQuery(
-      `INSERT INTO image_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`,
-      [title, text]
-    );
+    if (!title || !text) return reply.status(400).send({ ok: false, error: "title и text обязательны" });
+    const result = await dbQuery(`INSERT INTO image_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`, [title, text]);
     return { ok: true, template: result.rows[0] };
   });
 
   app.delete("/api/image-templates/:id", async (request, reply) => {
     const params = request.params as { id: string };
-    const result = await dbQuery(
-      `DELETE FROM image_prompt_templates WHERE id = $1`,
-      [params.id]
-    );
-    if ((result.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ ok: false, error: "Шаблон не найден" });
-    }
+    const result = await dbQuery(`DELETE FROM image_prompt_templates WHERE id = $1`, [params.id]);
+    if ((result.rowCount ?? 0) === 0) return reply.status(404).send({ ok: false, error: "Шаблон не найден" });
     return { ok: true };
   });
 }

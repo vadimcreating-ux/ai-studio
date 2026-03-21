@@ -3,22 +3,41 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
 
-// Charge actual KIE credits × markup. Returns 0 if KIE didn't report credits.
-async function chargeKieCredits(userId: string, kieCredits: number, operation: string): Promise<number> {
-  if (kieCredits <= 0) return 0;
+function sanitizeKey(s: string): string {
+  return s.replace(/[^a-zA-Z0-9\-]/g, "_");
+}
+
+// Charge fixed credits from credit_prices using key hierarchy with markup.
+// Lookup order: video_{model} → video_generate
+async function chargeFixed(userId: string, model: string): Promise<number> {
+  const mk = sanitizeKey(model);
+  const keys = [`video_${mk}`, "video_generate"];
+
+  let credits = 0;
   let markupPercent = 0;
   try {
-    const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
-    markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-  } catch { /* column might not exist yet */ }
-  const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
+    for (const key of keys) {
+      const res = await dbQuery(
+        "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
+        [key]
+      );
+      if (res.rows[0] && Number(res.rows[0].credits) > 0) {
+        credits = Number(res.rows[0].credits);
+        markupPercent = Number(res.rows[0].markup_percent ?? 0);
+        break;
+      }
+    }
+  } catch { /* table might not exist yet */ }
+
+  if (credits <= 0) return 0;
+  const amount = Math.round(credits * (1 + markupPercent / 100) * 10000) / 10000;
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
   );
   await dbQuery(
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -amount, operation, `Генерация ${operation}`]
+    [userId, -amount, `video_${mk}`, `Генерация видео (${model})`]
   );
   return amount;
 }
@@ -26,7 +45,9 @@ async function chargeKieCredits(userId: string, kieCredits: number, operation: s
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 
 const KIE_BASE_URL = "https://api.kie.ai";
-const videoPromptStore = new Map<string, string>();
+
+type VideoTaskMeta = { prompt?: string; model: string };
+const videoTaskStore = new Map<string, VideoTaskMeta>();
 
 export async function videoRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
@@ -103,7 +124,7 @@ export async function videoRoutes(app: FastifyInstance) {
       }
 
       const taskId = createData.data.taskId!;
-      if (taskId) videoPromptStore.set(taskId, prompt ?? "");
+      if (taskId) videoTaskStore.set(taskId, { prompt: prompt || undefined, model });
 
       return { ok: true, taskId };
     } catch {
@@ -162,29 +183,21 @@ export async function videoRoutes(app: FastifyInstance) {
       if (state === "success" && videoUrl) {
         const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
-
-        // Log full KIE data to see what credit field is returned
-        app.log.info({ taskId, kieData }, "KIE video success data");
-        const kieCredits = typeof kieData.credits === "number" ? kieData.credits : 0;
-        app.log.info({ taskId, kieCredits }, "KIE video credits consumed");
+        const meta = videoTaskStore.get(taskId) ?? { model: "sora-2-pro-image-to-video" };
 
         try {
           const { isNew } = await saveVideoToFiles({
             taskId: resolvedTaskId,
             url: videoUrl,
-            prompt: videoPromptStore.get(taskId),
+            prompt: meta.prompt,
             userId,
           });
           if (isNew && userId) {
-            const spent = await chargeKieCredits(userId, kieCredits, "video_generate");
+            const spent = await chargeFixed(userId, meta.model);
             if (spent > 0) {
               await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
             }
-          } else if (!isNew && kieCredits > 0) {
-            await dbQuery(
-              "UPDATE files SET credits_spent = $1 WHERE task_id = $2 AND credits_spent IS NULL",
-              [kieCredits, resolvedTaskId]
-            );
+            app.log.info({ taskId, model: meta.model, spent }, "video charged");
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
@@ -192,7 +205,7 @@ export async function videoRoutes(app: FastifyInstance) {
           }
           console.error("saveVideoToFiles failed:", err.message);
         }
-        videoPromptStore.delete(taskId);
+        videoTaskStore.delete(taskId);
       }
 
       const statusMap: Record<string, string> = {

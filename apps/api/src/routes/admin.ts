@@ -178,6 +178,40 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, data: { operation, credits, markup_percent } });
   });
 
+  // POST /api/admin/credit-prices — создать новую строку цены (для модель-специфичных операций)
+  app.post("/api/admin/credit-prices", async (req, reply) => {
+    const body = req.body as { operation?: string; credits?: number; markup_percent?: number };
+    const operation = body?.operation?.trim();
+    if (!operation) {
+      return reply.status(400).send({ ok: false, error: "operation обязателен" });
+    }
+    const credits = Number(body?.credits ?? 0);
+    const markup_percent = Number(body?.markup_percent ?? 0);
+    await dbQuery(
+      `INSERT INTO credit_prices (operation, credits, markup_percent) VALUES ($1, $2, $3)
+       ON CONFLICT (operation) DO UPDATE SET credits = $2, markup_percent = $3`,
+      [operation, credits, markup_percent]
+    );
+    return reply.send({ ok: true, data: { operation, credits, markup_percent } });
+  });
+
+  // DELETE /api/admin/credit-prices/:operation — удалить модель-специфичную строку
+  const DEFAULT_OPERATIONS = new Set([
+    "chat_claude", "chat_chatgpt", "chat_gemini",
+    "image_generate", "video_generate", "prompt_improve",
+  ]);
+  app.delete("/api/admin/credit-prices/:operation", async (req, reply) => {
+    const { operation } = req.params as { operation: string };
+    if (DEFAULT_OPERATIONS.has(operation)) {
+      return reply.status(400).send({ ok: false, error: "Нельзя удалить базовую операцию" });
+    }
+    const result = await dbQuery("DELETE FROM credit_prices WHERE operation = $1", [operation]);
+    if ((result.rowCount ?? 0) === 0) {
+      return reply.status(404).send({ ok: false, error: "Строка не найдена" });
+    }
+    return reply.send({ ok: true });
+  });
+
   // ─── Transactions ─────────────────────────────────────────────────────────
 
   // GET /api/admin/transactions?limit=50&offset=0&user_id=...

@@ -472,65 +472,233 @@ function UsersTab({ users, qc }: { users: UserRow[]; qc: ReturnType<typeof useQu
 // ── Prices Tab ────────────────────────────────────────────────────────────────
 
 type PriceRow = { operation: string; credits: number; markup_percent: number };
+
+// Operations where we use real KIE credits × markup (no fixed price)
+const CHAT_OPERATIONS = new Set(["chat_claude", "chat_chatgpt", "chat_gemini", "prompt_improve"]);
+// Default operations that cannot be deleted
+const DEFAULT_OPERATIONS = new Set([
+  "chat_claude", "chat_chatgpt", "chat_gemini",
+  "image_generate", "video_generate", "prompt_improve",
+]);
 const OPERATION_LABELS: Record<string, string> = {
   chat_claude: "Чат Claude",
   chat_chatgpt: "Чат ChatGPT",
   chat_gemini: "Чат Gemini",
-  image_generate: "Генерация изображения",
-  video_generate: "Генерация видео",
+  image_generate: "Изображение (по умолчанию)",
+  video_generate: "Видео (по умолчанию)",
   prompt_improve: "Улучшение промпта",
 };
 
+function PriceRowCard({
+  p, onSave, onDelete, isPending,
+}: {
+  p: PriceRow;
+  onSave: (op: string, credits: number, markup: number) => void;
+  onDelete?: (op: string) => void;
+  isPending: boolean;
+}) {
+  const isChat = CHAT_OPERATIONS.has(p.operation);
+  const isDefault = DEFAULT_OPERATIONS.has(p.operation);
+  const [credits, setCredits] = useState(String(p.credits));
+  const [markup, setMarkup] = useState(String(p.markup_percent));
+  const unchanged = Number(credits) === p.credits && Number(markup) === p.markup_percent;
+
+  return (
+    <div className="bg-panel border border-border rounded-xl p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-white text-sm font-medium">{OPERATION_LABELS[p.operation] ?? p.operation}</div>
+          <div className="text-xs text-muted mt-0.5 font-mono truncate">{p.operation}</div>
+          {isChat && (
+            <div className="text-xs text-muted mt-1">Реальные кредиты KIE × (1 + наценка%)</div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!isChat && (
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-xs text-muted">Кредитов</span>
+              <input type="number" value={credits}
+                onChange={e => setCredits(e.target.value)}
+                className="w-20 bg-surface border border-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-accent text-center"
+                min="0" step="1" />
+            </div>
+          )}
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-xs text-muted">Наценка %</span>
+            <input type="number" value={markup}
+              onChange={e => setMarkup(e.target.value)}
+              className="w-20 bg-surface border border-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-accent text-center"
+              min="0" max="1000" step="0.1" />
+          </div>
+          <button
+            onClick={() => onSave(p.operation, Number(credits), Number(markup))}
+            disabled={isPending || unchanged}
+            className="px-3 py-1 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white rounded text-sm transition-colors self-end mb-0.5">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+          {!isDefault && onDelete && (
+            <button
+              onClick={() => onDelete(p.operation)}
+              disabled={isPending}
+              className="px-3 py-1 bg-surface hover:bg-red-900/40 border border-border hover:border-red-700 disabled:opacity-40 text-muted hover:text-red-400 rounded text-sm transition-colors self-end mb-0.5">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+      {!isChat && p.credits > 0 && Number(markup) > 0 && (
+        <div className="mt-2 text-xs text-muted">
+          Итого: {Math.round(p.credits * (1 + p.markup_percent / 100) * 100) / 100} кредитов
+        </div>
+      )}
+      {isChat && p.markup_percent > 0 && (
+        <div className="mt-2 text-xs text-muted">
+          KIE вернёт X → спишется X × {(1 + p.markup_percent / 100).toFixed(3)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddPriceForm({ onAdd, isPending }: { onAdd: (op: string, credits: number, markup: number) => void; isPending: boolean }) {
+  const [show, setShow] = useState(false);
+  const [type, setType] = useState<"image" | "video">("image");
+  const [model, setModel] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [credits, setCredits] = useState("50");
+  const [markup, setMarkup] = useState("0");
+
+  const operation = type === "image"
+    ? resolution.trim()
+      ? `image_${model.trim().replace(/[^a-zA-Z0-9\-]/g, "_")}_${resolution.trim().replace(/[^a-zA-Z0-9\-]/g, "_")}`
+      : `image_${model.trim().replace(/[^a-zA-Z0-9\-]/g, "_")}`
+    : `video_${model.trim().replace(/[^a-zA-Z0-9\-]/g, "_")}`;
+
+  if (!show) {
+    return (
+      <button onClick={() => setShow(true)}
+        className="flex items-center gap-2 text-sm text-muted hover:text-white border border-dashed border-border hover:border-accent rounded-xl px-4 py-3 transition-colors w-full">
+        <Plus className="w-4 h-4" /> Добавить цену для модели
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-panel border border-border rounded-xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-white font-medium">Новая цена</span>
+        <button onClick={() => setShow(false)} className="text-muted hover:text-white">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => setType("image")}
+          className={`px-3 py-1 rounded text-sm transition-colors ${type === "image" ? "bg-accent text-white" : "bg-surface text-muted hover:text-white"}`}>
+          Изображение
+        </button>
+        <button onClick={() => setType("video")}
+          className={`px-3 py-1 rounded text-sm transition-colors ${type === "video" ? "bg-accent text-white" : "bg-surface text-muted hover:text-white"}`}>
+          Видео
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-muted block mb-1">Модель (model из KIE)</label>
+          <input value={model} onChange={e => setModel(e.target.value)} placeholder="nano-banana-pro"
+            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent" />
+        </div>
+        {type === "image" && (
+          <div>
+            <label className="text-xs text-muted block mb-1">Разрешение (необязательно)</label>
+            <input value={resolution} onChange={e => setResolution(e.target.value)} placeholder="1K / 2K / …"
+              className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent" />
+          </div>
+        )}
+      </div>
+      {model.trim() && (
+        <div className="text-xs text-muted font-mono bg-surface rounded px-2 py-1">
+          Ключ: <span className="text-white">{operation}</span>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <label className="text-xs text-muted block mb-1">Кредитов (фикс.)</label>
+          <input type="number" value={credits} onChange={e => setCredits(e.target.value)} min="0"
+            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent" />
+        </div>
+        <div className="flex-1">
+          <label className="text-xs text-muted block mb-1">Наценка %</label>
+          <input type="number" value={markup} onChange={e => setMarkup(e.target.value)} min="0"
+            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent" />
+        </div>
+      </div>
+      <button
+        onClick={() => { onAdd(operation, Number(credits), Number(markup)); setShow(false); setModel(""); setResolution(""); }}
+        disabled={isPending || !model.trim()}
+        className="w-full py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white rounded text-sm transition-colors">
+        Добавить
+      </button>
+    </div>
+  );
+}
+
 function PricesTab({ prices, qc }: { prices: PriceRow[]; qc: ReturnType<typeof useQueryClient> }) {
-  const [editingCredits, setEditingCredits] = useState<Record<string, string>>({});
-  const [editingMarkup, setEditingMarkup] = useState<Record<string, string>>({});
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "credit-prices"] });
 
   const updatePrice = useMutation({
     mutationFn: ({ operation, credits, markup_percent }: { operation: string; credits: number; markup_percent: number }) =>
       adminApi.updateCreditPrice(operation, credits, markup_percent),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "credit-prices"] }),
+    onSuccess: invalidate,
   });
 
+  const createPrice = useMutation({
+    mutationFn: ({ operation, credits, markup_percent }: { operation: string; credits: number; markup_percent: number }) =>
+      adminApi.createCreditPrice(operation, credits, markup_percent),
+    onSuccess: invalidate,
+  });
+
+  const deletePrice = useMutation({
+    mutationFn: (operation: string) => adminApi.deleteCreditPrice(operation),
+    onSuccess: invalidate,
+  });
+
+  const isPending = updatePrice.isPending || createPrice.isPending || deletePrice.isPending;
+
+  // Split: chat (markup only) vs image/video (fixed price)
+  const chatPrices = prices.filter(p => CHAT_OPERATIONS.has(p.operation));
+  const mediaPrices = prices.filter(p => !CHAT_OPERATIONS.has(p.operation));
+
   return (
-    <div className="space-y-2 max-w-xl">
-      <p className="text-sm text-muted mb-4">
-        Наценка применяется к фактической стоимости, которую вернул KIE. Например: KIE списал 1 кредит, наценка 10% → списывается 1.1 кредита.
-      </p>
-      {prices.map((p) => {
-        const credits = Number(editingCredits[p.operation] ?? p.credits);
-        const markup = Number(editingMarkup[p.operation] ?? p.markup_percent);
-        const unchanged = credits === p.credits && markup === p.markup_percent;
-        return (
-          <div key={p.operation} className="bg-panel border border-border rounded-xl p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-white text-sm font-medium">{OPERATION_LABELS[p.operation] ?? p.operation}</div>
-                <div className="text-xs text-muted mt-0.5 font-mono">{p.operation}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex flex-col items-center gap-0.5">
-                  <span className="text-xs text-muted">Наценка %</span>
-                  <input type="number" value={editingMarkup[p.operation] ?? p.markup_percent}
-                    onChange={e => setEditingMarkup(prev => ({ ...prev, [p.operation]: e.target.value }))}
-                    className="w-20 bg-surface border border-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-accent text-center"
-                    min="0" max="1000" step="0.1" />
-                </div>
-                <button
-                  onClick={() => { updatePrice.mutate({ operation: p.operation, credits, markup_percent: markup }); }}
-                  disabled={updatePrice.isPending || unchanged}
-                  className="px-3 py-1 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white rounded text-sm transition-colors self-end mb-0.5">
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-            {p.markup_percent > 0 && (
-              <div className="mt-2 text-xs text-muted">
-                KIE вернёт X → спишется X × {(1 + p.markup_percent / 100).toFixed(3)}
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <div className="space-y-6 max-w-2xl">
+      {/* Chat — markup only */}
+      <div>
+        <h3 className="text-sm font-medium text-white mb-1">Чаты — наценка на реальные кредиты KIE</h3>
+        <p className="text-xs text-muted mb-3">KIE возвращает фактически потраченные кредиты. Студия списывает эту сумму × (1 + наценка%).</p>
+        <div className="space-y-2">
+          {chatPrices.map(p => (
+            <PriceRowCard key={p.operation} p={p} isPending={isPending}
+              onSave={(op, c, m) => updatePrice.mutate({ operation: op, credits: c, markup_percent: m })} />
+          ))}
+        </div>
+      </div>
+
+      {/* Image/Video — fixed price */}
+      <div>
+        <h3 className="text-sm font-medium text-white mb-1">Изображения и видео — фиксированная цена</h3>
+        <p className="text-xs text-muted mb-3">
+          Цена устанавливается вами. При успешной генерации списывается: Кредитов × (1 + наценка%).
+          Приоритет: <span className="font-mono text-white/70">image_&#123;модель&#125;_&#123;разрешение&#125;</span> → <span className="font-mono text-white/70">image_&#123;модель&#125;</span> → <span className="font-mono text-white/70">image_generate</span>
+        </p>
+        <div className="space-y-2">
+          {mediaPrices.map(p => (
+            <PriceRowCard key={p.operation} p={p} isPending={isPending}
+              onSave={(op, c, m) => updatePrice.mutate({ operation: op, credits: c, markup_percent: m })}
+              onDelete={(op) => deletePrice.mutate(op)} />
+          ))}
+          <AddPriceForm isPending={isPending}
+            onAdd={(op, c, m) => createPrice.mutate({ operation: op, credits: c, markup_percent: m })} />
+        </div>
+      </div>
     </div>
   );
 }

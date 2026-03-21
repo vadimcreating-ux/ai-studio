@@ -57,4 +57,10 @@ export const adminApi = {
 
   updateCreditPrice: (operation: string, credits: number, markup_percent?: number) =>
     api.put<{ ok: boolean; data: CreditPrice }>(`/api/admin/credit-prices/${operation}`, { credits, markup_percent }),
+
+  createCreditPrice: (operation: string, credits: number, markup_percent?: number) =>
+    api.post<{ ok: boolean; data: CreditPrice }>("/api/admin/credit-prices", { operation, credits, markup_percent }),
+
+  deleteCreditPrice: (operation: string) =>
+    api.delete<{ ok: boolean }>(`/api/admin/credit-prices/${operation}`),
 };
