@@ -162,13 +162,14 @@ await dbQuery(`
 
 #### Claude — Anthropic Messages API
 ```json
-// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages
+// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages, max_tokens
 // Опциональные: system, tools, thinkingFlag, stream (default: true), output_config
-// ❌ НЕ добавлять max_tokens — KIE его не поддерживает
+// ⚠️ max_tokens обязателен — KIE возвращает {"code":500} без него (несмотря на отсутствие в их docs)
 {
   "model": "claude-sonnet-4-5",
   "messages": [...],
   "system": "...",
+  "max_tokens": 8096,
   "stream": false
 }
 // Ответ — content может содержать блоки типа "text" и "tool_use"
@@ -183,7 +184,7 @@ await dbQuery(`
 
 > **⚠️ Критически важно:**
 > - Рабочая стабильная модель: `claude-sonnet-4-5`. Модель `claude-sonnet-4-6` нестабильна на стороне KIE — **не использовать**.
-> - **❌ НЕ добавлять** `max_tokens` — не входит в KIE API, вызывает ошибки.
+> - `max_tokens: 8096` — **обязателен**. KIE возвращает `{"code":500}` без него (несмотря на отсутствие в их docs).
 > - **❌ НЕ добавлять** самодельные tools (типа `googleSearch`) — KIE не поддерживает произвольные tool calls для Claude.
 > - **❌ НЕ менять** формат на OpenAI Chat Completions — сломает все claude-чаты.
 > - Docs: https://docs.kie.ai/market/claude/claude-sonnet-4-5

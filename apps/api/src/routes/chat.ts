@@ -189,6 +189,7 @@ async function callKieAIOnce({
     const requestBody: Record<string, unknown> = {
       model,
       messages,
+      max_tokens: 8096,
       stream: false,
     };
     if (systemText) requestBody.system = systemText;
