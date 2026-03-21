@@ -1,10 +1,8 @@
 import { useState, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { projectsApi, type Project } from "../../shared/api/projects";
+import { useQueryClient } from "@tanstack/react-query";
 import { type Chat } from "../../shared/api/chat";
-import ProjectsPanel from "./ProjectsPanel";
+import SidePanel from "./SidePanel";
 import ChatView from "./ChatView";
-import PromptsPanel from "./PromptsPanel";
 
 type Props = {
   engine: string;
@@ -17,54 +15,50 @@ export default function ChatModule({ engine, engineLabel, engineDescription, def
   const qc = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
-
-  const { data: projectsData } = useQuery({
-    queryKey: ["projects", engine],
-    queryFn: () => projectsApi.list(engine),
-  });
-
-  const selectedProject: Project | null =
-    projectsData?.projects.find((p) => p.id === selectedProjectId) ?? null;
+  const [currentModel, setCurrentModel] = useState(defaultModel);
 
   const handleSelectProject = useCallback((id: string | null) => {
     setSelectedProjectId(id);
-    setSelectedChat(null);
   }, []);
 
-  const handleSelectChat = useCallback((chat: Chat) => setSelectedChat(chat), []);
+  const handleSelectChat = useCallback((chat: Chat) => {
+    setSelectedChat(chat);
+    if (chat.model) setCurrentModel(chat.model);
+  }, []);
+
   const handleNewChat = useCallback(() => setSelectedChat(null), []);
+
   const handleProjectUpdated = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["projects", engine] });
   }, [qc, engine]);
 
+  const handleModelChange = useCallback((model: string) => {
+    setCurrentModel(model);
+  }, []);
+
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left: Projects only */}
-      <ProjectsPanel
+      {/* Left: unified tree panel */}
+      <SidePanel
         engine={engine}
         engineLabel={engineLabel}
         selectedProjectId={selectedProjectId}
+        selectedChatId={selectedChat?.id ?? null}
         onSelectProject={handleSelectProject}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
+        defaultModel={currentModel}
+        onModelChange={handleModelChange}
       />
 
-      {/* Center: Chat + templates button */}
+      {/* Center: Chat */}
       <ChatView
         chat={selectedChat}
-        project={selectedProject}
+        project={null}
         engine={engine}
         engineLabel={engineLabel}
         engineDescription={engineDescription}
         onProjectUpdated={handleProjectUpdated}
-      />
-
-      {/* Right: Chat history */}
-      <PromptsPanel
-        engine={engine}
-        selectedProjectId={selectedProjectId}
-        selectedChatId={selectedChat?.id ?? null}
-        onSelectChat={handleSelectChat}
-        onNewChat={handleNewChat}
-        defaultModel={defaultModel}
       />
     </div>
   );

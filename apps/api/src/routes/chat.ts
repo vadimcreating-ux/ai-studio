@@ -325,6 +325,41 @@ async function callKieAIOnce({
   }
 }
 
+// ─── Auto-title generation ───────────────────────────────────────────────────
+
+async function generateAutoTitle(
+  chatId: string,
+  userText: string,
+  apiKey: string,
+  log: { error: (msg: string) => void }
+): Promise<void> {
+  try {
+    const snippet = userText.slice(0, 300);
+    const res = await fetch(`${KIE_BASE_URL}/gpt-4o/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: `Придумай короткое название (3–5 слов) для чата на основе этого сообщения пользователя. Отвечай только названием, без кавычек и знаков препинания в конце.\n\nСообщение: ${snippet}` }],
+          },
+        ],
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await res.json() as Record<string, unknown>;
+    const title = (data as { choices?: Array<{ message?: { content?: string } }> })
+      .choices?.[0]?.message?.content?.trim();
+    if (title && title.length > 0 && title.length < 100) {
+      await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [title, chatId]);
+    }
+  } catch (e) {
+    log.error(`auto-title failed for chat ${chatId}: ${e}`);
+  }
+}
+
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 export async function chatRoutes(app: FastifyInstance) {
@@ -569,7 +604,7 @@ export async function chatRoutes(app: FastifyInstance) {
     if (chatRes.rows.length === 0) {
       return reply.status(404).send({ ok: false, error: "Чат не найден" });
     }
-    const chat = chatRes.rows[0] as { module: string; model: string };
+    const chat = chatRes.rows[0] as { module: string; model: string; title: string };
 
     const operation = `chat_${chat.module}`;
     const ok = await checkCredits(user.userId, reply);
@@ -643,6 +678,11 @@ export async function chatRoutes(app: FastifyInstance) {
       creditsSpent = await spendCredits(user.userId, result.creditsConsumed, operation);
     } catch (err) {
       app.log.error({ err }, "spendCredits failed on send");
+    }
+
+    // Auto-generate title on first message if still "Новый чат"
+    if (historyRes.rows.length === 0 && (chat.title === "Новый чат" || !chat.title.trim())) {
+      generateAutoTitle(chatId, userText, apiKey, app.log).catch(() => {});
     }
 
     return { ok: true, reply: sendReply, credits_spent: creditsSpent };

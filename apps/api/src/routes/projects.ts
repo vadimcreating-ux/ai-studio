@@ -89,7 +89,15 @@ export async function projectRoutes(app: FastifyInstance) {
   app.delete("/api/projects/:id", async (request) => {
     const user = request.authUser!;
     const params = request.params as { id: string };
+    const query = request.query as { moveChats?: string };
+    const moveChats = query.moveChats === "true";
     const ownerCheck = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
+
+    if (moveChats) {
+      // Move all chats in this project to "Черновики" (project_id = null)
+      await dbQuery(`UPDATE chats SET project_id = NULL WHERE project_id = $1`, [params.id]);
+    }
+
     await dbQuery(`DELETE FROM projects WHERE id = $1 ${ownerCheck}`, [params.id]);
     return { ok: true };
   });

@@ -38,6 +38,6 @@ export const projectsApi = {
     data: Partial<Omit<Project, "id" | "module" | "created_at">>
   ) => api.put<{ ok: true; project: Project }>(`/api/projects/${id}`, data),
 
-  delete: (id: string) =>
-    api.delete<{ ok: true }>(`/api/projects/${id}`),
+  delete: (id: string, moveChats = false) =>
+    api.delete<{ ok: true }>(`/api/projects/${id}?moveChats=${moveChats}`),
 };
