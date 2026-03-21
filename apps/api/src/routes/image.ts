@@ -91,7 +91,8 @@ export async function imageRoutes(app: FastifyInstance) {
         userId,
         chargedAmount,
         operationKey,
-        `Генерация изображения (${model})`
+        `Генерация изображения (${model})`,
+        { kieAmount: 0, markupPercent: price.markupPercent }
       );
       if (deducted === 0) {
         return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });

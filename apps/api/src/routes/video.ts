@@ -73,7 +73,8 @@ export async function videoRoutes(app: FastifyInstance) {
         userId,
         chargedAmount,
         operationKey,
-        `Генерация видео (${model})`
+        `Генерация видео (${model})`,
+        { kieAmount: 0, markupPercent: price.markupPercent }
       );
       if (deducted === 0) {
         return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });

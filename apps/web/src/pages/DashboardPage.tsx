@@ -1,12 +1,13 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Zap, Cpu, Bot, Sparkles, Image, Video, Music,
-  HardDrive, FolderOpen, MessageSquare, TrendingDown,
-  TrendingUp, Clock, ArrowRight, Play,
+  HardDrive, FolderOpen, MessageSquare,
+  ArrowRight, Play, BarChart2,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { creditsApi } from "../shared/api/credits";
+import { creditsApi, type CreditStatGroup } from "../shared/api/credits";
 import { api } from "../shared/api/client";
 import { chatApi } from "../shared/api/chat";
 
@@ -19,13 +20,7 @@ type FileItem = {
   fileSizeBytes: number | null;
 };
 
-type CreditTx = {
-  id: string;
-  amount: number | string;
-  operation: string;
-  description: string;
-  created_at: string;
-};
+type StatPeriod = "7d" | "30d" | "all";
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "";
@@ -50,19 +45,25 @@ const ENGINE_META = {
   gemini:  { label: "Gemini",  icon: <Sparkles size={14} />, color: "text-purple-400",  bg: "bg-purple-500/10" },
 };
 
-const OP_LABELS: Record<string, string> = {
-  chat_claude:    "Чат Claude",
-  chat_chatgpt:   "Чат ChatGPT",
-  chat_gemini:    "Чат Gemini",
-  image_generate: "Генерация изображения",
-  video_generate: "Генерация видео",
-  prompt_improve: "Улучшение промпта",
-  credits_added:  "Пополнение",
+
+const GROUP_META: Record<string, { color: string; bar: string }> = {
+  "Чаты":        { color: "text-orange-400", bar: "bg-orange-400" },
+  "Изображения": { color: "text-blue-400",   bar: "bg-blue-400" },
+  "Видео":       { color: "text-pink-400",   bar: "bg-pink-400" },
+  "Улучшения":   { color: "text-purple-400", bar: "bg-purple-400" },
+  "Прочее":      { color: "text-muted",      bar: "bg-muted" },
+};
+
+const PERIOD_LABELS: Record<StatPeriod, string> = {
+  "7d":  "7 дн.",
+  "30d": "30 дн.",
+  "all": "Всё время",
 };
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [statsPeriod, setStatsPeriod] = useState<StatPeriod>("30d");
 
   const { data: filesData } = useQuery({
     queryKey: ["dashboard-files"],
@@ -86,14 +87,16 @@ export default function DashboardPage() {
     queryFn: () => chatApi.list("gemini", undefined, 4),
   });
 
-  const { data: txData } = useQuery({
-    queryKey: ["dashboard-transactions"],
-    queryFn: () => creditsApi.history(8, 0),
+  const { data: statsData } = useQuery({
+    queryKey: ["dashboard-credit-stats", statsPeriod],
+    queryFn: () => creditsApi.stats(statsPeriod),
   });
 
   const files = filesData?.files ?? [];
   const totalFiles = filesData?.total ?? 0;
-  const txList: CreditTx[] = (txData as { ok: boolean; data: { items: CreditTx[]; total: number } } | undefined)?.data?.items ?? [];
+  const creditStats = (statsData as { ok: boolean; data: { period: string; total_spent: number; total_refunded: number; total_added: number; tx_count: number; by_group: CreditStatGroup[] } } | undefined)?.data;
+  const byGroup = creditStats?.by_group ?? [];
+  const maxGroupSpent = byGroup.reduce((m, g) => Math.max(m, g.total_spent), 0);
 
   const usedMb = Number(user?.storage_used_mb ?? 0);
   const quotaMb = Number(user?.storage_quota_mb ?? 500);
@@ -269,40 +272,65 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Credit history — 1/3 width */}
+          {/* Credit stats — 1/3 width */}
           <div className="bg-panel border border-border rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-white">История кредитов</h2>
-              <Clock size={14} className="text-muted" />
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                <BarChart2 size={14} className="text-accent" />
+                Расход кредитов
+              </h2>
+            </div>
+            {/* Period switcher */}
+            <div className="flex gap-1 mb-4">
+              {(["7d", "30d", "all"] as StatPeriod[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setStatsPeriod(p)}
+                  className={`flex-1 text-[11px] py-1 rounded-lg transition-colors ${
+                    statsPeriod === p
+                      ? "bg-accent text-white font-medium"
+                      : "bg-surface text-muted hover:text-white"
+                  }`}
+                >
+                  {PERIOD_LABELS[p]}
+                </button>
+              ))}
             </div>
 
-            {txList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-36 text-center">
-                <Clock size={24} className="text-muted mb-2" />
-                <p className="text-sm text-muted">Транзакций пока нет</p>
+            {/* Total */}
+            <div className="mb-4">
+              <div className="text-2xl font-bold text-white">
+                {(creditStats?.total_spent ?? 0).toFixed(1)}
+              </div>
+              <div className="text-xs text-muted mt-0.5">потрачено кредитов · {creditStats?.tx_count ?? 0} операций</div>
+            </div>
+
+            {byGroup.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-24 text-center">
+                <BarChart2 size={22} className="text-muted mb-2" />
+                <p className="text-xs text-muted">Нет данных за период</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {txList.map((tx) => {
-                  const amt = Number(tx.amount);
+              <div className="space-y-3">
+                {byGroup.map((g: CreditStatGroup) => {
+                  const meta = GROUP_META[g.group_name] ?? GROUP_META["Прочее"];
+                  const pct = maxGroupSpent > 0 ? (g.total_spent / maxGroupSpent) * 100 : 0;
+                  const markupPct = g.total_spent > 0 ? (g.markup_total / g.total_spent) * 100 : 0;
                   return (
-                    <div key={tx.id} className="flex items-center justify-between gap-2 py-1.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${amt > 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
-                          {amt > 0
-                            ? <TrendingUp size={12} className="text-green-400" />
-                            : <TrendingDown size={12} className="text-red-400" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-white truncate">
-                            {OP_LABELS[tx.operation] ?? tx.operation}
-                          </p>
-                          <p className="text-[10px] text-muted">{formatDate(tx.created_at)}</p>
-                        </div>
+                    <div key={g.group_name}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-medium ${meta.color}`}>{g.group_name}</span>
+                        <span className="text-xs text-white font-mono">{g.total_spent.toFixed(1)}</span>
                       </div>
-                      <span className={`text-xs font-mono font-medium flex-shrink-0 ${amt > 0 ? "text-green-400" : "text-red-400"}`}>
-                        {amt > 0 ? "+" : ""}{amt.toFixed(2)}
-                      </span>
+                      <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${meta.bar}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-muted mt-0.5">
+                        KIE: {g.kie_total.toFixed(2)} · наценка: {g.markup_total.toFixed(2)} ({markupPct.toFixed(0)}%)
+                      </div>
                     </div>
                   );
                 })}

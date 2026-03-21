@@ -1,5 +1,13 @@
 import { dbQuery } from "./db.js";
 
+export function operationToGroup(operation: string): string {
+  if (operation.startsWith("chat_")) return "Чаты";
+  if (operation.startsWith("image_")) return "Изображения";
+  if (operation.startsWith("video_")) return "Видео";
+  if (operation === "prompt_improve") return "Улучшения";
+  return "Прочее";
+}
+
 /**
  * Atomically deduct credits using a single UPDATE with WHERE balance >= amount.
  * This is race-condition-safe: the check and deduction are one atomic DB operation.
@@ -10,11 +18,15 @@ export async function atomicDeduct(
   userId: string,
   amount: number,
   operation: string,
-  description: string
+  description: string,
+  extra?: { kieAmount?: number; markupPercent?: number }
 ): Promise<number> {
   if (amount <= 0) return 0;
 
   const rounded = Math.round(amount * 10000) / 10000;
+  const kieAmount = Math.round((extra?.kieAmount ?? 0) * 10000) / 10000;
+  const markupPercent = extra?.markupPercent ?? 0;
+  const groupName = operationToGroup(operation);
 
   const result = await dbQuery(
     `UPDATE users
@@ -29,9 +41,10 @@ export async function atomicDeduct(
   }
 
   await dbQuery(
-    `INSERT INTO credit_transactions (user_id, amount, type, operation, description)
-     VALUES ($1, $2, 'spend', $3, $4)`,
-    [userId, -rounded, operation, description]
+    `INSERT INTO credit_transactions
+       (user_id, amount, type, operation, description, kie_amount, markup_percent, group_name)
+     VALUES ($1, $2, 'spend', $3, $4, $5, $6, $7)`,
+    [userId, -rounded, operation, description, kieAmount, markupPercent, groupName]
   );
 
   return rounded;
@@ -39,7 +52,6 @@ export async function atomicDeduct(
 
 /**
  * Refund credits back to user (always succeeds, no balance check).
- * Use this when a pre-charged operation fails or is cancelled.
  */
 export async function refundCredits(
   userId: string,
@@ -50,6 +62,7 @@ export async function refundCredits(
   if (amount <= 0) return;
 
   const rounded = Math.round(amount * 10000) / 10000;
+  const groupName = operationToGroup(operation);
 
   await dbQuery(
     `UPDATE users SET credits_balance = credits_balance + $1 WHERE id = $2`,
@@ -57,9 +70,10 @@ export async function refundCredits(
   );
 
   await dbQuery(
-    `INSERT INTO credit_transactions (user_id, amount, type, operation, description)
-     VALUES ($1, $2, 'refund', $3, $4)`,
-    [userId, rounded, operation, description]
+    `INSERT INTO credit_transactions
+       (user_id, amount, type, operation, description, kie_amount, markup_percent, group_name)
+     VALUES ($1, $2, 'refund', $3, $4, 0, 0, $5)`,
+    [userId, rounded, operation, description, groupName]
   );
 }
 
@@ -104,16 +118,19 @@ export async function spendCredits(userId: string, kieAmount: number, operation:
     markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
   } catch { /* column might not exist yet */ }
   const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
-  const deducted = await atomicDeduct(userId, amount, operation, `Запрос к ${operation}`);
+  const deducted = await atomicDeduct(userId, amount, operation, `Запрос к ${operation}`, { kieAmount, markupPercent });
   if (deducted > 0) return deducted;
   // Balance went to zero in the race window — force-deduct.
+  const groupName = operationToGroup(operation);
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
   );
   await dbQuery(
-    "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -amount, operation, `Запрос к ${operation} (принудительно)`]
+    `INSERT INTO credit_transactions
+       (user_id, amount, type, operation, description, kie_amount, markup_percent, group_name)
+     VALUES ($1, $2, 'spend', $3, $4, $5, $6, $7)`,
+    [userId, -amount, operation, `Запрос к ${operation} (принудительно)`, kieAmount, markupPercent, groupName]
   );
   return amount;
 }

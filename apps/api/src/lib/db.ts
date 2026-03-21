@@ -70,6 +70,10 @@ export async function ensureCreditTransactionsTable() {
   await dbQuery(`
     ALTER TABLE credit_transactions ALTER COLUMN amount TYPE NUMERIC(12,4)
   `).catch(() => {});
+
+  await dbQuery(`ALTER TABLE credit_transactions ADD COLUMN kie_amount NUMERIC(10,4) NOT NULL DEFAULT 0`).catch(() => {});
+  await dbQuery(`ALTER TABLE credit_transactions ADD COLUMN markup_percent NUMERIC(6,2) NOT NULL DEFAULT 0`).catch(() => {});
+  await dbQuery(`ALTER TABLE credit_transactions ADD COLUMN group_name TEXT NOT NULL DEFAULT ''`).catch(() => {});
 }
 
 export async function ensureCreditPricesTable() {
