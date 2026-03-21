@@ -84,15 +84,58 @@ export async function ensureCreditPricesTable() {
     ALTER TABLE credit_prices ADD COLUMN markup_percent NUMERIC(6,2) NOT NULL DEFAULT 0
   `).catch(() => {});
 
-  // Seed default prices if table is empty
+  // Seed default and model-specific prices (DO NOTHING = don't overwrite admin changes)
   await dbQuery(`
     INSERT INTO credit_prices (operation, credits) VALUES
-      ('chat_claude', 10),
-      ('chat_chatgpt', 8),
-      ('chat_gemini', 5),
-      ('image_generate', 50),
-      ('video_generate', 200),
-      ('prompt_improve', 2)
+      -- Chat (markup applied to real KIE credits_consumed)
+      ('chat_claude',    0),
+      ('chat_chatgpt',   0),
+      ('chat_gemini',    0),
+      ('prompt_improve', 0),
+
+      -- Image: fallback default
+      ('image_generate', 18),
+
+      -- Nano Banana Pro (1K/2K = 18 cr, 4K = 24 cr)
+      ('image_nano-banana-pro_1K', 18),
+      ('image_nano-banana-pro_2K', 18),
+      ('image_nano-banana-pro_4K', 24),
+
+      -- Grok Imagine text-to-image (4 cr flat, 6 images)
+      ('image_grok-imagine_text-to-image', 4),
+
+      -- Seedream 4.5 (6.5 cr → 7)
+      ('image_seedream_4_5-edit', 7),
+
+      -- Z-Image Turbo (0.8 cr → 1)
+      ('image_z-image', 1),
+
+      -- Topaz Upscale (by upscale_factor: 1x=10, 2x=20, 4x=40, 8x=40)
+      ('image_topaz_image-upscale_1', 10),
+      ('image_topaz_image-upscale_2', 20),
+      ('image_topaz_image-upscale_4', 40),
+      ('image_topaz_image-upscale_8', 40),
+
+      -- Recraft Remove Background (1 cr flat)
+      ('image_recraft_remove-background', 1),
+
+      -- Ideogram V3 Reframe (Balanced speed = 7 cr)
+      ('image_ideogram_v3-reframe', 7),
+
+      -- Video: fallback default
+      ('video_generate', 30),
+
+      -- Sora 2 Pro (720p, ~10s)
+      ('video_sora-2-pro-image-to-video', 150),
+      ('video_sora-2-pro-text-to-video',  150),
+
+      -- Sora 2 Standard (~10s)
+      ('video_sora-2-image-to-video', 30),
+      ('video_sora-2-text-to-video',  30),
+
+      -- Kling 3.0 Motion Control (Standard, ~5s, no audio: 5×14=70)
+      ('video_kling-3_0_motion-control', 70)
+
     ON CONFLICT (operation) DO NOTHING
   `);
 }

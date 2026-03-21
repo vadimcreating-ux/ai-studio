@@ -82,8 +82,11 @@ export async function imageRoutes(app: FastifyInstance) {
     if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
 
     const model = body?.model?.trim() || "nano-banana-pro";
-    const resolution = body?.resolution?.trim() || "1K";
     const isTopaz = model === "topaz/image-upscale";
+    // For Topaz: use upscale_factor as resolution key (for per-factor pricing)
+    const resolution = isTopaz
+      ? (body?.upscale_factor?.trim() || "2")
+      : (body?.resolution?.trim() || "1K");
     const isRecraft = model === "recraft/remove-background";
     const isIdeogram = model === "ideogram/v3-reframe";
     const isSeedream = model === "seedream/4.5-edit";
