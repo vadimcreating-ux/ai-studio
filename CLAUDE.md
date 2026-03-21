@@ -162,23 +162,31 @@ await dbQuery(`
 
 #### Claude — Anthropic Messages API
 ```json
-// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages, max_tokens, stream
+// Запрос — ОБЯЗАТЕЛЬНЫЕ поля: model, messages
+// Опциональные: system, tools, thinkingFlag, stream (default: true), output_config
+// ❌ НЕ добавлять max_tokens — KIE его не поддерживает
 {
   "model": "claude-sonnet-4-5",
   "messages": [...],
   "system": "...",
-  "max_tokens": 8096,
   "stream": false
 }
-// Ответ
-{ "content": [{ "type": "text", "text": "..." }] }
+// Ответ — content может содержать блоки типа "text" и "tool_use"
+{
+  "role": "assistant",
+  "content": [{ "type": "text", "text": "..." }],
+  "credits_consumed": 0.25,
+  "stop_reason": "end_turn",
+  "usage": { "input_tokens": 100, "output_tokens": 50 }
+}
 ```
 
 > **⚠️ Критически важно:**
-> - Рабочая стабильная модель: `claude-sonnet-4-5`. Модель `claude-sonnet-4-6` нестабильна на стороне KIE.
-> - `max_tokens: 8096` — **обязательный** параметр. KIE возвращает `{"code":500}` если он отсутствует (несмотря на то, что в их docs-примерах он не показан).
-> - **❌ НЕ убирать** `max_tokens` — сломает все claude-чаты с ошибкой code 500.
+> - Рабочая стабильная модель: `claude-sonnet-4-5`. Модель `claude-sonnet-4-6` нестабильна на стороне KIE — **не использовать**.
+> - **❌ НЕ добавлять** `max_tokens` — не входит в KIE API, вызывает ошибки.
+> - **❌ НЕ добавлять** самодельные tools (типа `googleSearch`) — KIE не поддерживает произвольные tool calls для Claude.
 > - **❌ НЕ менять** формат на OpenAI Chat Completions — сломает все claude-чаты.
+> - Docs: https://docs.kie.ai/market/claude/claude-sonnet-4-5
 
 #### ChatGPT / Gemini — OpenAI Chat Completions
 ```
@@ -340,7 +348,7 @@ accent-hover:  "#1d4ed8"   // hover blue
 
 ```typescript
 // apps/web/src/modules/chat/PromptsPanel.tsx
-claude:  [{ value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }, { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }]
+claude:  [{ value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" }]
 chatgpt: [{ value: "gpt-5-2", label: "GPT-5" }, { value: "gpt-4o", label: "GPT-4o" }]
 gemini:  [{ value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" }, { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }]
 ```

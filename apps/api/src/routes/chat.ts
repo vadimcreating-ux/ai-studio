@@ -54,7 +54,7 @@ async function spendCredits(userId: string, kieAmount: number, operation: string
 
 const KIE_BASE_URL = "https://api.kie.ai";
 const DEFAULT_MODEL: Record<string, string> = {
-  claude:  "claude-sonnet-4-6",
+  claude:  "claude-sonnet-4-5",
   chatgpt: "gpt-5-2",
   gemini:  "gemini-2.5-pro",
 };
@@ -160,7 +160,11 @@ async function callKieAIOnce({
 }): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
 
   if (module === "claude") {
-    // ── Anthropic Messages API ──────────────────────────────────────────────
+    // ── KIE Claude API — POST /claude/v1/messages (Anthropic Messages format)
+    // Docs: https://docs.kie.ai/market/claude/claude-sonnet-4-5
+    // Required: model, messages
+    // Optional: tools, thinkingFlag, stream (default: true), output_config
+    // NOTE: max_tokens is NOT a KIE parameter — omit it
     type Msg = { role: string; content: string | unknown[] };
     const messages: Msg[] = history.map((r) => ({ role: r.role, content: r.content }));
 
@@ -182,19 +186,12 @@ async function callKieAIOnce({
       messages.push({ role: "user", content: userText });
     }
 
-    const requestBody: Record<string, unknown> = { model, messages, max_tokens: 8096, stream: false };
+    const requestBody: Record<string, unknown> = {
+      model,
+      messages,
+      stream: false,
+    };
     if (systemText) requestBody.system = systemText;
-    if (webSearch) {
-      requestBody.tools = [{
-        name: "googleSearch",
-        description: "Search the internet for current information",
-        input_schema: {
-          type: "object",
-          properties: { query: { type: "string", description: "Search query" } },
-          required: ["query"],
-        },
-      }];
-    }
 
     log.info(`kie.ai claude request: model=${model} msgs=${messages.length} sysLen=${systemText?.length ?? 0}`);
     const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
@@ -223,9 +220,12 @@ async function callKieAIOnce({
       return { error: "Неверный формат ответа от kie.ai", status: 502 };
     }
 
+    // KIE may return HTTP 200 with an error inside
     if (typeof data.code === "number" && data.code !== 200) {
       return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
     }
+
+    // Extract text from content blocks (type: "text"), skip tool_use blocks
     const blocks = data.content;
     let reply = "";
     if (Array.isArray(blocks)) {
@@ -235,7 +235,7 @@ async function callKieAIOnce({
         .join("").trim();
     }
     if (!reply) {
-      log.error(`kie.ai claude empty. Full: ${raw.slice(0, 2000)}`);
+      log.error(`kie.ai claude no text content. stop_reason=${data.stop_reason}. Full: ${raw.slice(0, 2000)}`);
       return { error: "Пустой ответ от kie.ai", status: 502 };
     }
     const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
