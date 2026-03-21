@@ -255,6 +255,8 @@ apps/web/src/
 │   ├── ProjectsPanel.tsx       # Левая панель
 │   └── PromptsPanel.tsx        # Правая панель (история чатов, модель как span)
 ├── pages/                      # Страницы по роутам (DashboardPage удалён)
+│   ├── DashboardPage.tsx           # Редизайн — новая палитра (#030923/#0059FF) — ветка claude/review-previous-sessions-S5dAm
+│   └── DashboardPage.original.tsx  # Бэкап оригинального дизайна (старая палитра Tailwind)
 └── shared/
     ├── api/                    # HTTP-клиенты (chat.ts, projects.ts, ...)
     └── utils/                  # date.ts и др.
@@ -325,6 +327,29 @@ apps/web/src/
 - Dev (`NODE_ENV != production`): pino-pretty с цветами
 - Prod: JSON-логи со структурированными полями `req.method`, `req.url`, `res.statusCode`
 - Использовать `app.log.info({ field: value }, "message")` — не `console.log`
+
+---
+
+## Дизайн — текущее состояние и бэкапы
+
+### Dashboard — редизайн (март 2026)
+- **Текущий файл:** `apps/web/src/pages/DashboardPage.tsx` — новая палитра из референса
+- **Бэкап оригинала:** `apps/web/src/pages/DashboardPage.original.tsx` — старый дизайн на Tailwind-токенах
+
+**Чтобы откатить Dashboard к оригиналу:**
+```bash
+cp apps/web/src/pages/DashboardPage.original.tsx apps/web/src/pages/DashboardPage.tsx
+```
+
+**Новая палитра Dashboard (inline style, не Tailwind-токены):**
+```
+bg:       #030923   // основной фон страницы
+card:     #041A53   // фон карточек
+cardAlt:  #071f63   // вложенные элементы внутри карточек
+accent:   #0059FF   // акцентный синий
+border:   rgba(0,89,255,0.2)  // рамки карточек
+muted:    rgba(255,255,255,0.5) // второстепенный текст
+```
 
 ---
 
