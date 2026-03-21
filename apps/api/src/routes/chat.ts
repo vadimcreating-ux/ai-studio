@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
+import { atomicDeduct, getBalance } from "../lib/credits.js";
 import {
   CreateChatSchema,
   UpdateChatSchema,
@@ -9,11 +10,10 @@ import {
   ChatListQuerySchema,
 } from "../lib/validation.js";
 
-
-// Check balance > 0 before KIE call. Returns false and sends error if insufficient.
+// Quick non-atomic balance check for early rejection (UX only).
+// Actual protection is in spendCredits → atomicDeduct.
 async function checkCredits(userId: string, reply: FastifyReply): Promise<boolean> {
-  const result = await dbQuery("SELECT credits_balance FROM users WHERE id = $1", [userId]);
-  const balance = Number(result.rows[0]?.credits_balance ?? 0);
+  const balance = await getBalance(userId);
   if (balance <= 0) {
     reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
     return false;
@@ -21,11 +21,11 @@ async function checkCredits(userId: string, reply: FastifyReply): Promise<boolea
   return true;
 }
 
-// Deduct exact amount returned by KIE (with admin markup) and record transaction.
-// Returns the actual amount deducted (rounded to 4 decimal places).
+// Atomically deduct KIE credits × markup. Returns 0 if balance insufficient.
+// Since chat amount is known only after KIE response, we allow small overdraft
+// (balance >= 0 was verified at start; tiny race window is acceptable for chat).
 async function spendCredits(userId: string, kieAmount: number, operation: string): Promise<number> {
   if (kieAmount <= 0) return 0;
-  // Graceful fallback if markup_percent column is not yet migrated on prod
   let markupPercent = 0;
   try {
     const priceRes = await dbQuery(
@@ -33,17 +33,21 @@ async function spendCredits(userId: string, kieAmount: number, operation: string
       [operation]
     );
     markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-  } catch {
-    // column might not exist yet — proceed with 0% markup
-  }
+  } catch { /* column might not exist yet */ }
   const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
+  // Try atomic deduction (no overdraft)
+  const deducted = await atomicDeduct(userId, amount, operation, `Запрос к ${operation}`);
+  if (deducted > 0) return deducted;
+  // Balance went to zero between check and deduction (race window).
+  // Force-deduct to avoid denying an already-processed KIE response.
+  // This creates at most one message worth of debt (< 1 credit typically).
   await dbQuery(
     "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
     [amount, userId]
   );
   await dbQuery(
     "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -amount, operation, `Запрос к ${operation}`]
+    [userId, -amount, operation, `Запрос к ${operation} (принудительно)`]
   );
   return amount;
 }
@@ -430,7 +434,15 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // Regenerate: delete target message + all after it, then re-call KIE
-  app.post("/api/chat/:chatId/messages/:messageId/regenerate", async (request, reply) => {
+  app.post("/api/chat/:chatId/messages/:messageId/regenerate", {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: "1 minute",
+        keyGenerator: (req: any) => req.authUser?.userId || req.ip,
+      },
+    },
+  }, async (request, reply) => {
     const user = request.authUser!;
     const { chatId, messageId } = request.params as { chatId: string; messageId: string };
 
@@ -516,7 +528,15 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
-  app.post("/api/chat/:chatId/send", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+  app.post("/api/chat/:chatId/send", {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: "1 minute",
+        keyGenerator: (req: any) => req.authUser?.userId || req.ip,
+      },
+    },
+  }, async (request, reply) => {
     const user = request.authUser!;
     const { chatId } = request.params as { chatId: string };
     const parsed = SendMessageSchema.safeParse(request.body);

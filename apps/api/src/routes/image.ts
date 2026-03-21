@@ -8,59 +8,33 @@ import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { FilesQuerySchema } from "../lib/validation.js";
 import { uploadToS3, isS3Configured } from "../lib/s3.js";
-
+import { atomicDeduct, refundCredits, lookupPrice } from "../lib/credits.js";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
-type TaskMeta = { prompt?: string; model: string; resolution: string };
-const imageTaskStore = new Map<string, TaskMeta>();
-
-// Sanitize model name for use as DB operation key (replace non-alphanumeric except hyphens with _)
+// Sanitize model name for use as DB operation key
 function sanitizeKey(s: string): string {
   return s.replace(/[^a-zA-Z0-9\-]/g, "_");
 }
 
-// Charge fixed credits from credit_prices using key hierarchy with markup.
-// Lookup order: image_{model}_{resolution} → image_{model} → image_generate
-async function chargeFixed(userId: string, model: string, resolution: string): Promise<number> {
-  const mk = sanitizeKey(model);
-  const rk = sanitizeKey(resolution);
-  const keys = [`image_${mk}_${rk}`, `image_${mk}`, "image_generate"];
-
-  let credits = 0;
-  let markupPercent = 0;
-  try {
-    for (const key of keys) {
-      const res = await dbQuery(
-        "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
-        [key]
-      );
-      if (res.rows[0] && Number(res.rows[0].credits) > 0) {
-        credits = Number(res.rows[0].credits);
-        markupPercent = Number(res.rows[0].markup_percent ?? 0);
-        break;
-      }
-    }
-  } catch { /* table might not exist yet */ }
-
-  if (credits <= 0) return 0;
-  const amount = Math.round(credits * (1 + markupPercent / 100) * 10000) / 10000;
-  await dbQuery(
-    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
-    [amount, userId]
-  );
-  await dbQuery(
-    "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -amount, `image_${mk}`, `Генерация изображения (${model})`]
-  );
-  return amount;
-}
+// Pre-charged amount is stored alongside task metadata.
+// Credits are deducted BEFORE calling KIE, refunded on failure.
+type TaskMeta = { prompt?: string; model: string; resolution: string; chargedAmount: number; operationKey: string };
+const imageTaskStore = new Map<string, TaskMeta>();
 
 export async function imageRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
 
-  // Генерация изображения — 10 запросов в минуту (дорогая операция)
-  app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+  // Генерация изображения — 10 запросов в минуту per user
+  app.post("/api/image/generate", {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: "1 minute",
+        keyGenerator: (req: any) => req.authUser?.userId || req.ip,
+      },
+    },
+  }, async (request, reply) => {
     const body = request.body as {
       model?: string;
       prompt?: string;
@@ -81,6 +55,7 @@ export async function imageRoutes(app: FastifyInstance) {
     const apiKey = process.env.KIE_API_KEY;
     if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
 
+    const userId = request.authUser?.userId;
     const model = body?.model?.trim() || "nano-banana-pro";
     const isTopaz = model === "topaz/image-upscale";
     // For Topaz: use upscale_factor as resolution key (for per-factor pricing)
@@ -98,6 +73,32 @@ export async function imageRoutes(app: FastifyInstance) {
     }
     if (isUrlOnly && !body?.image_url?.trim()) {
       return reply.status(400).send({ ok: false, error: "Укажите image_url" });
+    }
+
+    // ── Pre-deduct credits before calling KIE ────────────────────────────────
+    const mk = sanitizeKey(model);
+    const rk = sanitizeKey(resolution);
+    const priceKeys = [`image_${mk}_${rk}`, `image_${mk}`, "image_generate"];
+    const price = await lookupPrice(priceKeys);
+
+    let chargedAmount = 0;
+    let operationKey = `image_${mk}`;
+
+    if (price && userId) {
+      chargedAmount = price.chargeAmount;
+      operationKey = price.operationKey;
+      const deducted = await atomicDeduct(
+        userId,
+        chargedAmount,
+        operationKey,
+        `Генерация изображения (${model})`
+      );
+      if (deducted === 0) {
+        return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
+      }
+    } else if (!price && userId) {
+      // Model not priced — reject to prevent free generation
+      return reply.status(402).send({ ok: false, error: "Для этой модели не установлена цена. Обратитесь к администратору." });
     }
 
     let input: Record<string, unknown>;
@@ -164,6 +165,10 @@ export async function imageRoutes(app: FastifyInstance) {
 
       if (!createResponse.ok || createData?.code !== 200 || !createData?.data?.taskId) {
         console.error("KIE image create error:", createResponse.status, JSON.stringify(createData));
+        // Refund pre-charged credits — KIE rejected the task
+        if (userId && chargedAmount > 0) {
+          await refundCredits(userId, chargedAmount, operationKey, `Возврат: KIE отклонил задачу (${model})`);
+        }
         return reply.status(500).send({
           ok: false,
           error: createData?.message || "KIE не вернул taskId",
@@ -172,10 +177,14 @@ export async function imageRoutes(app: FastifyInstance) {
       }
 
       const taskId = createData.data.taskId;
-      imageTaskStore.set(taskId, { prompt: prompt || undefined, model, resolution });
+      imageTaskStore.set(taskId, { prompt: prompt || undefined, model, resolution, chargedAmount, operationKey });
 
       return { ok: true, taskId };
-    } catch {
+    } catch (err) {
+      // Refund on unexpected error
+      if (userId && chargedAmount > 0) {
+        await refundCredits(userId, chargedAmount, operationKey, `Возврат: ошибка при создании задачи (${model})`).catch(() => {});
+      }
       return reply.status(500).send({ ok: false, error: "Не удалось создать задачу в KIE" });
     }
   });
@@ -227,10 +236,17 @@ export async function imageRoutes(app: FastifyInstance) {
         } catch { /* ignore */ }
       }
 
+      const generatingStates = new Set(["waiting", "queuing", "generating"]);
+      const mappedStatus = state === "success"
+        ? "SUCCESS"
+        : generatingStates.has(state)
+        ? "GENERATING"
+        : "FAILED";
+
       if (state === "success" && resultImageUrl) {
         const resolvedTaskId = kieData.taskId ?? taskId;
         const userId = request.authUser?.userId;
-        const meta = imageTaskStore.get(taskId) ?? { model: "unknown", resolution: "1K" };
+        const meta = imageTaskStore.get(taskId) ?? { model: "unknown", resolution: "1K", chargedAmount: 0, operationKey: "image_generate" };
 
         try {
           const { isNew } = await saveImageToFiles({
@@ -239,28 +255,33 @@ export async function imageRoutes(app: FastifyInstance) {
             prompt: meta.prompt,
             userId,
           });
-          if (isNew && userId) {
-            const spent = await chargeFixed(userId, meta.model, meta.resolution);
-            if (spent > 0) {
-              await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
-            }
-            app.log.info({ taskId, model: meta.model, resolution: meta.resolution, spent }, "image charged");
+          if (isNew && meta.chargedAmount > 0) {
+            // Credits were pre-charged at /generate time — just record the amount on the file
+            await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [meta.chargedAmount, resolvedTaskId]);
+            app.log.info({ taskId, model: meta.model, resolution: meta.resolution, charged: meta.chargedAmount }, "image credited");
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
+            // Storage quota exceeded — refund the pre-charged credits
+            if (userId && meta.chargedAmount > 0) {
+              await refundCredits(userId, meta.chargedAmount, meta.operationKey, `Возврат: превышена квота хранилища`).catch(() => {});
+            }
             return reply.status(507).send({ ok: false, error: err.message });
           }
           console.error("saveImageToFiles failed:", err.message);
         }
         imageTaskStore.delete(taskId);
-      }
 
-      const generatingStates = new Set(["waiting", "queuing", "generating"]);
-      const mappedStatus = state === "success"
-        ? "SUCCESS"
-        : generatingStates.has(state)
-        ? "GENERATING"
-        : "FAILED";
+      } else if (mappedStatus === "FAILED") {
+        // Task failed — refund pre-charged credits
+        const userId = request.authUser?.userId;
+        const meta = imageTaskStore.get(taskId);
+        if (userId && meta?.chargedAmount && meta.chargedAmount > 0) {
+          await refundCredits(userId, meta.chargedAmount, meta.operationKey, `Возврат: задача завершилась с ошибкой (${meta.model})`).catch(() => {});
+          app.log.info({ taskId, refunded: meta.chargedAmount }, "image generation failed — credits refunded");
+        }
+        imageTaskStore.delete(taskId);
+      }
 
       return {
         ok: true,

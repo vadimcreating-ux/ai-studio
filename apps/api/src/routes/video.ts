@@ -2,58 +2,32 @@ import type { FastifyInstance } from "fastify";
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
+import { atomicDeduct, refundCredits, lookupPrice } from "../lib/credits.js";
 
 function sanitizeKey(s: string): string {
   return s.replace(/[^a-zA-Z0-9\-]/g, "_");
 }
 
-// Charge fixed credits from credit_prices using key hierarchy with markup.
-// Lookup order: video_{model} → video_generate
-async function chargeFixed(userId: string, model: string): Promise<number> {
-  const mk = sanitizeKey(model);
-  const keys = [`video_${mk}`, "video_generate"];
-
-  let credits = 0;
-  let markupPercent = 0;
-  try {
-    for (const key of keys) {
-      const res = await dbQuery(
-        "SELECT credits, markup_percent FROM credit_prices WHERE operation = $1",
-        [key]
-      );
-      if (res.rows[0] && Number(res.rows[0].credits) > 0) {
-        credits = Number(res.rows[0].credits);
-        markupPercent = Number(res.rows[0].markup_percent ?? 0);
-        break;
-      }
-    }
-  } catch { /* table might not exist yet */ }
-
-  if (credits <= 0) return 0;
-  const amount = Math.round(credits * (1 + markupPercent / 100) * 10000) / 10000;
-  await dbQuery(
-    "UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2",
-    [amount, userId]
-  );
-  await dbQuery(
-    "INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)",
-    [userId, -amount, `video_${mk}`, `Генерация видео (${model})`]
-  );
-  return amount;
-}
-
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
-
 const KIE_BASE_URL = "https://api.kie.ai";
 
-type VideoTaskMeta = { prompt?: string; model: string };
+// Pre-charged amount stored with task. Credits deducted BEFORE KIE call, refunded on failure.
+type VideoTaskMeta = { prompt?: string; model: string; chargedAmount: number; operationKey: string };
 const videoTaskStore = new Map<string, VideoTaskMeta>();
 
 export async function videoRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authenticate);
 
-  // Генерация видео — 5 запросов в минуту (очень дорогая операция)
-  app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+  // Генерация видео — 5 запросов в минуту per user
+  app.post("/api/video/generate", {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "1 minute",
+        keyGenerator: (req: any) => req.authUser?.userId || req.ip,
+      },
+    },
+  }, async (request, reply) => {
     const body = request.body as {
       model?: string;
       prompt?: string;
@@ -72,6 +46,7 @@ export async function videoRoutes(app: FastifyInstance) {
 
     const prompt = body?.prompt?.trim();
     const apiKey = process.env.KIE_API_KEY;
+    const userId = request.authUser?.userId;
     const model = body?.model?.trim() || "sora-2-pro-image-to-video";
     const isKling = KLING_MODELS.has(model);
 
@@ -81,6 +56,30 @@ export async function videoRoutes(app: FastifyInstance) {
     // Kling: prompt is optional; Sora: required
     if (!isKling && !prompt) {
       return reply.status(400).send({ ok: false, error: "Введите prompt" });
+    }
+
+    // ── Pre-deduct credits before calling KIE ────────────────────────────────
+    const mk = sanitizeKey(model);
+    const priceKeys = [`video_${mk}`, "video_generate"];
+    const price = await lookupPrice(priceKeys);
+
+    let chargedAmount = 0;
+    let operationKey = `video_${mk}`;
+
+    if (price && userId) {
+      chargedAmount = price.chargeAmount;
+      operationKey = price.operationKey;
+      const deducted = await atomicDeduct(
+        userId,
+        chargedAmount,
+        operationKey,
+        `Генерация видео (${model})`
+      );
+      if (deducted === 0) {
+        return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
+      }
+    } else if (!price && userId) {
+      return reply.status(402).send({ ok: false, error: "Для этой модели не установлена цена. Обратитесь к администратору." });
     }
 
     const input: Record<string, unknown> = {};
@@ -117,6 +116,9 @@ export async function videoRoutes(app: FastifyInstance) {
 
       if (!createResponse.ok || createData?.code !== 200 || !createData?.data?.taskId) {
         console.error("KIE video create error:", createResponse.status, JSON.stringify(createData));
+        if (userId && chargedAmount > 0) {
+          await refundCredits(userId, chargedAmount, operationKey, `Возврат: KIE отклонил задачу (${model})`);
+        }
         return reply.status(500).send({
           ok: false,
           error: createData?.message || "KIE не вернул taskId",
@@ -124,10 +126,13 @@ export async function videoRoutes(app: FastifyInstance) {
       }
 
       const taskId = createData.data.taskId!;
-      if (taskId) videoTaskStore.set(taskId, { prompt: prompt || undefined, model });
+      if (taskId) videoTaskStore.set(taskId, { prompt: prompt || undefined, model, chargedAmount, operationKey });
 
       return { ok: true, taskId };
     } catch {
+      if (userId && chargedAmount > 0) {
+        await refundCredits(userId, chargedAmount, operationKey, `Возврат: ошибка при создании задачи (${model})`).catch(() => {});
+      }
       return reply.status(500).send({ ok: false, error: "Не удалось создать задачу в KIE" });
     }
   });
@@ -180,10 +185,19 @@ export async function videoRoutes(app: FastifyInstance) {
         }
       }
 
+      const statusMap: Record<string, string> = {
+        waiting: "GENERATING",
+        queuing: "GENERATING",
+        generating: "GENERATING",
+        success: "SUCCESS",
+        fail: "FAILED",
+      };
+      const mappedStatus = statusMap[state] ?? "GENERATING";
+
       if (state === "success" && videoUrl) {
         const resolvedTaskId = (kieData.taskId as string | undefined) ?? taskId;
         const userId = request.authUser?.userId;
-        const meta = videoTaskStore.get(taskId) ?? { model: "sora-2-pro-image-to-video" };
+        const meta = videoTaskStore.get(taskId) ?? { model: "sora-2-pro-image-to-video", chargedAmount: 0, operationKey: "video_generate" };
 
         try {
           const { isNew } = await saveVideoToFiles({
@@ -192,35 +206,38 @@ export async function videoRoutes(app: FastifyInstance) {
             prompt: meta.prompt,
             userId,
           });
-          if (isNew && userId) {
-            const spent = await chargeFixed(userId, meta.model);
-            if (spent > 0) {
-              await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
-            }
-            app.log.info({ taskId, model: meta.model, spent }, "video charged");
+          if (isNew && meta.chargedAmount > 0) {
+            // Credits pre-charged at /generate time — record on the file
+            await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [meta.chargedAmount, resolvedTaskId]);
+            app.log.info({ taskId, model: meta.model, charged: meta.chargedAmount }, "video credited");
           }
         } catch (err: any) {
           if (err.message?.includes("хранилище")) {
+            const userId2 = request.authUser?.userId;
+            if (userId2 && meta.chargedAmount > 0) {
+              await refundCredits(userId2, meta.chargedAmount, meta.operationKey, `Возврат: превышена квота хранилища`).catch(() => {});
+            }
             return reply.status(507).send({ ok: false, error: err.message });
           }
           console.error("saveVideoToFiles failed:", err.message);
         }
         videoTaskStore.delete(taskId);
-      }
 
-      const statusMap: Record<string, string> = {
-        waiting: "GENERATING",
-        queuing: "GENERATING",
-        generating: "GENERATING",
-        success: "SUCCESS",
-        fail: "FAILED",
-      };
+      } else if (mappedStatus === "FAILED") {
+        const userId = request.authUser?.userId;
+        const meta = videoTaskStore.get(taskId);
+        if (userId && meta?.chargedAmount && meta.chargedAmount > 0) {
+          await refundCredits(userId, meta.chargedAmount, meta.operationKey, `Возврат: задача завершилась с ошибкой (${meta.model})`).catch(() => {});
+          app.log.info({ taskId, refunded: meta.chargedAmount }, "video generation failed — credits refunded");
+        }
+        videoTaskStore.delete(taskId);
+      }
 
       return {
         ok: true,
         taskId: (kieData.taskId as string | undefined) ?? taskId,
         state,
-        status: statusMap[state] ?? "GENERATING",
+        status: mappedStatus,
         videoUrl,
         progress: (kieData.progress as number | undefined) ?? 0,
         errorMessage: (kieData.failMsg as string | undefined) || "",
