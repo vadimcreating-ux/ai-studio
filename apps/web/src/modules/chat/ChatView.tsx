@@ -4,6 +4,7 @@ import { AlertCircle, BookOpen, Plus, Search, Trash2, X } from "lucide-react";
 // BookOpen used in templates modal below
 import { chatApi, type Chat, type Message } from "../../shared/api/chat";
 import { type Project } from "../../shared/api/projects";
+import { useAuth } from "../../contexts/AuthContext";
 import ChatMessage from "./ChatMessage";
 import MessageInput from "./MessageInput";
 import ProjectSettingsModal from "./ProjectSettingsModal";
@@ -28,6 +29,7 @@ type Props = {
 
 export default function ChatView({ chat, project, engineLabel, engineDescription, onProjectUpdated }: Props) {
   const qc = useQueryClient();
+  const { refreshUser } = useAuth();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
@@ -103,6 +105,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       qc.invalidateQueries({ queryKey: ["messages", chat?.id] });
       if (data.credits_spent) {
         window.dispatchEvent(new CustomEvent("creditsSpent", { detail: { amount: data.credits_spent } }));
+        refreshUser();
       }
     },
   });
@@ -137,6 +140,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       qc.invalidateQueries({ queryKey: ["messages", chat?.id] });
       if (data.credits_spent) {
         window.dispatchEvent(new CustomEvent("creditsSpent", { detail: { amount: data.credits_spent } }));
+        refreshUser();
       }
     },
     onError: () => setOptimisticMessages([]),

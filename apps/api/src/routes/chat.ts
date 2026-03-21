@@ -238,7 +238,7 @@ async function callKieAIOnce({
       log.error(`kie.ai claude empty. Full: ${raw.slice(0, 2000)}`);
       return { error: "Пустой ответ от kie.ai", status: 502 };
     }
-    const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+    const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
     return { reply, creditsConsumed };
 
   } else {
@@ -305,7 +305,7 @@ async function callKieAIOnce({
       log.error(`kie.ai ${module} empty. Full: ${raw.slice(0, 2000)}`);
       return { error: "Пустой ответ от kie.ai", status: 502 };
     }
-    const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+    const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
     return { reply, creditsConsumed };
   }
 }
