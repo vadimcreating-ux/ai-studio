@@ -103,9 +103,9 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
     mutationFn: (messageId: string) => chatApi.regenerate(chat!.id, messageId),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["messages", chat?.id] });
+      refreshUser();
       if (data.credits_spent) {
         window.dispatchEvent(new CustomEvent("creditsSpent", { detail: { amount: data.credits_spent } }));
-        refreshUser();
       }
     },
   });
@@ -138,9 +138,9 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
     onSuccess: (data) => {
       setOptimisticMessages([]);
       qc.invalidateQueries({ queryKey: ["messages", chat?.id] });
+      refreshUser();
       if (data.credits_spent) {
         window.dispatchEvent(new CustomEvent("creditsSpent", { detail: { amount: data.credits_spent } }));
-        refreshUser();
       }
     },
     onError: () => setOptimisticMessages([]),
