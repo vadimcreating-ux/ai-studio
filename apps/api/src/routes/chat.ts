@@ -250,8 +250,88 @@ async function callKieAIOnce({
     const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
     return { reply, thinkingContent: thinkingContent || undefined, creditsConsumed };
 
+  } else if (model === "gemini-3-flash-v1beta") {
+    // ── Gemini 3 Flash — нативный Google API (поддерживает thinking) ─────────
+    type GeminiPart = { text?: string; inlineData?: { mimeType: string; data: string }; thought?: boolean };
+    type GeminiContent = { role: string; parts: GeminiPart[] };
+
+    const contents: GeminiContent[] = [];
+    // system prompt идёт как первый user-turn (Gemini не поддерживает отдельный system role)
+    const systemAndHistory: GeminiContent[] = [];
+    if (systemText) {
+      systemAndHistory.push({ role: "user", parts: [{ text: systemText }] });
+      systemAndHistory.push({ role: "model", parts: [{ text: "Понял, буду следовать инструкциям." }] });
+    }
+    for (const r of history) {
+      systemAndHistory.push({ role: r.role === "assistant" ? "model" : "user", parts: [{ text: r.content }] });
+    }
+    contents.push(...systemAndHistory);
+
+    // Текущее сообщение пользователя
+    const userParts: GeminiPart[] = [{ text: userText }];
+    if (files && files.length > 0) {
+      for (const f of files) {
+        if (f.mimeType.startsWith("image/")) {
+          const data = f.dataUrl.split(",")[1] ?? f.dataUrl;
+          userParts.push({ inlineData: { mimeType: f.mimeType, data } });
+        } else {
+          const base64 = f.dataUrl.split(",")[1] ?? "";
+          const decoded = Buffer.from(base64, "base64").toString("utf-8");
+          userParts.push({ text: `\n\n[${f.name}]\n${decoded}` });
+        }
+      }
+    }
+    contents.push({ role: "user", parts: userParts });
+
+    const requestBody: Record<string, unknown> = { contents, stream: false };
+    if (thinking) {
+      requestBody.generationConfig = {
+        thinkingConfig: { includeThoughts: true, thinkingLevel: "high" },
+      };
+    }
+
+    log.info(`kie.ai gemini-3-flash request: msgs=${contents.length} thinking=${!!thinking}`);
+    const res = await fetch(`${KIE_BASE_URL}/gemini/v1/models/gemini-3-flash-v1beta:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      log.error(`kie.ai gemini-3-flash error ${res.status}: ${err}`);
+      return { error: `Ошибка kie.ai: ${res.status}`, status: 502 };
+    }
+    const raw = await res.text();
+    log.info(`kie.ai gemini-3-flash full response: ${raw}`);
+    if (!raw.trim()) return { error: "Пустой ответ от kie.ai", status: 502 };
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch (e) {
+      log.error(`kie.ai gemini-3-flash JSON parse error: ${e}. Raw: ${raw.slice(0, 500)}`);
+      return { error: "Неверный формат ответа от kie.ai", status: 502 };
+    }
+
+    if (typeof data.code === "number" && data.code !== 200) {
+      return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
+    }
+
+    const parts = (data as { candidates?: Array<{ content?: { parts?: GeminiPart[] } }> })
+      .candidates?.[0]?.content?.parts ?? [];
+    const thinkingContent = parts.filter((p) => p.thought && p.text).map((p) => p.text ?? "").join("").trim();
+    const reply = parts.filter((p) => !p.thought && p.text).map((p) => p.text ?? "").join("").trim();
+
+    if (!reply) {
+      log.error(`kie.ai gemini-3-flash empty reply. Full: ${raw.slice(0, 2000)}`);
+      return { error: "Пустой ответ от kie.ai", status: 502 };
+    }
+    const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
+    return { reply, thinkingContent: thinkingContent || undefined, creditsConsumed };
+
   } else {
-    // ── OpenAI Chat Completions API (chatgpt / gemini) ──────────────────────
+    // ── OpenAI Chat Completions API (chatgpt / gemini 2.x) ───────────────────
     type Msg = { role: string; content: string | unknown[] };
     const messages: Msg[] = [];
 

@@ -237,7 +237,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
         onShowTemplates={() => setShowTemplates(true)}
         isLoading={sendMessage.isPending}
         disabled={!chat}
-        showThinking={engine === "claude"}
+        showThinking={engine === "claude" || chat?.model === "gemini-3-flash-v1beta"}
       />
 
       {/* Project settings modal */}

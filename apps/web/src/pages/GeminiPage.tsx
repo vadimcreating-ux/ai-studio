@@ -6,7 +6,7 @@ export default function GeminiPage() {
       engine="gemini"
       engineLabel="Gemini"
       engineDescription="Независимый чат-модуль Gemini с отдельной логикой и настройками."
-      defaultModel="gemini-3.1-pro"
+      defaultModel="gemini-3-flash-v1beta"
     />
   );
 }
