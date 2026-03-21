@@ -1,22 +1,24 @@
 import { useState, useRef, useCallback } from "react";
-import { BookOpen, Globe, Paperclip, X } from "lucide-react";
+import { BookOpen, Globe, Paperclip, X, Brain } from "lucide-react";
 
 type Props = {
-  onSend: (message: string, files: File[], webSearch: boolean) => void;
+  onSend: (message: string, files: File[], webSearch: boolean, thinking: boolean) => void;
   onShowTemplates?: () => void;
   isLoading: boolean;
   disabled?: boolean;
   value?: string;
   onChange?: (val: string) => void;
+  showThinking?: boolean;
 };
 
-export default function MessageInput({ onSend, onShowTemplates, isLoading, disabled, value, onChange }: Props) {
+export default function MessageInput({ onSend, onShowTemplates, isLoading, disabled, value, onChange, showThinking }: Props) {
   const [internalText, setInternalText] = useState("");
   const text = value !== undefined ? value : internalText;
   const setText = (val: string) => { onChange ? onChange(val) : setInternalText(val); };
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (newFiles: File[]) => {
@@ -26,10 +28,10 @@ export default function MessageInput({ onSend, onShowTemplates, isLoading, disab
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if ((!trimmed && files.length === 0) || isLoading || disabled) return;
-    onSend(trimmed, files, webSearch);
+    onSend(trimmed, files, webSearch, thinking);
     setText("");
     setFiles([]);
-  }, [text, files, webSearch, isLoading, disabled, onSend]);
+  }, [text, files, webSearch, thinking, isLoading, disabled, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -153,6 +155,21 @@ export default function MessageInput({ onSend, onShowTemplates, isLoading, disab
             <Globe size={11} />
             Поиск
           </button>
+          {showThinking && (
+            <button
+              onClick={() => setThinking((v) => !v)}
+              disabled={disabled}
+              title={thinking ? "Расширенное мышление включено" : "Расширенное мышление выключено"}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all disabled:opacity-40 ${
+                thinking
+                  ? "border-purple-500 text-purple-400 bg-purple-500/10"
+                  : "border-[#30363d] text-muted hover:text-white hover:border-[#484f58]"
+              }`}
+            >
+              <Brain size={11} />
+              Мышление
+            </button>
+          )}
         </div>
         <button
           onClick={handleSend}

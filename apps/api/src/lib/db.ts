@@ -175,6 +175,11 @@ export async function ensureChatsTable() {
     ALTER TABLE chat_messages ADD COLUMN attached_files JSONB DEFAULT NULL
   `).catch(() => {});
 
+  // Add thinking_content to chat_messages (Claude extended thinking)
+  await dbQuery(`
+    ALTER TABLE chat_messages ADD COLUMN thinking_content TEXT DEFAULT NULL
+  `).catch(() => {});
+
   // Migrate stale claude-sonnet-4-6 chats to the stable claude-sonnet-4-5
   await dbQuery(`
     UPDATE chats SET model = 'claude-sonnet-4-5' WHERE module = 'claude' AND model = 'claude-sonnet-4-6'

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check, Pencil, Trash2, RefreshCw, Paperclip } from "lucide-react";
+import { Copy, Check, Pencil, Trash2, RefreshCw, Paperclip, ChevronDown, ChevronUp, Brain } from "lucide-react";
 import type { Message, AttachedFile } from "../../shared/api/chat";
 
 type Props = {
@@ -69,6 +69,7 @@ export default function ChatMessage({ message, engineLabel, onEdit, onDelete, on
   const isUser = message.role === "user";
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
+  const [thinkingOpen, setThinkingOpen] = useState(false);
 
   function handleSaveEdit() {
     const trimmed = editValue.trim();
@@ -215,6 +216,23 @@ export default function ChatMessage({ message, engineLabel, onEdit, onDelete, on
           <CopyButton text={message.content} />
         </div>
       </div>
+      {message.thinking_content && !isRegenerating && (
+        <div className="w-full mb-2">
+          <button
+            onClick={() => setThinkingOpen((v) => !v)}
+            className="flex items-center gap-2 text-[11px] text-purple-400 hover:text-purple-300 transition-colors px-1"
+          >
+            <Brain size={12} />
+            Рассуждения модели
+            {thinkingOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+          {thinkingOpen && (
+            <div className="mt-2 w-full bg-purple-950/20 border border-purple-500/20 rounded-xl px-4 py-3 text-[12px] text-purple-200/70 leading-relaxed whitespace-pre-wrap font-mono">
+              {message.thinking_content}
+            </div>
+          )}
+        </div>
+      )}
       <div className="w-full bg-[#161b22] border border-[#21262d] rounded-xl px-4 py-3 text-[13px] text-[#c9d1d9] leading-relaxed">
         {isRegenerating ? (
           <TypingDots />

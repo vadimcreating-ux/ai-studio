@@ -24,10 +24,11 @@ type Props = {
   project: Project | null;
   engineLabel: string;
   engineDescription: string;
+  engine: string;
   onProjectUpdated: () => void;
 };
 
-export default function ChatView({ chat, project, engineLabel, engineDescription, onProjectUpdated }: Props) {
+export default function ChatView({ chat, project, engineLabel, engineDescription, engine, onProjectUpdated }: Props) {
   const qc = useQueryClient();
   const { refreshUser } = useAuth();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -111,7 +112,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
   });
 
   const sendMessage = useMutation({
-    mutationFn: async ({ chatId, message, files, webSearch }: { chatId: string; message: string; files: File[]; webSearch: boolean }) => {
+    mutationFn: async ({ chatId, message, files, webSearch, thinking }: { chatId: string; message: string; files: File[]; webSearch: boolean; thinking: boolean }) => {
       const converted = await Promise.all(
         files.map(async (file) => {
           if (file.type.startsWith("image/")) {
@@ -123,7 +124,7 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
           }
         })
       );
-      return chatApi.send(chatId, message, converted.length > 0 ? converted : undefined, webSearch || undefined);
+      return chatApi.send(chatId, message, converted.length > 0 ? converted : undefined, webSearch || undefined, thinking || undefined);
     },
     onMutate: ({ message, files }) => {
       const attachedFiles = files && files.length > 0
@@ -232,10 +233,11 @@ export default function ChatView({ chat, project, engineLabel, engineDescription
       <MessageInput
         value={inputText}
         onChange={setInputText}
-        onSend={(text, files, webSearch) => { chat && sendMessage.mutate({ chatId: chat.id, message: text, files, webSearch }); setInputText(""); }}
+        onSend={(text, files, webSearch, thinking) => { chat && sendMessage.mutate({ chatId: chat.id, message: text, files, webSearch, thinking }); setInputText(""); }}
         onShowTemplates={() => setShowTemplates(true)}
         isLoading={sendMessage.isPending}
         disabled={!chat}
+        showThinking={engine === "claude"}
       />
 
       {/* Project settings modal */}

@@ -51,6 +51,7 @@ export default function ChatModule({ engine, engineLabel, engineDescription, def
       <ChatView
         chat={selectedChat}
         project={selectedProject}
+        engine={engine}
         engineLabel={engineLabel}
         engineDescription={engineDescription}
         onProjectUpdated={handleProjectUpdated}

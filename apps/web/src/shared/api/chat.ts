@@ -22,6 +22,7 @@ export type Message = {
   content: string;
   created_at: string;
   attached_files?: AttachedFile[] | null;
+  thinking_content?: string | null;
 };
 
 export type ChatListResponse = {
@@ -45,8 +46,8 @@ export const chatApi = {
   messages: (chatId: string) =>
     api.get<{ ok: true; messages: Message[] }>(`/api/chat/${chatId}/messages`),
 
-  send: (chatId: string, message: string, files?: Array<{ dataUrl: string; mimeType: string; name: string }>, webSearch?: boolean) =>
-    api.post<{ ok: true; reply: string; credits_spent: number }>(`/api/chat/${chatId}/send`, { message, files, webSearch }),
+  send: (chatId: string, message: string, files?: Array<{ dataUrl: string; mimeType: string; name: string }>, webSearch?: boolean, thinking?: boolean) =>
+    api.post<{ ok: true; reply: string; credits_spent: number }>(`/api/chat/${chatId}/send`, { message, files, webSearch, thinking }),
 
   updateModel: (chatId: string, model: string) =>
     api.patch<{ ok: true; chat: Chat }>(`/api/chat/${chatId}`, { model }),

@@ -119,7 +119,7 @@ function extractUrls(text: string): string[] {
 type KieFile = { dataUrl: string; mimeType: string; name: string };
 
 async function callKieAI({
-  module, model, systemText, history, userText, files, webSearch, apiKey, log,
+  module, model, systemText, history, userText, files, webSearch, thinking, apiKey, log,
 }: {
   module: string;
   model: string;
@@ -128,14 +128,15 @@ async function callKieAI({
   userText: string;
   files?: KieFile[];
   webSearch?: boolean;
+  thinking?: boolean;
   apiKey: string;
   log: FastifyInstance["log"];
-}): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
+}): Promise<{ reply: string; thinkingContent?: string; creditsConsumed: number } | { error: string; status: number }> {
   // Retry up to 2 extra times on transient KIE 500
   const KIE_RETRY_DELAYS = [3000, 6000];
-  let lastResult: { reply: string; creditsConsumed: number } | { error: string; status: number } | null = null;
+  let lastResult: { reply: string; thinkingContent?: string; creditsConsumed: number } | { error: string; status: number } | null = null;
   for (let attempt = 0; attempt <= KIE_RETRY_DELAYS.length; attempt++) {
-    lastResult = await callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, apiKey, log });
+    lastResult = await callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, thinking, apiKey, log });
     if (!("error" in lastResult)) return lastResult; // success
     if (attempt < KIE_RETRY_DELAYS.length) {
       log.warn(`kie.ai transient error (retry ${attempt + 1}/${KIE_RETRY_DELAYS.length}): ${lastResult.error}`);
@@ -146,7 +147,7 @@ async function callKieAI({
 }
 
 async function callKieAIOnce({
-  module, model, systemText, history, userText, files, webSearch, apiKey, log,
+  module, model, systemText, history, userText, files, webSearch, thinking, apiKey, log,
 }: {
   module: string;
   model: string;
@@ -155,9 +156,10 @@ async function callKieAIOnce({
   userText: string;
   files?: KieFile[];
   webSearch?: boolean;
+  thinking?: boolean;
   apiKey: string;
   log: FastifyInstance["log"];
-}): Promise<{ reply: string; creditsConsumed: number } | { error: string; status: number }> {
+}): Promise<{ reply: string; thinkingContent?: string; creditsConsumed: number } | { error: string; status: number }> {
 
   if (module === "claude") {
     // ── KIE Claude API — POST /claude/v1/messages (Anthropic Messages format)
@@ -192,6 +194,7 @@ async function callKieAIOnce({
       stream: false,
     };
     if (systemText) requestBody.system = systemText;
+    if (thinking) requestBody.thinkingFlag = true;
 
     log.info(`kie.ai claude request: model=${model} msgs=${messages.length} sysLen=${systemText?.length ?? 0}`);
     const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
@@ -225,11 +228,17 @@ async function callKieAIOnce({
       return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
     }
 
-    // Extract text from content blocks (type: "text"), skip tool_use blocks
+    // Extract text and thinking blocks from content
     const blocks = data.content;
     let reply = "";
+    let thinkingContent = "";
     if (Array.isArray(blocks)) {
-      reply = (blocks as Array<{ type?: string; text?: string }>)
+      const typed = blocks as Array<{ type?: string; text?: string; thinking?: string }>;
+      thinkingContent = typed
+        .filter((b) => b.type === "thinking" && b.thinking)
+        .map((b) => b.thinking ?? "")
+        .join("").trim();
+      reply = typed
         .filter((b) => b.type === "text" && b.text)
         .map((b) => b.text ?? "")
         .join("").trim();
@@ -239,7 +248,7 @@ async function callKieAIOnce({
       return { error: "Пустой ответ от kie.ai", status: 502 };
     }
     const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
-    return { reply, creditsConsumed };
+    return { reply, thinkingContent: thinkingContent || undefined, creditsConsumed };
 
   } else {
     // ── OpenAI Chat Completions API (chatgpt / gemini) ──────────────────────
@@ -548,7 +557,7 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
     }
 
-    const { message: userText, files, webSearch } = parsed.data;
+    const { message: userText, files, webSearch, thinking } = parsed.data;
 
     const chatRes = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]);
     if (chatRes.rows.length === 0) {
@@ -606,6 +615,7 @@ export async function chatRoutes(app: FastifyInstance) {
       userText,
       files,
       webSearch,
+      thinking: thinking && chat.module === "claude" ? true : undefined,
       apiKey,
       log: app.log,
     });
@@ -613,9 +623,10 @@ export async function chatRoutes(app: FastifyInstance) {
     const sendReply = "error" in result
       ? "Не удалось соединиться с сервером ИИ. Пожалуйста, повторите запрос."
       : result.reply;
+    const thinkingContent = "error" in result ? null : (result.thinkingContent ?? null);
     await dbQuery(
-      `INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`,
-      [chatId, sendReply]
+      `INSERT INTO chat_messages (chat_id, role, content, thinking_content) VALUES ($1, 'assistant', $2, $3)`,
+      [chatId, sendReply, thinkingContent]
     );
     if ("error" in result) {
       app.log.error(`kie.ai send failed after retries: ${result.error}`);

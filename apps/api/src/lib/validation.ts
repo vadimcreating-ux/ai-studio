@@ -25,6 +25,7 @@ export const SendMessageSchema = z.object({
   message: z.string().trim().min(1).max(100_000),
   files: z.array(KieFileSchema).max(10).optional(),
   webSearch: z.boolean().optional(),
+  thinking: z.boolean().optional(),
 });
 
 export const EditMessageSchema = z.object({
