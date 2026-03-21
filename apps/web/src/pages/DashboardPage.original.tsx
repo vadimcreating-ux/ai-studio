@@ -45,31 +45,19 @@ const ENGINE_META = {
   gemini:  { label: "Gemini",  icon: <Sparkles size={14} />, color: "text-purple-400",  bg: "bg-purple-500/10" },
 };
 
+
 const GROUP_META: Record<string, { color: string; bar: string }> = {
   "Чаты":        { color: "text-orange-400", bar: "bg-orange-400" },
   "Изображения": { color: "text-blue-400",   bar: "bg-blue-400" },
   "Видео":       { color: "text-pink-400",   bar: "bg-pink-400" },
   "Улучшения":   { color: "text-purple-400", bar: "bg-purple-400" },
-  "Прочее":      { color: "text-white/40",   bar: "bg-white/20" },
+  "Прочее":      { color: "text-muted",      bar: "bg-muted" },
 };
 
 const PERIOD_LABELS: Record<StatPeriod, string> = {
   "7d":  "7 дн.",
   "30d": "30 дн.",
   "all": "Всё время",
-};
-
-// Palette from reference
-const P = {
-  bg:       "#030923",
-  card:     "#041A53",
-  cardAlt:  "#071f63",
-  accent:   "#0059FF",
-  accentDim:"rgba(0,89,255,0.15)",
-  border:   "rgba(0,89,255,0.2)",
-  borderHov:"rgba(0,89,255,0.5)",
-  text:     "#ffffff",
-  muted:    "rgba(255,255,255,0.5)",
 };
 
 export default function DashboardPage() {
@@ -113,6 +101,7 @@ export default function DashboardPage() {
   const usedMb = Number(user?.storage_used_mb ?? 0);
   const quotaMb = Number(user?.storage_quota_mb ?? 500);
   const storagePct = quotaMb > 0 ? Math.min(100, (usedMb / quotaMb) * 100) : 0;
+  const storageColor = storagePct >= 90 ? "bg-red-500" : storagePct >= 70 ? "bg-yellow-500" : "bg-accent";
 
   const allChats = [
     ...(claudeChats?.chats ?? []),
@@ -134,60 +123,47 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto" style={{ background: P.bg }}>
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
         {/* ── Hero ── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-white">
               {greeting()}{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
             </h1>
-            <p className="mt-1 text-sm" style={{ color: P.muted }}>Что создаём сегодня?</p>
+            <p className="text-muted mt-1 text-sm">Что создаём сегодня?</p>
           </div>
           <Link
             to="/credits"
-            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl transition-all"
-            style={{
-              background: P.accentDim,
-              border: `1px solid ${P.border}`,
-            }}
+            className="flex items-center gap-2 px-4 py-2 bg-panel border border-border rounded-xl hover:border-accent/40 transition-colors"
           >
-            <Zap size={16} style={{ color: P.accent }} fill="currentColor" />
-            <span className="text-white font-bold text-lg">{Number(user?.credits_balance ?? 0).toFixed(1)}</span>
-            <span className="text-sm" style={{ color: P.muted }}>кредитов</span>
+            <Zap size={16} className="text-accent" fill="currentColor" />
+            <span className="text-white font-semibold text-lg">{Number(user?.credits_balance ?? 0).toFixed(1)}</span>
+            <span className="text-muted text-sm">кредитов</span>
           </Link>
         </div>
 
         {/* ── Quick actions ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
-            { label: "Claude",  desc: "Sonnet 4.5",  icon: <Cpu size={22} />,      iconColor: "#fb923c", to: "/claude" },
-            { label: "ChatGPT", desc: "GPT-5 / 4o",  icon: <Bot size={22} />,      iconColor: "#4ade80", to: "/chatgpt" },
-            { label: "Gemini",  desc: "2.5 Pro",      icon: <Sparkles size={22} />, iconColor: "#c084fc", to: "/gemini" },
-            { label: "Image",   desc: "7 моделей",    icon: <Image size={22} />,    iconColor: P.accent,  to: "/image" },
-            { label: "Video",   desc: "Sora / Kling", icon: <Video size={22} />,    iconColor: "#f472b6", to: "/video" },
+            { label: "Claude", desc: "Sonnet 4.5", icon: <Cpu size={20} />, color: "hover:border-orange-500/40 hover:bg-orange-500/5", iconColor: "text-orange-400 bg-orange-500/10", to: "/claude" },
+            { label: "ChatGPT", desc: "GPT-5 / 4o", icon: <Bot size={20} />, color: "hover:border-green-500/40 hover:bg-green-500/5", iconColor: "text-green-400 bg-green-500/10", to: "/chatgpt" },
+            { label: "Gemini", desc: "2.5 Pro", icon: <Sparkles size={20} />, color: "hover:border-purple-500/40 hover:bg-purple-500/5", iconColor: "text-purple-400 bg-purple-500/10", to: "/gemini" },
+            { label: "Image", desc: "7 моделей", icon: <Image size={20} />, color: "hover:border-blue-500/40 hover:bg-blue-500/5", iconColor: "text-blue-400 bg-blue-500/10", to: "/image" },
+            { label: "Video", desc: "Sora / Kling", icon: <Video size={20} />, color: "hover:border-pink-500/40 hover:bg-pink-500/5", iconColor: "text-pink-400 bg-pink-500/10", to: "/video" },
           ].map((item) => (
             <button
               key={item.to}
               onClick={() => navigate(item.to)}
-              className="flex flex-col items-start gap-4 p-5 rounded-2xl transition-all text-left group"
-              style={{
-                background: P.card,
-                border: `1px solid ${P.border}`,
-              }}
-              onMouseEnter={e => (e.currentTarget.style.border = `1px solid ${P.borderHov}`)}
-              onMouseLeave={e => (e.currentTarget.style.border = `1px solid ${P.border}`)}
+              className={`flex flex-col items-start gap-3 p-4 bg-panel border border-border rounded-xl transition-all ${item.color} group`}
             >
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: `${item.iconColor}20`, color: item.iconColor }}
-              >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${item.iconColor}`}>
                 {item.icon}
               </div>
-              <div>
-                <div className="text-sm font-semibold text-white">{item.label}</div>
-                <div className="text-xs mt-0.5" style={{ color: P.muted }}>{item.desc}</div>
+              <div className="text-left">
+                <div className="text-sm font-semibold text-white group-hover:text-white">{item.label}</div>
+                <div className="text-xs text-muted mt-0.5">{item.desc}</div>
               </div>
             </button>
           ))}
@@ -195,81 +171,67 @@ export default function DashboardPage() {
 
         {/* ── Stats row ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            {
-              label: "Баланс",
-              value: Number(user?.credits_balance ?? 0).toFixed(1),
-              sub: "кредитов",
-              icon: <Zap size={16} style={{ color: P.accent }} />,
-              onClick: () => navigate("/credits"),
-              highlight: true,
-            },
-            {
-              label: "Хранилище",
-              value: usedMb.toFixed(0),
-              sub: `из ${quotaMb} MB`,
-              icon: <HardDrive size={16} style={{ color: P.muted }} />,
-              bar: storagePct,
-            },
-            {
-              label: "Файлы",
-              value: String(totalFiles),
-              sub: "изображений и видео",
-              icon: <FolderOpen size={16} style={{ color: P.muted }} />,
-              onClick: () => navigate("/files"),
-            },
-            {
-              label: "Чаты",
-              value: String(totalChats),
-              sub: "всего диалогов",
-              icon: <MessageSquare size={16} style={{ color: P.muted }} />,
-            },
-          ].map((stat, i) => (
-            <div
-              key={i}
-              className="rounded-2xl p-5 transition-all"
-              style={{
-                background: stat.highlight ? P.accentDim : P.card,
-                border: `1px solid ${stat.highlight ? P.border : P.border}`,
-                cursor: stat.onClick ? "pointer" : "default",
-              }}
-              onClick={stat.onClick}
-              onMouseEnter={e => stat.onClick && (e.currentTarget.style.border = `1px solid ${P.borderHov}`)}
-              onMouseLeave={e => stat.onClick && (e.currentTarget.style.border = `1px solid ${P.border}`)}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs uppercase tracking-wider font-medium" style={{ color: P.muted }}>{stat.label}</span>
-                {stat.icon}
-              </div>
-              <div className="text-3xl font-bold text-white">{stat.value}</div>
-              <div className="text-xs mt-1" style={{ color: P.muted }}>{stat.sub}</div>
-              {stat.bar !== undefined && (
-                <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.1)" }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${stat.bar}%`,
-                      background: stat.bar >= 90 ? "#ef4444" : stat.bar >= 70 ? "#eab308" : P.accent,
-                    }}
-                  />
-                </div>
-              )}
+          {/* Credits */}
+          <div
+            className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+            onClick={() => navigate("/credits")}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-muted uppercase tracking-wide">Баланс</span>
+              <Zap size={15} className="text-accent" />
             </div>
-          ))}
+            <div className="text-2xl font-bold text-white">{Number(user?.credits_balance ?? 0).toFixed(1)}</div>
+            <div className="text-xs text-muted mt-1">кредитов</div>
+          </div>
+
+          {/* Storage */}
+          <div className="bg-panel border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-muted uppercase tracking-wide">Хранилище</span>
+              <HardDrive size={15} className="text-muted" />
+            </div>
+            <div className="text-2xl font-bold text-white">{usedMb.toFixed(0)}</div>
+            <div className="text-xs text-muted mt-1">из {quotaMb} MB</div>
+            <div className="mt-2 h-1.5 bg-surface rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${storageColor}`} style={{ width: `${storagePct}%` }} />
+            </div>
+          </div>
+
+          {/* Files */}
+          <div
+            className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+            onClick={() => navigate("/files")}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-muted uppercase tracking-wide">Файлы</span>
+              <FolderOpen size={15} className="text-muted" />
+            </div>
+            <div className="text-2xl font-bold text-white">{totalFiles}</div>
+            <div className="text-xs text-muted mt-1">изображений и видео</div>
+          </div>
+
+          {/* Chats */}
+          <div className="bg-panel border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-muted uppercase tracking-wide">Чаты</span>
+              <MessageSquare size={15} className="text-muted" />
+            </div>
+            <div className="text-2xl font-bold text-white">{totalChats}</div>
+            <div className="text-xs text-muted mt-1">всего диалогов</div>
+          </div>
         </div>
 
-        {/* ── Recent files + Credit stats ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* ── Recent files + Credit history ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-          {/* Recent files */}
-          <div className="lg:col-span-2 rounded-2xl p-5" style={{ background: P.card, border: `1px solid ${P.border}` }}>
+          {/* Recent files — 2/3 width */}
+          <div className="lg:col-span-2 bg-panel border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-white">Последние файлы</h2>
               {totalFiles > 6 && (
                 <button
                   onClick={() => navigate("/files")}
-                  className="flex items-center gap-1 text-xs transition-colors"
-                  style={{ color: P.accent }}
+                  className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
                 >
                   Все файлы <ArrowRight size={12} />
                 </button>
@@ -278,12 +240,12 @@ export default function DashboardPage() {
 
             {files.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-36 text-center">
-                <FolderOpen size={28} className="mb-2" style={{ color: P.muted }} />
-                <p className="text-sm" style={{ color: P.muted }}>Файлов пока нет</p>
+                <FolderOpen size={28} className="text-muted mb-2" />
+                <p className="text-sm text-muted">Файлов пока нет</p>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => navigate("/image")} className="text-xs hover:underline" style={{ color: P.accent }}>Сгенерировать изображение</button>
-                  <span className="text-xs" style={{ color: P.muted }}>·</span>
-                  <button onClick={() => navigate("/video")} className="text-xs hover:underline" style={{ color: P.accent }}>Создать видео</button>
+                  <button onClick={() => navigate("/image")} className="text-xs text-accent hover:underline">Сгенерировать изображение</button>
+                  <span className="text-muted text-xs">·</span>
+                  <button onClick={() => navigate("/video")} className="text-xs text-accent hover:underline">Создать видео</button>
                 </div>
               </div>
             ) : (
@@ -294,8 +256,7 @@ export default function DashboardPage() {
                     href={f.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="relative aspect-square rounded-xl overflow-hidden group block"
-                    style={{ background: P.cardAlt }}
+                    className="relative aspect-square rounded-lg overflow-hidden bg-surface group block"
                     title={f.prompt ?? ""}
                   >
                     {f.type === "video" ? (
@@ -317,63 +278,67 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Credit stats */}
-          <div className="rounded-2xl p-5" style={{ background: P.card, border: `1px solid ${P.border}` }}>
+          {/* Credit stats — 1/3 width */}
+          <div className="bg-panel border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                <BarChart2 size={14} style={{ color: P.accent }} />
+                <BarChart2 size={14} className="text-accent" />
                 Расход кредитов
               </h2>
-              <Link to="/credits" className="flex items-center gap-1 text-xs transition-colors" style={{ color: P.accent }}>
+              <Link to="/credits" className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
                 Подробнее <ArrowRight size={11} />
               </Link>
             </div>
-
             {/* Period switcher */}
-            <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <div className="flex gap-1 mb-4">
               {(["7d", "30d", "all"] as StatPeriod[]).map(p => (
                 <button
                   key={p}
                   onClick={() => setStatsPeriod(p)}
-                  className="flex-1 text-[11px] py-1.5 rounded-lg transition-all font-medium"
-                  style={
+                  className={`flex-1 text-[11px] py-1 rounded-lg transition-colors ${
                     statsPeriod === p
-                      ? { background: P.accent, color: "#fff" }
-                      : { color: P.muted }
-                  }
+                      ? "bg-accent text-white font-medium"
+                      : "bg-surface text-muted hover:text-white"
+                  }`}
                 >
                   {PERIOD_LABELS[p]}
                 </button>
               ))}
             </div>
 
+            {/* Total */}
             <div className="mb-4">
-              <div className="text-3xl font-bold text-white">
+              <div className="text-2xl font-bold text-white">
                 {(creditStats?.total_spent ?? 0).toFixed(1)}
               </div>
-              <div className="text-xs mt-0.5" style={{ color: P.muted }}>
-                потрачено · {creditStats?.tx_count ?? 0} операций
-              </div>
+              <div className="text-xs text-muted mt-0.5">потрачено кредитов · {creditStats?.tx_count ?? 0} операций</div>
             </div>
 
             {byGroup.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-24 text-center">
-                <BarChart2 size={22} className="mb-2" style={{ color: P.muted }} />
-                <p className="text-xs" style={{ color: P.muted }}>Нет данных за период</p>
+                <BarChart2 size={22} className="text-muted mb-2" />
+                <p className="text-xs text-muted">Нет данных за период</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {byGroup.map((g: CreditStatGroup) => {
                   const meta = GROUP_META[g.group_name] ?? GROUP_META["Прочее"];
                   const pct = maxGroupSpent > 0 ? (g.total_spent / maxGroupSpent) * 100 : 0;
+                  const markupPct = g.total_spent > 0 ? (g.markup_total / g.total_spent) * 100 : 0;
                   return (
                     <div key={g.group_name}>
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between mb-1">
                         <span className={`text-xs font-medium ${meta.color}`}>{g.group_name}</span>
                         <span className="text-xs text-white font-mono">{g.total_spent.toFixed(1)}</span>
                       </div>
-                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
-                        <div className={`h-full rounded-full ${meta.bar}`} style={{ width: `${pct}%` }} />
+                      <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${meta.bar}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-muted mt-0.5">
+                        KIE: {g.kie_total.toFixed(2)} · наценка: {g.markup_total.toFixed(2)} ({markupPct.toFixed(0)}%)
                       </div>
                     </div>
                   );
@@ -384,16 +349,16 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Recent chats ── */}
-        <div className="rounded-2xl p-5" style={{ background: P.card, border: `1px solid ${P.border}` }}>
+        <div className="bg-panel border border-border rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-white">Последние чаты</h2>
-            <span className="text-xs" style={{ color: P.muted }}>{totalChats} всего</span>
+            <span className="text-xs text-muted">{totalChats} всего</span>
           </div>
 
           {allChats.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-24 text-center">
-              <MessageSquare size={24} className="mb-2" style={{ color: P.muted }} />
-              <p className="text-sm" style={{ color: P.muted }}>Чатов пока нет — начни новый диалог</p>
+              <MessageSquare size={24} className="text-muted mb-2" />
+              <p className="text-sm text-muted">Чатов пока нет — начни новый диалог</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -404,19 +369,18 @@ export default function DashboardPage() {
                   <button
                     key={chat.id}
                     onClick={() => navigate(`/${engine}`)}
-                    className="flex items-center gap-3 p-3 rounded-xl text-left transition-all group"
-                    style={{ background: P.cardAlt, border: `1px solid transparent` }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = P.border)}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = "transparent")}
+                    className="flex items-center gap-3 p-3 bg-surface hover:bg-border rounded-xl text-left transition-colors group"
                   >
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
                       <span className={meta.color}>{meta.icon}</span>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-white truncate">{chat.title || "Новый чат"}</p>
-                      <p className="text-[11px] mt-0.5" style={{ color: P.muted }}>{meta.label} · {formatDate(chat.created_at)}</p>
+                      <p className="text-sm text-white truncate group-hover:text-white">
+                        {chat.title || "Новый чат"}
+                      </p>
+                      <p className="text-[11px] text-muted">{meta.label} · {formatDate(chat.created_at)}</p>
                     </div>
-                    <ArrowRight size={12} style={{ color: P.muted }} className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                    <ArrowRight size={12} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                   </button>
                 );
               })}
@@ -427,30 +391,25 @@ export default function DashboardPage() {
         {/* ── Audio / Avatar coming soon ── */}
         <div className="grid grid-cols-2 gap-4">
           {[
-            { label: "Audio",  desc: "Text-to-Speech и транскрипция", icon: <Music size={20} />,    iconColor: "#22d3ee", to: "/audio" },
-            { label: "Avatar", desc: "AI-аватары в разных стилях",    icon: <Sparkles size={20} />, iconColor: "#facc15", to: "/avatar" },
+            { label: "Audio", desc: "Text-to-Speech и транскрипция", icon: <Music size={20} />, to: "/audio", color: "text-cyan-400 bg-cyan-500/10" },
+            { label: "Avatar", desc: "AI-аватары в разных стилях", icon: <Sparkles size={20} />, to: "/avatar", color: "text-yellow-400 bg-yellow-500/10" },
           ].map((item) => (
-            <div
+            <button
               key={item.to}
-              className="flex items-center gap-4 p-5 rounded-2xl"
-              style={{
-                background: P.card,
-                border: `1px dashed ${P.border}`,
-                opacity: 0.6,
-              }}
+              onClick={() => navigate(item.to)}
+              className="flex items-center gap-4 p-4 bg-panel border border-dashed border-border hover:border-border/80 rounded-xl transition-colors group text-left opacity-60 hover:opacity-80"
             >
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `${item.iconColor}18`, color: item.iconColor }}
-              >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.color}`}>
                 {item.icon}
               </div>
-              <div className="flex-1">
+              <div>
                 <div className="text-sm font-medium text-white">{item.label}</div>
-                <div className="text-xs mt-0.5" style={{ color: P.muted }}>{item.desc}</div>
+                <div className="text-xs text-muted">{item.desc}</div>
               </div>
-              <span className="text-[10px] px-2.5 py-1 rounded-full" style={{ background: P.cardAlt, color: P.muted }}>Скоро</span>
-            </div>
+              <div className="ml-auto">
+                <span className="text-[10px] text-muted bg-surface px-2 py-0.5 rounded-full">Скоро</span>
+              </div>
+            </button>
           ))}
         </div>
 
