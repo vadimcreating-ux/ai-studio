@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Zap, Sparkles, Image, Video, Music,
   HardDrive, FolderOpen, MessageSquare,
-  ArrowRight, Play, BarChart2,
+  ArrowRight, Play, BarChart2, Plus,
 } from "lucide-react";
 import { ClaudeIcon, ChatGPTIcon, GeminiIcon } from "../shared/AiLogos";
 import { useAuth } from "../contexts/AuthContext";
@@ -108,7 +108,10 @@ export default function DashboardPage() {
     ...(claudeChats?.chats ?? []),
     ...(chatgptChats?.chats ?? []),
     ...(geminiChats?.chats ?? []),
-  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6);
+  ]
+    .filter((c) => c.title && c.title.trim() !== "" && c.title !== "Новый чат")
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 6);
 
   const totalChats =
     (claudeChats?.total ?? 0) +
@@ -137,11 +140,10 @@ export default function DashboardPage() {
           </div>
           <Link
             to="/credits"
-            className="flex items-center gap-2 px-4 py-2 bg-panel border border-border rounded-xl hover:border-accent/40 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover transition-colors rounded-xl"
           >
-            <Zap size={16} className="text-accent" fill="currentColor" />
-            <span className="text-white font-semibold text-lg">{Number(user?.credits_balance ?? 0).toFixed(1)}</span>
-            <span className="text-muted text-sm">кредитов</span>
+            <Plus size={16} className="text-white" />
+            <span className="text-white font-medium text-sm">Пополнить баланс</span>
           </Link>
         </div>
 
@@ -157,7 +159,7 @@ export default function DashboardPage() {
             <button
               key={item.to}
               onClick={() => navigate(item.to)}
-              className={`flex flex-col items-start gap-3 p-4 bg-panel border border-border rounded-xl transition-all ${item.color} group`}
+              className={`flex flex-col items-start gap-3 p-4 bg-panel border border-border rounded-xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${item.color} group`}
             >
               <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${item.iconColor}`}>
                 {item.icon}
@@ -174,7 +176,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Credits */}
           <div
-            className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+            className="bg-panel border border-border rounded-xl p-5 cursor-pointer hover:border-accent/40 transition-colors"
             onClick={() => navigate("/credits")}
           >
             <div className="flex items-center justify-between mb-3">
@@ -186,7 +188,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Storage */}
-          <div className="bg-panel border border-border rounded-xl p-4">
+          <div className="bg-panel border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs text-muted uppercase tracking-wide">Хранилище</span>
               <HardDrive size={15} className="text-muted" />
@@ -200,7 +202,7 @@ export default function DashboardPage() {
 
           {/* Files */}
           <div
-            className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+            className="bg-panel border border-border rounded-xl p-5 cursor-pointer hover:border-accent/40 transition-colors"
             onClick={() => navigate("/files")}
           >
             <div className="flex items-center justify-between mb-3">
@@ -212,7 +214,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Chats */}
-          <div className="bg-panel border border-border rounded-xl p-4">
+          <div className="bg-panel border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs text-muted uppercase tracking-wide">Чаты</span>
               <MessageSquare size={15} className="text-muted" />
@@ -262,13 +264,13 @@ export default function DashboardPage() {
                   >
                     {f.type === "video" ? (
                       <>
-                        <video src={f.url} className="w-full h-full object-cover" muted playsInline />
+                        <video src={f.url} className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" muted playsInline />
                         <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Play size={16} className="text-white" />
                         </div>
                       </>
                     ) : (
-                      <img src={f.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      <img src={f.url} alt="" className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
                     )}
                     <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                       <p className="text-[10px] text-white/80 truncate">{formatDate(f.createdAt)}</p>
@@ -325,7 +327,6 @@ export default function DashboardPage() {
                 {byGroup.map((g: CreditStatGroup) => {
                   const meta = GROUP_META[g.group_name] ?? GROUP_META["Прочее"];
                   const pct = maxGroupSpent > 0 ? (g.total_spent / maxGroupSpent) * 100 : 0;
-                  const markupPct = g.total_spent > 0 ? (g.markup_total / g.total_spent) * 100 : 0;
                   return (
                     <div key={g.group_name}>
                       <div className="flex items-center justify-between mb-1">
@@ -337,9 +338,6 @@ export default function DashboardPage() {
                           className={`h-full rounded-full ${meta.bar}`}
                           style={{ width: `${pct}%` }}
                         />
-                      </div>
-                      <div className="text-[10px] text-muted mt-0.5">
-                        KIE: {g.kie_total.toFixed(2)} · наценка: {g.markup_total.toFixed(2)} ({markupPct.toFixed(0)}%)
                       </div>
                     </div>
                   );
@@ -376,8 +374,8 @@ export default function DashboardPage() {
                       <span className={meta.color}>{meta.icon}</span>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-white truncate group-hover:text-white">
-                        {chat.title || "Новый чат"}
+                      <p className="text-sm font-medium text-white truncate">
+                        {chat.title}
                       </p>
                       <p className="text-[11px] text-muted">{meta.label} · {formatDate(chat.created_at)}</p>
                     </div>
