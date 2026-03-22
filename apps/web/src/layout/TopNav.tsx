@@ -8,10 +8,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import SettingsModal from "../components/SettingsModal";
-import { ClaudeIcon, ChatGPTIcon, GeminiIcon } from "../shared/AiLogos";
+import { ChatGPTIcon, GeminiIcon } from "../shared/AiLogos";
 
 const chatRoutes = [
-  { to: "/claude",  label: "Claude",  icon: <ClaudeIcon  size={16} /> },
   { to: "/chatgpt", label: "ChatGPT", icon: <ChatGPTIcon size={16} /> },
   { to: "/gemini",  label: "Gemini",  icon: <GeminiIcon  size={16} /> },
 ];

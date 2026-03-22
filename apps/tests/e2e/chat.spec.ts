@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 const ENGINES = [
-  { name: "claude",  url: "/claude",  label: "Claude" },
   { name: "chatgpt", url: "/chatgpt", label: "ChatGPT" },
   { name: "gemini",  url: "/gemini",  label: "Gemini" },
 ] as const;
@@ -60,17 +59,17 @@ for (const engine of ENGINES) {
   });
 }
 
-test.describe("Chat: отправка сообщения (Claude)", () => {
+test.describe("Chat: отправка сообщения (ChatGPT)", () => {
   let existingChatIds = new Set<string>();
 
   test.beforeAll(async ({ request }) => {
-    const res = await request.get(`/api/chat/list?module=claude&limit=200`);
+    const res = await request.get(`/api/chat/list?module=chatgpt&limit=200`);
     const data = await res.json();
     existingChatIds = new Set((data.chats ?? []).map((c: { id: string }) => c.id));
   });
 
   test.afterAll(async ({ request }) => {
-    const res = await request.get(`/api/chat/list?module=claude&limit=200`);
+    const res = await request.get(`/api/chat/list?module=chatgpt&limit=200`);
     const data = await res.json();
     const testChats = (data.chats ?? []).filter((c: { id: string }) => !existingChatIds.has(c.id));
     for (const chat of testChats) {
@@ -81,7 +80,7 @@ test.describe("Chat: отправка сообщения (Claude)", () => {
   test("отправить сообщение и получить ответ", async ({ page }) => {
     test.setTimeout(60_000);
 
-    await page.goto("/claude");
+    await page.goto("/chatgpt");
     await page.waitForLoadState("networkidle");
 
     await page.getByText(/Новый чат/i).first().click();

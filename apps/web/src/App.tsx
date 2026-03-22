@@ -3,7 +3,6 @@ import { useAuth } from "./contexts/AuthContext";
 import AppLayout from "./layout/AppLayout";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import ClaudePage from "./pages/ClaudePage";
 import ChatGPTPage from "./pages/ChatGPTPage";
 import GeminiPage from "./pages/GeminiPage";
 import ImagePage from "./pages/ImagePage";
@@ -49,7 +48,7 @@ export default function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/claude" element={<ClaudePage />} />
+        <Route path="/claude" element={<Navigate to="/chatgpt" replace />} />
         <Route path="/chatgpt" element={<ChatGPTPage />} />
         <Route path="/gemini" element={<GeminiPage />} />
         <Route path="/image" element={<ImagePage />} />
