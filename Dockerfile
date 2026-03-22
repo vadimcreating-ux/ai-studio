@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:20-slim
 
 WORKDIR /app
@@ -9,8 +10,9 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 
-# Install dependencies with cache layer
-RUN npm ci
+# Install dependencies — use BuildKit cache to avoid re-downloading on each build
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline
 
 # Copy all source files
 COPY . .
