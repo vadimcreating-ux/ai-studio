@@ -89,34 +89,33 @@ main  ──┐
 
 ### Деплой на Timeweb — как это работает
 
-**Важно:** Timeweb App Platform **игнорирует наш `Dockerfile`** и использует собственный шаблон на базе `node:24-slim`. Управлять образом напрямую нельзя.
+**Тип деплоя: Dockerfile** (не Node.js шаблон).
+
+Timeweb поддерживает деплой через собственный `Dockerfile`. Используем именно его — это даёт полный контроль над сборкой.
 
 **Настройки в Timeweb dashboard:**
-- Команда установки: `npm install --omit=dev`
-- Команда запуска: `npm run start`
+- Тип: **Dockerfile**
+- Команда запуска: `npm run start` (или оставить пустым — CMD из Dockerfile)
 
-Флаг `--omit=dev` обязателен — без него устанавливается `esbuild` (devDep), который падает при установке на `node:24` из-за несовместимости бинарников.
-
-**dist/ файлы коммитятся в репозиторий:**
-
-Timeweb не выполняет шаг сборки (`tsc` / `vite build`) — только `npm install --omit=dev` и `npm run start`. Поэтому скомпилированные файлы должны быть в репо:
-- `apps/api/dist/` — скомпилированный TypeScript backend
-- `apps/web/dist/` — собранный Vite frontend (раздаётся как статика из api)
-
-**Перед каждым мержем в `main` или `develop`:**
-```bash
-npm run build          # пересобирает apps/web/dist/ и apps/api/dist/
-git add apps/api/dist apps/web/dist
-git commit -m "build: update dist"
+**Dockerfile — multi-stage build:**
 ```
+Stage 1 (builder): node:20-slim → npm ci (все deps) → npm run build
+Stage 2 (runtime): node:20-slim → npm ci --omit=dev → COPY dist из builder
+```
+
+- Stage 1 устанавливает devDeps (нужны для tsc + vite) и собирает проект
+- Stage 2 — только prod-зависимости и собранные файлы → маленький образ
+
+**dist/ НЕ коммитятся в репозиторий** — сборка происходит внутри Docker образа.
+Файлы `apps/api/dist/` и `apps/web/dist/` добавлены в `.gitignore`.
 
 **Структура зависимостей (`package.json`):**
 
-В `dependencies` — только runtime-пакеты (то, что нужно серверу в проде):
+В `dependencies` — только runtime-пакеты (Stage 2):
 - `fastify` и плагины (`@fastify/cookie`, `@fastify/cors`, `@fastify/jwt`, `@fastify/rate-limit`, `@fastify/static`)
 - `pg`, `bcryptjs`, `zod`
 
-Всё остальное — в `devDependencies`: React, Vite, TypeScript, Tailwind, `tsx`, `pino-pretty`, типы и т.д. Они не устанавливаются при `npm install --omit=dev`.
+В `devDependencies` — всё для сборки (Stage 1): React, Vite, TypeScript, Tailwind, `tsx`, `pino-pretty`, типы и т.д.
 
 **Правила работы с зависимостями:**
 - **`package-lock.json` всегда в репо** — никогда не добавлять в `.gitignore` и не удалять

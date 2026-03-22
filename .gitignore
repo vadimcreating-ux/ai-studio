@@ -5,3 +5,7 @@ node_modules
 coverage
 *.log
 apps/tests/.auth/
+
+# Build artifacts — собираются в Docker образе, не коммитятся
+apps/api/dist/
+apps/web/dist/
