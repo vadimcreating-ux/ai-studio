@@ -311,13 +311,23 @@ export async function chatRoutes(app) {
         const { module, project_id, limit, offset } = parsed.data;
         const mod = module ?? "claude";
         // Admin sees all chats; regular users see only their own (+ legacy null user_id chats)
-        const userFilter = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
-        const result = project_id
-            ? await dbQuery(`SELECT * FROM chats WHERE module = $1 AND project_id = $2 ${userFilter} ORDER BY created_at DESC LIMIT $3 OFFSET $4`, [mod, project_id, limit, offset])
-            : await dbQuery(`SELECT * FROM chats WHERE module = $1 ${userFilter} ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [mod, limit, offset]);
-        const totalResult = project_id
-            ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2 ${userFilter}`, [mod, project_id])
-            : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 ${userFilter}`, [mod]);
+        const isAdmin = user.role === "admin";
+        const [result, totalResult] = await Promise.all([
+            project_id
+                ? isAdmin
+                    ? dbQuery(`SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`, [mod, project_id, limit, offset])
+                    : dbQuery(`SELECT * FROM chats WHERE module = $1 AND project_id = $2 AND (user_id = $3 OR user_id IS NULL) ORDER BY created_at DESC LIMIT $4 OFFSET $5`, [mod, project_id, user.userId, limit, offset])
+                : isAdmin
+                    ? dbQuery(`SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [mod, limit, offset])
+                    : dbQuery(`SELECT * FROM chats WHERE module = $1 AND (user_id = $2 OR user_id IS NULL) ORDER BY created_at DESC LIMIT $3 OFFSET $4`, [mod, user.userId, limit, offset]),
+            project_id
+                ? isAdmin
+                    ? dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2`, [mod, project_id])
+                    : dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2 AND (user_id = $3 OR user_id IS NULL)`, [mod, project_id, user.userId])
+                : isAdmin
+                    ? dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1`, [mod])
+                    : dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND (user_id = $2 OR user_id IS NULL)`, [mod, user.userId]),
+        ]);
         return {
             ok: true,
             chats: result.rows,

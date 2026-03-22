@@ -12,12 +12,15 @@ export async function projectRoutes(app: FastifyInstance) {
     const query = request.query as { module?: string };
     const module = query?.module?.trim() || "claude";
 
-    const userFilter = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
-
-    const result = await dbQuery(
-      `SELECT * FROM projects WHERE module = $1 ${userFilter} ORDER BY created_at ASC`,
-      [module]
-    );
+    const result = user.role === "admin"
+      ? await dbQuery(
+          `SELECT * FROM projects WHERE module = $1 ORDER BY created_at ASC`,
+          [module]
+        )
+      : await dbQuery(
+          `SELECT * FROM projects WHERE module = $1 AND (user_id = $2 OR user_id IS NULL) ORDER BY created_at ASC`,
+          [module, user.userId]
+        );
 
     return { ok: true, projects: result.rows };
   });
@@ -47,37 +50,51 @@ export async function projectRoutes(app: FastifyInstance) {
     return { ok: true, project: result.rows[0] };
   });
 
-  app.put("/api/projects/:id", async (request, reply) => {
+  app.put<{ Params: { id: string } }>("/api/projects/:id", async (request, reply) => {
     const user = request.authUser!;
-    const params = request.params as { id: string };
+    const { id } = request.params;
     const parsed = UpdateProjectSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
     const body = parsed.data;
 
-    const ownerCheck = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
+    const updateParams = [
+      body.name ?? null,
+      body.description ?? null,
+      body.model ?? null,
+      body.system_prompt ?? null,
+      body.style ?? null,
+      body.memory ?? null,
+      body.context_files !== undefined ? JSON.stringify(body.context_files) : null,
+      id,
+    ];
 
-    const result = await dbQuery(
-      `UPDATE projects
-       SET
-         name = COALESCE($1, name),
-         description = COALESCE($2, description),
-         model = COALESCE($3, model),
-         system_prompt = COALESCE($4, system_prompt),
-         style = COALESCE($5, style),
-         memory = COALESCE($6, memory),
-         context_files = COALESCE($7, context_files)
-       WHERE id = $8 ${ownerCheck} RETURNING *`,
-      [
-        body.name ?? null,
-        body.description ?? null,
-        body.model ?? null,
-        body.system_prompt ?? null,
-        body.style ?? null,
-        body.memory ?? null,
-        body.context_files !== undefined ? JSON.stringify(body.context_files) : null,
-        params.id,
-      ]
-    );
+    const result = user.role === "admin"
+      ? await dbQuery(
+          `UPDATE projects
+           SET
+             name = COALESCE($1, name),
+             description = COALESCE($2, description),
+             model = COALESCE($3, model),
+             system_prompt = COALESCE($4, system_prompt),
+             style = COALESCE($5, style),
+             memory = COALESCE($6, memory),
+             context_files = COALESCE($7, context_files)
+           WHERE id = $8 RETURNING *`,
+          updateParams
+        )
+      : await dbQuery(
+          `UPDATE projects
+           SET
+             name = COALESCE($1, name),
+             description = COALESCE($2, description),
+             model = COALESCE($3, model),
+             system_prompt = COALESCE($4, system_prompt),
+             style = COALESCE($5, style),
+             memory = COALESCE($6, memory),
+             context_files = COALESCE($7, context_files)
+           WHERE id = $8 AND (user_id = $9 OR user_id IS NULL) RETURNING *`,
+          [...updateParams, user.userId]
+        );
 
     if (result.rows.length === 0) {
       return reply.status(404).send({ ok: false, error: "Проект не найден" });
@@ -86,19 +103,19 @@ export async function projectRoutes(app: FastifyInstance) {
     return { ok: true, project: result.rows[0] };
   });
 
-  app.delete("/api/projects/:id", async (request) => {
+  app.delete<{ Params: { id: string }; Querystring: { moveChats?: string } }>("/api/projects/:id", async (request) => {
     const user = request.authUser!;
-    const params = request.params as { id: string };
-    const query = request.query as { moveChats?: string };
-    const moveChats = query.moveChats === "true";
-    const ownerCheck = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
-
+    const { id } = request.params;
+    const { moveChats: moveChatsStr } = request.query;
+    const moveChats = moveChatsStr === "true";
     if (moveChats) {
       // Move all chats in this project to "Черновики" (project_id = null)
-      await dbQuery(`UPDATE chats SET project_id = NULL WHERE project_id = $1`, [params.id]);
+      await dbQuery(`UPDATE chats SET project_id = NULL WHERE project_id = $1`, [id]);
     }
 
-    await dbQuery(`DELETE FROM projects WHERE id = $1 ${ownerCheck}`, [params.id]);
+    user.role === "admin"
+      ? await dbQuery(`DELETE FROM projects WHERE id = $1`, [id])
+      : await dbQuery(`DELETE FROM projects WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)`, [id, user.userId]);
     return { ok: true };
   });
 }

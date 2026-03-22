@@ -392,21 +392,36 @@ export async function chatRoutes(app: FastifyInstance) {
     const mod = module ?? "claude";
 
     // Admin sees all chats; regular users see only their own (+ legacy null user_id chats)
-    const userFilter = user.role === "admin" ? "" : `AND (user_id = '${user.userId}' OR user_id IS NULL)`;
+    const isAdmin = user.role === "admin";
 
-    const result = project_id
-      ? await dbQuery(
-          `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ${userFilter} ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
-          [mod, project_id, limit, offset]
-        )
-      : await dbQuery(
-          `SELECT * FROM chats WHERE module = $1 ${userFilter} ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-          [mod, limit, offset]
-        );
-
-    const totalResult = project_id
-      ? await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2 ${userFilter}`, [mod, project_id])
-      : await dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 ${userFilter}`, [mod]);
+    const [result, totalResult] = await Promise.all([
+      project_id
+        ? isAdmin
+          ? dbQuery(
+              `SELECT * FROM chats WHERE module = $1 AND project_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+              [mod, project_id, limit, offset]
+            )
+          : dbQuery(
+              `SELECT * FROM chats WHERE module = $1 AND project_id = $2 AND (user_id = $3 OR user_id IS NULL) ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
+              [mod, project_id, user.userId, limit, offset]
+            )
+        : isAdmin
+          ? dbQuery(
+              `SELECT * FROM chats WHERE module = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+              [mod, limit, offset]
+            )
+          : dbQuery(
+              `SELECT * FROM chats WHERE module = $1 AND (user_id = $2 OR user_id IS NULL) ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+              [mod, user.userId, limit, offset]
+            ),
+      project_id
+        ? isAdmin
+          ? dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2`, [mod, project_id])
+          : dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND project_id = $2 AND (user_id = $3 OR user_id IS NULL)`, [mod, project_id, user.userId])
+        : isAdmin
+          ? dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1`, [mod])
+          : dbQuery(`SELECT COUNT(*) FROM chats WHERE module = $1 AND (user_id = $2 OR user_id IS NULL)`, [mod, user.userId]),
+    ]);
 
     return {
       ok: true,
@@ -417,8 +432,8 @@ export async function chatRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/api/chat/:chatId/messages", async (request) => {
-    const { chatId } = request.params as { chatId: string };
+  app.get<{ Params: { chatId: string } }>("/api/chat/:chatId/messages", async (request) => {
+    const { chatId } = request.params;
     const result = await dbQuery(
       `SELECT * FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC`,
       [chatId]
@@ -426,8 +441,8 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, messages: result.rows };
   });
 
-  app.patch("/api/chat/:chatId", async (request, reply) => {
-    const { chatId } = request.params as { chatId: string };
+  app.patch<{ Params: { chatId: string } }>("/api/chat/:chatId", async (request, reply) => {
+    const { chatId } = request.params;
     const parsed = UpdateChatSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
     const body = parsed.data;
@@ -451,15 +466,15 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, chat: result.rows[0] };
   });
 
-  app.delete("/api/chat/:chatId", async (request) => {
-    const { chatId } = request.params as { chatId: string };
+  app.delete<{ Params: { chatId: string } }>("/api/chat/:chatId", async (request) => {
+    const { chatId } = request.params;
     await dbQuery(`DELETE FROM chats WHERE id = $1`, [chatId]);
     return { ok: true };
   });
 
   // Edit a single message
-  app.patch("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
-    const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+  app.patch<{ Params: { chatId: string; messageId: string } }>("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
+    const { chatId, messageId } = request.params;
     const parsed = EditMessageSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
 
@@ -473,8 +488,8 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // Delete a single message
-  app.delete("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
-    const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+  app.delete<{ Params: { chatId: string; messageId: string } }>("/api/chat/:chatId/messages/:messageId", async (request, reply) => {
+    const { chatId, messageId } = request.params;
     const result = await dbQuery(
       `DELETE FROM chat_messages WHERE id = $1 AND chat_id = $2 RETURNING id`,
       [messageId, chatId]
@@ -485,7 +500,7 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // Regenerate: delete target message + all after it, then re-call KIE
-  app.post("/api/chat/:chatId/messages/:messageId/regenerate", {
+  app.post<{ Params: { chatId: string; messageId: string } }>("/api/chat/:chatId/messages/:messageId/regenerate", {
     config: {
       rateLimit: {
         max: 30,
@@ -495,7 +510,7 @@ export async function chatRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const user = request.authUser!;
-    const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+    const { chatId, messageId } = request.params;
 
     const apiKey = process.env.KIE_API_KEY;
     if (!apiKey) return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
@@ -579,7 +594,7 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
-  app.post("/api/chat/:chatId/send", {
+  app.post<{ Params: { chatId: string } }>("/api/chat/:chatId/send", {
     config: {
       rateLimit: {
         max: 30,
@@ -589,7 +604,7 @@ export async function chatRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const user = request.authUser!;
-    const { chatId } = request.params as { chatId: string };
+    const { chatId } = request.params;
     const parsed = SendMessageSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Неверные данные" });
 
