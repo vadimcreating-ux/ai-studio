@@ -9,7 +9,7 @@ COPY package.json package-lock.json ./
 
 # Install ALL deps (devDeps нужны для сборки: tsc, vite, tailwind...)
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline
+    npm ci
 
 COPY . .
 
@@ -25,7 +25,7 @@ COPY package.json package-lock.json ./
 
 # Только prod-зависимости: fastify, pg, bcryptjs, zod и плагины
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --prefer-offline
+    npm ci --omit=dev
 
 # Скомпилированный backend
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
