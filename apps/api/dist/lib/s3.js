@@ -1,17 +1,51 @@
-import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
-function createS3Client() {
-    const endpoint = process.env.TIMEWEB_S3_ENDPOINT ?? "https://s3.timeweb.cloud";
-    const region = process.env.TIMEWEB_S3_REGION ?? "ru-1";
-    return new S3Client({
-        endpoint,
-        region,
-        credentials: {
-            accessKeyId: process.env.TIMEWEB_S3_ACCESS_KEY ?? "",
-            secretAccessKey: process.env.TIMEWEB_S3_SECRET_KEY ?? "",
-        },
-        forcePathStyle: false,
-    });
+import { createHmac, createHash } from "crypto";
+// AWS Signature V4 — native fetch, no SDK needed
+function hmac(key, data) {
+    return createHmac("sha256", key).update(data).digest();
+}
+function sha256hex(data) {
+    return createHash("sha256").update(data).digest("hex");
+}
+function getSigningKey(secretKey, date, region, service) {
+    const kDate = hmac("AWS4" + secretKey, date);
+    const kRegion = hmac(kDate, region);
+    const kService = hmac(kRegion, service);
+    return hmac(kService, "aws4_request");
+}
+function signRequest(params) {
+    const { method, url, headers, body, accessKey, secretKey, region, service } = params;
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "").slice(0, 15) + "Z";
+    const dateStamp = amzDate.slice(0, 8);
+    const payloadHash = sha256hex(body);
+    const allHeaders = {
+        ...headers,
+        host: url.host,
+        "x-amz-date": amzDate,
+        "x-amz-content-sha256": payloadHash,
+    };
+    const signedHeaderNames = Object.keys(allHeaders).sort();
+    const canonicalHeaders = signedHeaderNames.map((k) => `${k}:${allHeaders[k]}`).join("\n") + "\n";
+    const signedHeaders = signedHeaderNames.join(";");
+    const canonicalUri = url.pathname;
+    const canonicalQueryString = url.searchParams.toString();
+    const canonicalRequest = [
+        method,
+        canonicalUri,
+        canonicalQueryString,
+        canonicalHeaders,
+        signedHeaders,
+        payloadHash,
+    ].join("\n");
+    const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+    const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, sha256hex(canonicalRequest)].join("\n");
+    const signingKey = getSigningKey(secretKey, dateStamp, region, service);
+    const signature = createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+    const authorization = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    return {
+        ...allHeaders,
+        authorization,
+    };
 }
 export function isS3Configured() {
     return !!(process.env.TIMEWEB_S3_ACCESS_KEY &&
@@ -20,27 +54,62 @@ export function isS3Configured() {
 }
 // Upload buffer to S3, returns public URL
 export async function uploadToS3(buffer, key, contentType) {
-    const client = createS3Client();
-    const bucket = process.env.TIMEWEB_S3_BUCKET;
-    const upload = new Upload({
-        client,
-        params: {
-            Bucket: bucket,
-            Key: key,
-            Body: buffer,
-            ContentType: contentType,
-            ACL: "public-read",
-        },
-    });
-    await upload.done();
     const endpoint = process.env.TIMEWEB_S3_ENDPOINT ?? "https://s3.timeweb.cloud";
-    // Timeweb S3 virtual-hosted URL: https://{bucket}.s3.timeweb.cloud/{key}
+    const region = process.env.TIMEWEB_S3_REGION ?? "ru-1";
+    const accessKey = process.env.TIMEWEB_S3_ACCESS_KEY;
+    const secretKey = process.env.TIMEWEB_S3_SECRET_KEY;
+    const bucket = process.env.TIMEWEB_S3_BUCKET;
     const host = new URL(endpoint).host;
-    return `https://${bucket}.${host}/${key}`;
+    const url = new URL(`https://${bucket}.${host}/${key}`);
+    const headers = signRequest({
+        method: "PUT",
+        url,
+        headers: {
+            "content-type": contentType,
+            "x-amz-acl": "public-read",
+        },
+        body: buffer,
+        accessKey,
+        secretKey,
+        region,
+        service: "s3",
+    });
+    const res = await fetch(url.toString(), {
+        method: "PUT",
+        headers,
+        body: buffer,
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`S3 upload failed: ${res.status} ${text}`);
+    }
+    return url.toString();
 }
 // Delete object from S3 by key
 export async function deleteFromS3(key) {
-    const client = createS3Client();
+    const endpoint = process.env.TIMEWEB_S3_ENDPOINT ?? "https://s3.timeweb.cloud";
+    const region = process.env.TIMEWEB_S3_REGION ?? "ru-1";
+    const accessKey = process.env.TIMEWEB_S3_ACCESS_KEY;
+    const secretKey = process.env.TIMEWEB_S3_SECRET_KEY;
     const bucket = process.env.TIMEWEB_S3_BUCKET;
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    const host = new URL(endpoint).host;
+    const url = new URL(`https://${bucket}.${host}/${key}`);
+    const headers = signRequest({
+        method: "DELETE",
+        url,
+        headers: {},
+        body: "",
+        accessKey,
+        secretKey,
+        region,
+        service: "s3",
+    });
+    const res = await fetch(url.toString(), {
+        method: "DELETE",
+        headers,
+    });
+    if (!res.ok && res.status !== 204) {
+        const text = await res.text();
+        throw new Error(`S3 delete failed: ${res.status} ${text}`);
+    }
 }

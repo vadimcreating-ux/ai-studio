@@ -20,6 +20,7 @@ export const SendMessageSchema = z.object({
     message: z.string().trim().min(1).max(100_000),
     files: z.array(KieFileSchema).max(10).optional(),
     webSearch: z.boolean().optional(),
+    thinking: z.boolean().optional(),
 });
 export const EditMessageSchema = z.object({
     content: z.string().trim().min(1).max(100_000),
@@ -86,4 +87,14 @@ export const AdminUpdateCreditPriceSchema = z.object({
 });
 export const AdminUpdateStorageSchema = z.object({
     storage_quota_mb: z.number().int().min(0).max(100_000),
+});
+export const AdminCreateUserSchema = z.object({
+    email: z.string().trim().email().max(255),
+    password: z.string().min(8).max(128),
+    name: z.string().trim().min(1).max(100),
+    role: z.enum(["admin", "user"]).default("user"),
+    credits_balance: z.number().int().min(0).default(0),
+});
+export const AdminResetPasswordSchema = z.object({
+    new_password: z.string().min(8).max(128),
 });

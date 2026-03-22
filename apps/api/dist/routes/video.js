@@ -1,31 +1,29 @@
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { saveVideoToFiles, deleteFileById } from "../lib/files-store.js";
-// Charge based on KIE's actual consumption × markup
-async function chargeKieCredits(userId, kieCredits, operation) {
-    if (kieCredits <= 0)
-        return 0;
-    let markupPercent = 0;
-    try {
-        const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
-        markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-    }
-    catch { /* column might not exist yet */ }
-    const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
-    await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2", [amount, userId]);
-    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Генерация ${operation}`]);
-    return amount;
+import { atomicDeduct, refundCredits, lookupPrice, spendCredits, getBalance } from "../lib/credits.js";
+function sanitizeKey(s) {
+    return s.replace(/[^a-zA-Z0-9\-]/g, "_");
 }
 const KLING_MODELS = new Set(["kling-3.0/motion-control"]);
 const KIE_BASE_URL = "https://api.kie.ai";
-const videoPromptStore = new Map();
+const videoTaskStore = new Map();
 export async function videoRoutes(app) {
     app.addHook("preHandler", authenticate);
-    // Генерация видео — 5 запросов в минуту (очень дорогая операция)
-    app.post("/api/video/generate", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+    // Генерация видео — 5 запросов в минуту per user
+    app.post("/api/video/generate", {
+        config: {
+            rateLimit: {
+                max: 5,
+                timeWindow: "1 minute",
+                keyGenerator: (req) => req.authUser?.userId || req.ip,
+            },
+        },
+    }, async (request, reply) => {
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
+        const userId = request.authUser?.userId;
         const model = body?.model?.trim() || "sora-2-pro-image-to-video";
         const isKling = KLING_MODELS.has(model);
         if (!apiKey) {
@@ -34,6 +32,23 @@ export async function videoRoutes(app) {
         // Kling: prompt is optional; Sora: required
         if (!isKling && !prompt) {
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
+        }
+        // ── Pre-deduct credits before calling KIE ────────────────────────────────
+        const mk = sanitizeKey(model);
+        const priceKeys = [`video_${mk}`, "video_generate"];
+        const price = await lookupPrice(priceKeys);
+        let chargedAmount = 0;
+        let operationKey = `video_${mk}`;
+        if (price && userId) {
+            chargedAmount = price.chargeAmount;
+            operationKey = price.operationKey;
+            const deducted = await atomicDeduct(userId, chargedAmount, operationKey, `Генерация видео (${model})`, { kieAmount: 0, markupPercent: price.markupPercent });
+            if (deducted === 0) {
+                return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
+            }
+        }
+        else if (!price && userId) {
+            return reply.status(402).send({ ok: false, error: "Для этой модели не установлена цена. Обратитесь к администратору." });
         }
         const input = {};
         if (prompt)
@@ -72,6 +87,9 @@ export async function videoRoutes(app) {
             const createData = await createResponse.json();
             if (!createResponse.ok || createData?.code !== 200 || !createData?.data?.taskId) {
                 console.error("KIE video create error:", createResponse.status, JSON.stringify(createData));
+                if (userId && chargedAmount > 0) {
+                    await refundCredits(userId, chargedAmount, operationKey, `Возврат: KIE отклонил задачу (${model})`);
+                }
                 return reply.status(500).send({
                     ok: false,
                     error: createData?.message || "KIE не вернул taskId",
@@ -79,10 +97,13 @@ export async function videoRoutes(app) {
             }
             const taskId = createData.data.taskId;
             if (taskId)
-                videoPromptStore.set(taskId, prompt ?? "");
+                videoTaskStore.set(taskId, { prompt: prompt || undefined, model, chargedAmount, operationKey });
             return { ok: true, taskId };
         }
         catch {
+            if (userId && chargedAmount > 0) {
+                await refundCredits(userId, chargedAmount, operationKey, `Возврат: ошибка при создании задачи (${model})`).catch(() => { });
+            }
             return reply.status(500).send({ ok: false, error: "Не удалось создать задачу в KIE" });
         }
     });
@@ -100,49 +121,23 @@ export async function videoRoutes(app) {
         try {
             const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, { headers: { Authorization: `Bearer ${apiKey}` } });
             const statusData = await statusResponse.json();
-            if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
+            const kieData = statusData.data;
+            if (!statusResponse.ok || statusData.code !== 200 || !kieData) {
                 return reply.status(500).send({
                     ok: false,
-                    error: statusData?.message || "Не удалось получить статус задачи",
+                    error: statusData.message || "Не удалось получить статус задачи",
                 });
             }
-            const data = statusData.data;
-            const state = data.state ?? "waiting";
+            const state = kieData.state ?? "waiting";
             let videoUrl = "";
-            if (data.resultJson) {
+            if (kieData.resultJson) {
                 try {
-                    const parsed = JSON.parse(data.resultJson);
+                    const parsed = JSON.parse(kieData.resultJson);
                     videoUrl = parsed.resultUrls?.[0] ?? parsed.videoUrl ?? "";
                 }
                 catch {
                     // ignore
                 }
-            }
-            if (state === "success" && videoUrl) {
-                const resolvedTaskId = data.taskId ?? taskId;
-                const userId = request.authUser?.userId;
-                const kieCredits = typeof data.credits === "number" ? data.credits : 0;
-                try {
-                    const { isNew } = await saveVideoToFiles({
-                        taskId: resolvedTaskId,
-                        url: videoUrl,
-                        prompt: videoPromptStore.get(taskId),
-                        userId,
-                    });
-                    if (isNew && userId) {
-                        const spent = await chargeKieCredits(userId, kieCredits, "video_generate");
-                        if (spent > 0) {
-                            await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
-                        }
-                    }
-                }
-                catch (err) {
-                    if (err.message?.includes("хранилище")) {
-                        return reply.status(507).send({ ok: false, error: err.message });
-                    }
-                    console.error("saveVideoToFiles failed:", err.message);
-                }
-                videoPromptStore.delete(taskId);
             }
             const statusMap = {
                 waiting: "GENERATING",
@@ -151,14 +146,53 @@ export async function videoRoutes(app) {
                 success: "SUCCESS",
                 fail: "FAILED",
             };
+            const mappedStatus = statusMap[state] ?? "GENERATING";
+            if (state === "success" && videoUrl) {
+                const resolvedTaskId = kieData.taskId ?? taskId;
+                const userId = request.authUser?.userId;
+                const meta = videoTaskStore.get(taskId) ?? { model: "sora-2-pro-image-to-video", chargedAmount: 0, operationKey: "video_generate" };
+                try {
+                    const { isNew } = await saveVideoToFiles({
+                        taskId: resolvedTaskId,
+                        url: videoUrl,
+                        prompt: meta.prompt,
+                        userId,
+                    });
+                    if (isNew && meta.chargedAmount > 0) {
+                        // Credits pre-charged at /generate time — record on the file
+                        await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [meta.chargedAmount, resolvedTaskId]);
+                        app.log.info({ taskId, model: meta.model, charged: meta.chargedAmount }, "video credited");
+                    }
+                }
+                catch (err) {
+                    if (err.message?.includes("хранилище")) {
+                        const userId2 = request.authUser?.userId;
+                        if (userId2 && meta.chargedAmount > 0) {
+                            await refundCredits(userId2, meta.chargedAmount, meta.operationKey, `Возврат: превышена квота хранилища`).catch(() => { });
+                        }
+                        return reply.status(507).send({ ok: false, error: err.message });
+                    }
+                    console.error("saveVideoToFiles failed:", err.message);
+                }
+                videoTaskStore.delete(taskId);
+            }
+            else if (mappedStatus === "FAILED") {
+                const userId = request.authUser?.userId;
+                const meta = videoTaskStore.get(taskId);
+                if (userId && meta?.chargedAmount && meta.chargedAmount > 0) {
+                    await refundCredits(userId, meta.chargedAmount, meta.operationKey, `Возврат: задача завершилась с ошибкой (${meta.model})`).catch(() => { });
+                    app.log.info({ taskId, refunded: meta.chargedAmount }, "video generation failed — credits refunded");
+                }
+                videoTaskStore.delete(taskId);
+            }
             return {
                 ok: true,
-                taskId: data.taskId ?? taskId,
+                taskId: kieData.taskId ?? taskId,
                 state,
-                status: statusMap[state] ?? "GENERATING",
+                status: mappedStatus,
                 videoUrl,
-                progress: data.progress ?? 0,
-                errorMessage: data.failMsg || "",
+                progress: kieData.progress ?? 0,
+                errorMessage: kieData.failMsg || "",
             };
         }
         catch {
@@ -233,15 +267,32 @@ export async function videoRoutes(app) {
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
         if (!prompt)
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
-        const systemMessage = `Ты — эксперт по составлению промптов для генерации видео с помощью ИИ (Sora).
-Твоя задача: взять описание пользователя и превратить его в детальный, кинематографический промпт для видео.
+        const userId = request.authUser?.userId;
+        if (userId) {
+            const balance = await getBalance(userId);
+            if (balance <= 0)
+                return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
+        }
+        const systemMessage = `Ты — эксперт по prompt engineering для генерации видео с помощью ИИ (Sora, Kling, Runway).
+Твоя задача: взять исходный запрос пользователя и создать профессиональный видео-промпт, который даст кинематографический результат.
+
+Структура профессионального видео-промпта:
+1. СЦЕНА — главный субъект, место действия, начальное состояние
+2. ОПИСАТЕЛЬНЫЕ ДЕТАЛИ — цвета, текстуры, материалы, детали окружения, внешний вид объектов
+3. ДВИЖЕНИЕ СУБЪЕКТА — что и как движется внутри кадра, динамика действия
+4. ДВИЖЕНИЕ КАМЕРЫ — тип съёмки (дрон-шот, слежение, статика, зум, панорама)
+5. ОСВЕЩЕНИЕ И АТМОСФЕРА — световые условия, настроение, цветовая гамма
+6. СТИЛЬ — кинематографический стиль, жанр, референс (документальный, художественный, реклама)
+7. ТЕМП И ДЛИТЕЛЬНОСТЬ — медленное/быстрое движение, ритм монтажа
+8. КАЧЕСТВО — технические модификаторы (4K, кинескоп, HDR, cinematic LUT)
+
 Правила:
-- Пиши улучшенный промпт ТОЛЬКО на русском языке
-- Добавляй конкретные детали: движение камеры, освещение, динамика, стиль, настроение, скорость
-- Добавляй кинематографические термины: "плавный дрон-шот", "крупный план", "медленное движение", "кинематографическое освещение"
-- Описывай движение в кадре: что и как двигается, как меняется сцена
-- Объём: 2–4 предложения, ёмко и описательно
-- Верни ТОЛЬКО текст улучшенного промпта — без пояснений, без заголовков`;
+- Пиши промпт ТОЛЬКО на русском языке
+- Используй конкретные профессиональные кинотермины
+- Описывай динамику: как сцена меняется от начала к концу
+- Добавляй детали которых нет в исходнике, но которые усилят кинематографичность
+- Объём: 3–5 предложений, структурированно и ёмко
+- Верни ТОЛЬКО текст готового промпта — без пояснений, без заголовков, без нумерации`;
         try {
             const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
                 method: "POST",
@@ -258,6 +309,10 @@ export async function videoRoutes(app) {
             const improved = kieData.choices?.[0]?.message?.content?.trim();
             if (!improved) {
                 return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
+            }
+            if (userId) {
+                const kieCredits = typeof kieData.credits_consumed === "number" ? kieData.credits_consumed : 0;
+                await spendCredits(userId, kieCredits, "prompt_improve").catch(() => { });
             }
             return { ok: true, improvedPrompt: improved };
         }

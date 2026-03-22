@@ -2,34 +2,37 @@ import { saveImageToFiles, getFiles, deleteFileById, } from "../lib/files-store.
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
 import { FilesQuerySchema } from "../lib/validation.js";
+import { uploadToS3, isS3Configured } from "../lib/s3.js";
+import { atomicDeduct, refundCredits, lookupPrice, spendCredits, getBalance } from "../lib/credits.js";
 const KIE_BASE_URL = "https://api.kie.ai";
-const imagePromptStore = new Map();
-// Charge based on KIE's actual consumption × markup (same pattern as chat's spendCredits)
-async function chargeKieCredits(userId, kieCredits, operation) {
-    if (kieCredits <= 0)
-        return 0;
-    let markupPercent = 0;
-    try {
-        const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
-        markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
-    }
-    catch { /* column might not exist yet */ }
-    const amount = Math.round(kieCredits * (1 + markupPercent / 100) * 10000) / 10000;
-    await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2", [amount, userId]);
-    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Генерация ${operation}`]);
-    return amount;
+// Sanitize model name for use as DB operation key
+function sanitizeKey(s) {
+    return s.replace(/[^a-zA-Z0-9\-]/g, "_");
 }
+const imageTaskStore = new Map();
 export async function imageRoutes(app) {
     app.addHook("preHandler", authenticate);
-    // Генерация изображения — 10 запросов в минуту (дорогая операция)
-    app.post("/api/image/generate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    // Генерация изображения — 10 запросов в минуту per user
+    app.post("/api/image/generate", {
+        config: {
+            rateLimit: {
+                max: 10,
+                timeWindow: "1 minute",
+                keyGenerator: (req) => req.authUser?.userId || req.ip,
+            },
+        },
+    }, async (request, reply) => {
         const body = request.body;
         const apiKey = process.env.KIE_API_KEY;
-        if (!apiKey) {
+        if (!apiKey)
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-        }
+        const userId = request.authUser?.userId;
         const model = body?.model?.trim() || "nano-banana-pro";
         const isTopaz = model === "topaz/image-upscale";
+        // For Topaz: use upscale_factor as resolution key (for per-factor pricing)
+        const resolution = isTopaz
+            ? (body?.upscale_factor?.trim() || "2")
+            : (body?.resolution?.trim() || "1K");
         const isRecraft = model === "recraft/remove-background";
         const isIdeogram = model === "ideogram/v3-reframe";
         const isSeedream = model === "seedream/4.5-edit";
@@ -40,6 +43,25 @@ export async function imageRoutes(app) {
         }
         if (isUrlOnly && !body?.image_url?.trim()) {
             return reply.status(400).send({ ok: false, error: "Укажите image_url" });
+        }
+        // ── Pre-deduct credits before calling KIE ────────────────────────────────
+        const mk = sanitizeKey(model);
+        const rk = sanitizeKey(resolution);
+        const priceKeys = [`image_${mk}_${rk}`, `image_${mk}`, "image_generate"];
+        const price = await lookupPrice(priceKeys);
+        let chargedAmount = 0;
+        let operationKey = `image_${mk}`;
+        if (price && userId) {
+            chargedAmount = price.chargeAmount;
+            operationKey = price.operationKey;
+            const deducted = await atomicDeduct(userId, chargedAmount, operationKey, `Генерация изображения (${model})`, { kieAmount: 0, markupPercent: price.markupPercent });
+            if (deducted === 0) {
+                return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
+            }
+        }
+        else if (!price && userId) {
+            // Model not priced — reject to prevent free generation
+            return reply.status(402).send({ ok: false, error: "Для этой модели не установлена цена. Обратитесь к администратору." });
         }
         let input;
         if (isTopaz) {
@@ -71,10 +93,24 @@ export async function imageRoutes(app) {
                     input.quality = body.quality;
             }
             else {
-                if (body?.image_input?.length)
-                    input.image_input = body.image_input;
-                if (body?.resolution)
-                    input.resolution = body.resolution;
+                if (body?.image_input?.length) {
+                    if (!isS3Configured()) {
+                        return reply.status(400).send({ ok: false, error: "Загрузка референс-изображений требует настройки S3-хранилища" });
+                    }
+                    const uploadedUrls = await Promise.all(body.image_input.map(async (dataUrl, idx) => {
+                        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+                        if (!match)
+                            throw new Error(`image_input[${idx}]: не data URL`);
+                        const [, mimeType, b64] = match;
+                        const ext = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+                        const key = `ref-images/${Date.now()}-${idx}.${ext}`;
+                        const buffer = Buffer.from(b64, "base64");
+                        return uploadToS3(buffer, key, mimeType);
+                    }));
+                    input.image_input = uploadedUrls;
+                }
+                if (resolution)
+                    input.resolution = resolution;
                 if (body?.output_format)
                     input.output_format = body.output_format;
             }
@@ -91,6 +127,10 @@ export async function imageRoutes(app) {
             const createData = await createResponse.json();
             if (!createResponse.ok || createData?.code !== 200 || !createData?.data?.taskId) {
                 console.error("KIE image create error:", createResponse.status, JSON.stringify(createData));
+                // Refund pre-charged credits — KIE rejected the task
+                if (userId && chargedAmount > 0) {
+                    await refundCredits(userId, chargedAmount, operationKey, `Возврат: KIE отклонил задачу (${model})`);
+                }
                 return reply.status(500).send({
                     ok: false,
                     error: createData?.message || "KIE не вернул taskId",
@@ -98,11 +138,14 @@ export async function imageRoutes(app) {
                 });
             }
             const taskId = createData.data.taskId;
-            if (prompt)
-                imagePromptStore.set(taskId, prompt);
+            imageTaskStore.set(taskId, { prompt: prompt || undefined, model, resolution, chargedAmount, operationKey });
             return { ok: true, taskId };
         }
-        catch {
+        catch (err) {
+            // Refund on unexpected error
+            if (userId && chargedAmount > 0) {
+                await refundCredits(userId, chargedAmount, operationKey, `Возврат: ошибка при создании задачи (${model})`).catch(() => { });
+            }
             return reply.status(500).send({ ok: false, error: "Не удалось создать задачу в KIE" });
         }
     });
@@ -111,77 +154,82 @@ export async function imageRoutes(app) {
         const query = request.query;
         const taskId = query?.taskId?.trim();
         const apiKey = process.env.KIE_API_KEY;
-        if (!apiKey) {
+        if (!apiKey)
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-        }
-        if (!taskId) {
+        if (!taskId)
             return reply.status(400).send({ ok: false, error: "Не передан taskId" });
-        }
         try {
-            const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
-                headers: { Authorization: `Bearer ${apiKey}` },
-            });
+            const statusResponse = await fetch(`${KIE_BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, { headers: { Authorization: `Bearer ${apiKey}` } });
             const statusData = await statusResponse.json();
-            if (!statusResponse.ok || statusData?.code !== 200 || !statusData?.data) {
+            const kieData = statusData.data;
+            if (!statusResponse.ok || statusData.code !== 200 || !kieData) {
                 console.error("KIE image status error:", statusResponse.status, JSON.stringify(statusData));
                 return reply.status(500).send({
                     ok: false,
-                    error: statusData?.message || "Не удалось получить статус задачи",
+                    error: statusData.message || "Не удалось получить статус задачи",
                 });
             }
-            const data = statusData.data;
-            const state = data.state ?? "waiting";
-            // Parse resultJson string to get image URLs
+            const state = kieData.state ?? "waiting";
             let resultImageUrl = "";
-            if (data.resultJson) {
+            if (kieData.resultJson) {
                 try {
-                    const parsed = JSON.parse(data.resultJson);
+                    const parsed = JSON.parse(kieData.resultJson);
                     resultImageUrl = parsed.resultUrls?.[0] ?? "";
                 }
-                catch {
-                    // ignore parse error
-                }
+                catch { /* ignore */ }
             }
+            const generatingStates = new Set(["waiting", "queuing", "generating"]);
+            const mappedStatus = state === "success"
+                ? "SUCCESS"
+                : generatingStates.has(state)
+                    ? "GENERATING"
+                    : "FAILED";
             if (state === "success" && resultImageUrl) {
-                const resolvedTaskId = data.taskId ?? taskId;
+                const resolvedTaskId = kieData.taskId ?? taskId;
                 const userId = request.authUser?.userId;
-                const kieCredits = typeof data.credits === "number" ? data.credits : 0;
+                const meta = imageTaskStore.get(taskId) ?? { model: "unknown", resolution: "1K", chargedAmount: 0, operationKey: "image_generate" };
                 try {
                     const { isNew } = await saveImageToFiles({
                         taskId: resolvedTaskId,
                         url: resultImageUrl,
-                        prompt: imagePromptStore.get(taskId) || undefined,
+                        prompt: meta.prompt,
                         userId,
                     });
-                    if (isNew && userId) {
-                        const spent = await chargeKieCredits(userId, kieCredits, "image_generate");
-                        if (spent > 0) {
-                            await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [spent, resolvedTaskId]);
-                        }
+                    if (isNew && meta.chargedAmount > 0) {
+                        // Credits were pre-charged at /generate time — just record the amount on the file
+                        await dbQuery("UPDATE files SET credits_spent = $1 WHERE task_id = $2", [meta.chargedAmount, resolvedTaskId]);
+                        app.log.info({ taskId, model: meta.model, resolution: meta.resolution, charged: meta.chargedAmount }, "image credited");
                     }
                 }
                 catch (err) {
                     if (err.message?.includes("хранилище")) {
+                        // Storage quota exceeded — refund the pre-charged credits
+                        if (userId && meta.chargedAmount > 0) {
+                            await refundCredits(userId, meta.chargedAmount, meta.operationKey, `Возврат: превышена квота хранилища`).catch(() => { });
+                        }
                         return reply.status(507).send({ ok: false, error: err.message });
                     }
                     console.error("saveImageToFiles failed:", err.message);
                 }
-                imagePromptStore.delete(taskId);
+                imageTaskStore.delete(taskId);
             }
-            const statusMap = {
-                waiting: "GENERATING",
-                queuing: "GENERATING",
-                generating: "GENERATING",
-                success: "SUCCESS",
-                fail: "FAILED",
-            };
+            else if (mappedStatus === "FAILED") {
+                // Task failed — refund pre-charged credits
+                const userId = request.authUser?.userId;
+                const meta = imageTaskStore.get(taskId);
+                if (userId && meta?.chargedAmount && meta.chargedAmount > 0) {
+                    await refundCredits(userId, meta.chargedAmount, meta.operationKey, `Возврат: задача завершилась с ошибкой (${meta.model})`).catch(() => { });
+                    app.log.info({ taskId, refunded: meta.chargedAmount }, "image generation failed — credits refunded");
+                }
+                imageTaskStore.delete(taskId);
+            }
             return {
                 ok: true,
-                taskId: data.taskId ?? taskId,
+                taskId: kieData.taskId ?? taskId,
                 state,
-                status: statusMap[state] ?? "GENERATING",
+                status: mappedStatus,
                 imageUrl: resultImageUrl,
-                errorMessage: data.failMsg || "",
+                errorMessage: kieData.failMsg || (mappedStatus === "FAILED" ? `Задача завершилась со статусом: ${state}` : ""),
             };
         }
         catch {
@@ -193,14 +241,12 @@ export async function imageRoutes(app) {
         const query = request.query;
         const fileUrl = query?.url?.trim();
         const fileName = (query?.name?.trim() || "generated-image.png").replace(/[^a-zA-Z0-9._-]/g, "_");
-        if (!fileUrl) {
+        if (!fileUrl)
             return reply.status(400).send({ ok: false, error: "Не передан url файла" });
-        }
         try {
             const fileResponse = await fetch(fileUrl);
-            if (!fileResponse.ok) {
+            if (!fileResponse.ok)
                 return reply.status(500).send({ ok: false, error: "Не удалось скачать файл" });
-            }
             const contentType = fileResponse.headers.get("content-type") || "application/octet-stream";
             const buffer = Buffer.from(await fileResponse.arrayBuffer());
             reply
@@ -227,27 +273,39 @@ export async function imageRoutes(app) {
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
-        if (!apiKey) {
+        if (!apiKey)
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-        }
-        if (!prompt) {
+        if (!prompt)
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
+        const userId = request.authUser?.userId;
+        if (userId) {
+            const balance = await getBalance(userId);
+            if (balance <= 0)
+                return reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс." });
         }
-        const systemMessage = `Ты — эксперт по составлению промптов для генерации изображений с помощью ИИ.
-Твоя задача: взять описание пользователя и превратить его в детальный, профессиональный промпт.
+        const systemMessage = `Ты — эксперт по prompt engineering для генерации изображений с помощью ИИ (Midjourney, Stable Diffusion, DALL-E, Flux).
+Твоя задача: взять исходный запрос пользователя и создать профессиональный промпт, который даст наилучший результат.
+
+Структура профессионального промпта:
+1. СУБЪЕКТ — чёткое описание главного объекта/сцены/персонажа
+2. ДЕЙСТВИЕ/СОСТОЯНИЕ — что происходит, поза, эмоция
+3. СРЕДА — место, время суток, обстановка
+4. ОПИСАТЕЛЬНЫЕ ДЕТАЛИ — цвета, текстуры, материалы, фактуры, детали одежды/поверхностей/объектов
+5. СТИЛЬ — художественный стиль, референсные художники или эпоха
+6. ОСВЕЩЕНИЕ — тип и характер света (золотой час, студийный свет, неон и т.п.)
+7. КАМЕРА — ракурс, план, объектив, глубина резкости
+8. КАЧЕСТВО — технические модификаторы (фотореализм, 8K, award-winning photography и т.п.)
+
 Правила:
-- Пиши улучшенный промпт ТОЛЬКО на русском языке
-- Добавляй конкретные детали: освещение, стиль, ракурс камеры, настроение, цвета, текстуры, художественный стиль
-- Добавляй технические параметры: "фотореализм", "кинематографическое освещение", "высокая детализация" и т.п.
-- Объём: 2–4 предложения, ёмко и описательно
-- Верни ТОЛЬКО текст улучшенного промпта — без пояснений, без заголовков`;
+- Пиши промпт ТОЛЬКО на русском языке
+- Используй конкретные профессиональные термины из индустрии
+- Добавляй детали которых нет в исходнике, но которые усилят результат
+- Объём: 3–5 предложений, структурированно и ёмко
+- Верни ТОЛЬКО текст готового промпта — без пояснений, без заголовков, без нумерации`;
         try {
             const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
+                headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
                     messages: [
                         { role: "system", content: [{ type: "text", text: systemMessage }] },
@@ -262,6 +320,10 @@ export async function imageRoutes(app) {
                 console.error("KIE improve-prompt error:", JSON.stringify(kieData));
                 return reply.status(500).send({ ok: false, error: kieData.error?.message || "Не удалось улучшить промпт" });
             }
+            if (userId) {
+                const kieCredits = typeof kieData.credits_consumed === "number" ? kieData.credits_consumed : 0;
+                await spendCredits(userId, kieCredits, "prompt_improve").catch(() => { });
+            }
             return { ok: true, improvedPrompt: improved };
         }
         catch {
@@ -273,12 +335,10 @@ export async function imageRoutes(app) {
         const body = request.body;
         const prompt = body?.prompt?.trim();
         const apiKey = process.env.KIE_API_KEY;
-        if (!apiKey) {
+        if (!apiKey)
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
-        }
-        if (!prompt) {
+        if (!prompt)
             return reply.status(400).send({ ok: false, error: "Введите prompt" });
-        }
         const systemMessage = `You are a professional translator specializing in AI image generation prompts.
 Translate the given text to English accurately and naturally.
 Rules:
@@ -288,10 +348,7 @@ Rules:
         try {
             const kieResponse = await fetch(`${KIE_BASE_URL}/gpt-5-2/v1/chat/completions`, {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
+                headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
                     messages: [
                         { role: "system", content: [{ type: "text", text: systemMessage }] },
@@ -316,13 +373,11 @@ Rules:
     app.delete("/api/files/:id", async (request, reply) => {
         const params = request.params;
         const id = params?.id?.trim();
-        if (!id) {
+        if (!id)
             return reply.status(400).send({ ok: false, error: "Не передан id файла" });
-        }
         const deleted = await deleteFileById(id, request.authUser?.userId);
-        if (!deleted) {
+        if (!deleted)
             return reply.status(404).send({ ok: false, error: "Файл не найден" });
-        }
         return { ok: true, id };
     });
     // Шаблоны промптов для изображений
@@ -334,18 +389,16 @@ Rules:
         const body = request.body;
         const title = body?.title?.trim();
         const text = body?.text?.trim();
-        if (!title || !text) {
+        if (!title || !text)
             return reply.status(400).send({ ok: false, error: "title и text обязательны" });
-        }
         const result = await dbQuery(`INSERT INTO image_prompt_templates (title, text) VALUES ($1, $2) RETURNING *`, [title, text]);
         return { ok: true, template: result.rows[0] };
     });
     app.delete("/api/image-templates/:id", async (request, reply) => {
         const params = request.params;
         const result = await dbQuery(`DELETE FROM image_prompt_templates WHERE id = $1`, [params.id]);
-        if ((result.rowCount ?? 0) === 0) {
+        if ((result.rowCount ?? 0) === 0)
             return reply.status(404).send({ ok: false, error: "Шаблон не найден" });
-        }
         return { ok: true };
     });
 }

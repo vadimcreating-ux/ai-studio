@@ -1,33 +1,39 @@
 import { dbQuery } from "../lib/db.js";
 import { authenticate } from "../lib/auth.js";
+import { atomicDeduct, getBalance } from "../lib/credits.js";
 import { CreateChatSchema, UpdateChatSchema, SendMessageSchema, EditMessageSchema, ChatListQuerySchema, } from "../lib/validation.js";
-// Check balance > 0 before KIE call. Returns false and sends error if insufficient.
+// Quick non-atomic balance check for early rejection (UX only).
+// Actual protection is in spendCredits → atomicDeduct.
 async function checkCredits(userId, reply) {
-    const result = await dbQuery("SELECT credits_balance FROM users WHERE id = $1", [userId]);
-    const balance = Number(result.rows[0]?.credits_balance ?? 0);
+    const balance = await getBalance(userId);
     if (balance <= 0) {
         reply.status(402).send({ ok: false, error: "Недостаточно кредитов. Пополните баланс в настройках аккаунта." });
         return false;
     }
     return true;
 }
-// Deduct exact amount returned by KIE (with admin markup) and record transaction.
-// Returns the actual amount deducted (rounded to 4 decimal places).
+// Atomically deduct KIE credits × markup. Returns 0 if balance insufficient.
+// Since chat amount is known only after KIE response, we allow small overdraft
+// (balance >= 0 was verified at start; tiny race window is acceptable for chat).
 async function spendCredits(userId, kieAmount, operation) {
     if (kieAmount <= 0)
         return 0;
-    // Graceful fallback if markup_percent column is not yet migrated on prod
     let markupPercent = 0;
     try {
         const priceRes = await dbQuery("SELECT markup_percent FROM credit_prices WHERE operation = $1", [operation]);
         markupPercent = Number(priceRes.rows[0]?.markup_percent ?? 0);
     }
-    catch {
-        // column might not exist yet — proceed with 0% markup
-    }
+    catch { /* column might not exist yet */ }
     const amount = Math.round(kieAmount * (1 + markupPercent / 100) * 10000) / 10000;
+    // Try atomic deduction (no overdraft)
+    const deducted = await atomicDeduct(userId, amount, operation, `Запрос к ${operation}`);
+    if (deducted > 0)
+        return deducted;
+    // Balance went to zero between check and deduction (race window).
+    // Force-deduct to avoid denying an already-processed KIE response.
+    // This creates at most one message worth of debt (< 1 credit typically).
     await dbQuery("UPDATE users SET credits_balance = credits_balance - $1 WHERE id = $2", [amount, userId]);
-    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Запрос к ${operation}`]);
+    await dbQuery("INSERT INTO credit_transactions (user_id, amount, type, operation, description) VALUES ($1, $2, 'spend', $3, $4)", [userId, -amount, operation, `Запрос к ${operation} (принудительно)`]);
     return amount;
 }
 const KIE_BASE_URL = "https://api.kie.ai";
@@ -82,12 +88,12 @@ async function fetchUrlContent(url) {
 function extractUrls(text) {
     return [...new Set(text.match(URL_REGEX) ?? [])];
 }
-async function callKieAI({ module, model, systemText, history, userText, files, webSearch, apiKey, log, }) {
+async function callKieAI({ module, model, systemText, history, userText, files, webSearch, thinking, apiKey, log, }) {
     // Retry up to 2 extra times on transient KIE 500
     const KIE_RETRY_DELAYS = [3000, 6000];
     let lastResult = null;
     for (let attempt = 0; attempt <= KIE_RETRY_DELAYS.length; attempt++) {
-        lastResult = await callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, apiKey, log });
+        lastResult = await callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, thinking, apiKey, log });
         if (!("error" in lastResult))
             return lastResult; // success
         if (attempt < KIE_RETRY_DELAYS.length) {
@@ -97,7 +103,7 @@ async function callKieAI({ module, model, systemText, history, userText, files, 
     }
     return lastResult;
 }
-async function callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, apiKey, log, }) {
+async function callKieAIOnce({ module, model, systemText, history, userText, files, webSearch, thinking, apiKey, log, }) {
     if (module === "claude") {
         const messages = history.map((r) => ({ role: r.role, content: r.content }));
         // Build current user content block (text + optional files)
@@ -119,20 +125,16 @@ async function callKieAIOnce({ module, model, systemText, history, userText, fil
         else {
             messages.push({ role: "user", content: userText });
         }
-        const requestBody = { model, messages, stream: false };
+        const requestBody = {
+            model,
+            messages,
+            stream: false,
+        };
         if (systemText)
             requestBody.system = systemText;
-        if (webSearch) {
-            requestBody.tools = [{
-                    name: "googleSearch",
-                    description: "Search the internet for current information",
-                    input_schema: {
-                        type: "object",
-                        properties: { query: { type: "string", description: "Search query" } },
-                        required: ["query"],
-                    },
-                }];
-        }
+        if (thinking)
+            requestBody.thinkingFlag = true;
+        log.info(`kie.ai claude request: model=${model} msgs=${messages.length} sysLen=${systemText?.length ?? 0}`);
         const res = await fetch(`${KIE_BASE_URL}/claude/v1/messages`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
@@ -158,23 +160,31 @@ async function callKieAIOnce({ module, model, systemText, history, userText, fil
             log.error(`kie.ai claude JSON parse error: ${e}. Raw: ${raw.slice(0, 500)}`);
             return { error: "Неверный формат ответа от kie.ai", status: 502 };
         }
+        // KIE may return HTTP 200 with an error inside
         if (typeof data.code === "number" && data.code !== 200) {
             return { error: `Ошибка kie.ai: ${data.msg} (code ${data.code})`, status: 502 };
         }
+        // Extract text and thinking blocks from content
         const blocks = data.content;
         let reply = "";
+        let thinkingContent = "";
         if (Array.isArray(blocks)) {
-            reply = blocks
+            const typed = blocks;
+            thinkingContent = typed
+                .filter((b) => b.type === "thinking" && b.thinking)
+                .map((b) => b.thinking ?? "")
+                .join("").trim();
+            reply = typed
                 .filter((b) => b.type === "text" && b.text)
                 .map((b) => b.text ?? "")
                 .join("").trim();
         }
         if (!reply) {
-            log.error(`kie.ai claude empty. Full: ${raw.slice(0, 2000)}`);
+            log.error(`kie.ai claude no text content. stop_reason=${data.stop_reason}. Full: ${raw.slice(0, 2000)}`);
             return { error: "Пустой ответ от kie.ai", status: 502 };
         }
-        const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
-        return { reply, creditsConsumed };
+        const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
+        return { reply, thinkingContent: thinkingContent || undefined, creditsConsumed };
     }
     else {
         const messages = [];
@@ -202,10 +212,15 @@ async function callKieAIOnce({ module, model, systemText, history, userText, fil
         else {
             messages.push({ role: "user", content: [{ type: "text", text: userText }] });
         }
+        const reqBody = { messages, stream: false };
+        if (thinking && model === "gemini-3.1-pro") {
+            reqBody.include_thoughts = true;
+            reqBody.reasoning_effort = "high";
+        }
         const res = await fetch(`${KIE_BASE_URL}/${model}/v1/chat/completions`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-            body: JSON.stringify({ messages, stream: false }),
+            body: JSON.stringify(reqBody),
             signal: AbortSignal.timeout(120000),
         });
         if (!res.ok) {
@@ -236,8 +251,37 @@ async function callKieAIOnce({ module, model, systemText, history, userText, fil
             log.error(`kie.ai ${module} empty. Full: ${raw.slice(0, 2000)}`);
             return { error: "Пустой ответ от kie.ai", status: 502 };
         }
-        const creditsConsumed = typeof data.credits_consumed === "number" ? data.credits_consumed : 0;
+        const creditsConsumed = Number(data.credits_consumed ?? 0) || 0;
         return { reply, creditsConsumed };
+    }
+}
+// ─── Auto-title generation ───────────────────────────────────────────────────
+async function generateAutoTitle(chatId, userText, apiKey, log) {
+    try {
+        const snippet = userText.slice(0, 300);
+        const res = await fetch(`${KIE_BASE_URL}/gpt-4o/v1/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        role: "user",
+                        content: [{ type: "text", text: `Придумай короткое название (3–5 слов) для чата на основе этого сообщения пользователя. Отвечай только названием, без кавычек и знаков препинания в конце.\n\nСообщение: ${snippet}` }],
+                    },
+                ],
+                stream: false,
+            }),
+            signal: AbortSignal.timeout(15000),
+        });
+        const data = await res.json();
+        const title = data
+            .choices?.[0]?.message?.content?.trim();
+        if (title && title.length > 0 && title.length < 100) {
+            await dbQuery(`UPDATE chats SET title = $1 WHERE id = $2`, [title, chatId]);
+        }
+    }
+    catch (e) {
+        log.error(`auto-title failed for chat ${chatId}: ${e}`);
     }
 }
 // ─── Routes ─────────────────────────────────────────────────────────────────
@@ -339,7 +383,15 @@ export async function chatRoutes(app) {
         return { ok: true };
     });
     // Regenerate: delete target message + all after it, then re-call KIE
-    app.post("/api/chat/:chatId/messages/:messageId/regenerate", async (request, reply) => {
+    app.post("/api/chat/:chatId/messages/:messageId/regenerate", {
+        config: {
+            rateLimit: {
+                max: 30,
+                timeWindow: "1 minute",
+                keyGenerator: (req) => req.authUser?.userId || req.ip,
+            },
+        },
+    }, async (request, reply) => {
         const user = request.authUser;
         const { chatId, messageId } = request.params;
         const apiKey = process.env.KIE_API_KEY;
@@ -402,7 +454,15 @@ export async function chatRoutes(app) {
         return { ok: true, reply: result.reply, credits_spent: creditsSpent };
     });
     // 30 запросов в минуту на отправку — защита от случайных петель, не от пользователя
-    app.post("/api/chat/:chatId/send", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+    app.post("/api/chat/:chatId/send", {
+        config: {
+            rateLimit: {
+                max: 30,
+                timeWindow: "1 minute",
+                keyGenerator: (req) => req.authUser?.userId || req.ip,
+            },
+        },
+    }, async (request, reply) => {
         const user = request.authUser;
         const { chatId } = request.params;
         const parsed = SendMessageSchema.safeParse(request.body);
@@ -412,7 +472,7 @@ export async function chatRoutes(app) {
         if (!apiKey) {
             return reply.status(500).send({ ok: false, error: "Не задан KIE_API_KEY" });
         }
-        const { message: userText, files, webSearch } = parsed.data;
+        const { message: userText, files, webSearch, thinking } = parsed.data;
         const chatRes = await dbQuery(`SELECT * FROM chats WHERE id = $1`, [chatId]);
         if (chatRes.rows.length === 0) {
             return reply.status(404).send({ ok: false, error: "Чат не найден" });
@@ -444,7 +504,15 @@ export async function chatRoutes(app) {
             }));
             systemParts.push(`Содержимое URL из промпта:\n\n${fetched.join("\n\n")}`);
         }
-        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'user', $2)`, [chatId, userText]);
+        // Store file metadata (images as dataUrl, others as name+mimeType only)
+        const attachedFiles = files && files.length > 0
+            ? files.map((f) => ({
+                name: f.name,
+                mimeType: f.mimeType,
+                dataUrl: f.mimeType.startsWith("image/") ? f.dataUrl : null,
+            }))
+            : null;
+        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content, attached_files) VALUES ($1, 'user', $2, $3)`, [chatId, userText, attachedFiles ? JSON.stringify(attachedFiles) : null]);
         const result = await callKieAI({
             module: chat.module,
             model: chat.model,
@@ -453,13 +521,15 @@ export async function chatRoutes(app) {
             userText,
             files,
             webSearch,
+            thinking: thinking && chat.module === "claude" ? true : undefined,
             apiKey,
             log: app.log,
         });
         const sendReply = "error" in result
             ? "Не удалось соединиться с сервером ИИ. Пожалуйста, повторите запрос."
             : result.reply;
-        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content) VALUES ($1, 'assistant', $2)`, [chatId, sendReply]);
+        const thinkingContent = "error" in result ? null : (result.thinkingContent ?? null);
+        await dbQuery(`INSERT INTO chat_messages (chat_id, role, content, thinking_content) VALUES ($1, 'assistant', $2, $3)`, [chatId, sendReply, thinkingContent]);
         if ("error" in result) {
             app.log.error(`kie.ai send failed after retries: ${result.error}`);
             return { ok: true, reply: sendReply, credits_spent: 0 };
@@ -470,6 +540,10 @@ export async function chatRoutes(app) {
         }
         catch (err) {
             app.log.error({ err }, "spendCredits failed on send");
+        }
+        // Auto-generate title on first message if still "Новый чат"
+        if (historyRes.rows.length === 0 && (chat.title === "Новый чат" || !chat.title.trim())) {
+            generateAutoTitle(chatId, userText, apiKey, app.log).catch(() => { });
         }
         return { ok: true, reply: sendReply, credits_spent: creditsSpent };
     });
