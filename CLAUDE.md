@@ -80,17 +80,53 @@ main  ──┐
 - После проверки на staging: мержим `develop` → `main` → автодеплой на прод
 - **Никогда не пушить напрямую в `main`** без проверки на staging
 
-**Правила работы с зависимостями:**
-- **`package-lock.json` всегда в репо** — никогда не добавлять в `.gitignore` и не удалять. Без него Docker не может кешировать `npm ci` → каждый деплой занимает 20-30 минут вместо 2-3
-- Если нужно пересоздать lockfile — удали старый, запусти `npm install`, закоммить новый
-- **Тяжёлые dev-зависимости** (Playwright, браузеры) — только в CI/CD (GitHub Actions), никогда не в корневом `package.json`. Они попадают в Docker-образ и вызывают OOM при сборке
-
 **Два приложения на Timeweb App Platform:**
 
 | Приложение | Ветка | Назначение |
 |---|---|---|
 | Прод | `main` | Реальные пользователи |
 | Staging | `develop` | Тестирование перед релизом |
+
+### Деплой на Timeweb — как это работает
+
+**Важно:** Timeweb App Platform **игнорирует наш `Dockerfile`** и использует собственный шаблон на базе `node:24-slim`. Управлять образом напрямую нельзя.
+
+**Настройки в Timeweb dashboard:**
+- Команда установки: `npm install --omit=dev`
+- Команда запуска: `npm run start`
+
+Флаг `--omit=dev` обязателен — без него устанавливается `esbuild` (devDep), который падает при установке на `node:24` из-за несовместимости бинарников.
+
+**dist/ файлы коммитятся в репозиторий:**
+
+Timeweb не выполняет шаг сборки (`tsc` / `vite build`) — только `npm install --omit=dev` и `npm run start`. Поэтому скомпилированные файлы должны быть в репо:
+- `apps/api/dist/` — скомпилированный TypeScript backend
+- `apps/web/dist/` — собранный Vite frontend (раздаётся как статика из api)
+
+**Перед каждым мержем в `main` или `develop`:**
+```bash
+npm run build          # пересобирает apps/web/dist/ и apps/api/dist/
+git add apps/api/dist apps/web/dist
+git commit -m "build: update dist"
+```
+
+**Структура зависимостей (`package.json`):**
+
+В `dependencies` — только runtime-пакеты (то, что нужно серверу в проде):
+- `fastify` и плагины (`@fastify/cookie`, `@fastify/cors`, `@fastify/jwt`, `@fastify/rate-limit`, `@fastify/static`)
+- `pg`, `bcryptjs`, `zod`
+
+Всё остальное — в `devDependencies`: React, Vite, TypeScript, Tailwind, `tsx`, `pino-pretty`, типы и т.д. Они не устанавливаются при `npm install --omit=dev`.
+
+**Правила работы с зависимостями:**
+- **`package-lock.json` всегда в репо** — никогда не добавлять в `.gitignore` и не удалять
+- Если нужно пересоздать lockfile — удали старый, запусти `npm install`, закоммить новый
+- **Тяжёлые dev-зависимости** (Playwright, браузеры) — только в CI/CD (GitHub Actions), никогда не в корневом `package.json`
+- При добавлении нового пакета: подумай, нужен ли он в проде. Если нет — `--save-dev`
+
+**GitHub Actions (CI):**
+- Node версия: `20`
+- Установка зависимостей: `npm ci` (не `npm install`)
 
 ### Переменные окружения (Timeweb dashboard)
 ```
@@ -330,6 +366,7 @@ apps/web/src/
 - **Валидация входных данных** — через Zod-схемы из `apps/api/src/lib/validation.ts`. Использовать `.safeParse()`, не `as { ... }`
 - **Rate limiting** — `global: false`, лимиты только на дорогих эндпоинтах через `config: { rateLimit: { max, timeWindow } }` в опциях роута. Глобальный rate limit по IP сломан за Timeweb-прокси (shared IP)
 - **SSRF защита** — `fetchUrlContent()` в `chat.ts` проверяет URL через `isSafeUrl()`: блокирует localhost, приватные подсети, raw IP, не-http(s) схемы
+- **SQL-инъекции** — никогда не интерполировать пользовательские данные в SQL-строки напрямую. Всегда использовать параметризованные запросы: `dbQuery('SELECT ... WHERE id = $1', [userId])`. Фиксы применены в `projects.ts` и `chat.ts`
 
 ### Логирование
 - Dev (`NODE_ENV != production`): pino-pretty с цветами
