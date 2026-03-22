@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); cmd=$(echo \"$input\" | jq -r '.tool_input.command // \"\"'); if echo \"$cmd\" | grep -q 'git commit'; then cd /home/user/ai-studio && npm run check:rules; fi",
+            "timeout": 60,
+            "statusMessage": "Проверка правил кодинга..."
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Git pre-commit hook — проверка правил кодинга (CLAUDE.md)
+# Установка: npm run setup:hooks
+
+cd "$(git rev-parse --show-toplevel)"
+npx tsx scripts/check-rules.ts

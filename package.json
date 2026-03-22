@@ -14,7 +14,9 @@
     "build:web": "npm run build -w apps/web",
     "test:smoke": "tsx apps/tests/smoke.ts",
     "test:e2e": "playwright test",
-    "cleanup:test-chats": "tsx apps/tests/cleanup-test-chats.ts"
+    "cleanup:test-chats": "tsx apps/tests/cleanup-test-chats.ts",
+    "check:rules": "tsx scripts/check-rules.ts",
+    "setup:hooks": "cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit && echo 'Git hook установлен'"
   },
   "dependencies": {
     "@types/node": "^22.0.0",
