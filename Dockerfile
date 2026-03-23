@@ -6,6 +6,8 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY apps/web/package.json ./apps/web/
+COPY apps/api/package.json ./apps/api/
 
 # Install ALL deps (devDeps нужны для сборки: tsc, vite, tailwind...)
 RUN npm ci
