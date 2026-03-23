@@ -5,12 +5,18 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
+# Увеличиваем таймаут npm для медленных сред (Timeweb build servers)
+RUN npm config set fetch-timeout 1800000 && \
+    npm config set fetch-retry-mintimeout 60000 && \
+    npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5
+
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
 
 # Install ALL deps (devDeps нужны для сборки: tsc, vite, tailwind...)
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 COPY . .
 
