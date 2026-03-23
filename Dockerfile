@@ -15,15 +15,19 @@ COPY . .
 # Собрать frontend (Vite) и backend (tsc)
 RUN npm run build
 
+# Удалить dev-зависимости — оставить только prod
+RUN npm prune --omit=dev
+
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM node:20-slim AS runtime
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# Копируем package.json для npm start
+COPY package.json ./
 
-# Только prod-зависимости: fastify, pg, bcryptjs, zod и плагины
-RUN npm ci --omit=dev
+# Копируем уже установленные prod-зависимости из builder (без сети)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Скомпилированный backend
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
