@@ -8,8 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install ALL deps (devDeps нужны для сборки: tsc, vite, tailwind...)
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+RUN npm ci
 
 COPY . .
 
@@ -24,8 +23,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Только prod-зависимости: fastify, pg, bcryptjs, zod и плагины
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev
+RUN npm ci --omit=dev
 
 # Скомпилированный backend
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
